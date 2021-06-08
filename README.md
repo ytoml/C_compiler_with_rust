@@ -2,8 +2,7 @@
 
 CコンパイラをRustで作って勉強したい!
 Rui Ueyamaさんの
-[低レイヤを知りたい人のためのCコンパイラ作成入門][ref-link]を読みながら作成していきます。
-[ref-link]:https://www.sigbus.info/compilerbook
+[低レイヤを知りたい人のためのCコンパイラ作成入門](https://www.sigbus.info/compilerbook)を読みながら作成していきます。
 
 
 ローカルでx86向けの実行ファイルをビルドして、
