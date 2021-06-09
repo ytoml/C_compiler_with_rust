@@ -1,12 +1,7 @@
-FROM --platform=linux/amd64 ubuntu:20.04
+FROM --platform=linux/amd64 ubuntu:latest
 
-RUN set -x &&\
-    apt update &&\
-    apt -y install sudo
+# Rui UeyamaさんのDockerfile(https://www.sigbus.info/compilerbook/Dockerfile)を参考にしています。
+RUN apt update
+RUN DEBIAN_FRONTEND=noninteractive apt install -y gcc make git binutils libc6-dev gdb sudo
 
-RUN useradd -m docker &&\
-    echo "docker:docker" | chpasswd &&\
-    adduser docker sudo
-
-USER docker
 CMD /bin/sh
