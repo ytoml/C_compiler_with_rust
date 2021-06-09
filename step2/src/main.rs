@@ -107,6 +107,7 @@ fn main() {
                     }
                 }
             }
+            asm += format!("    ret").as_str();
 
 
             // 最後に一気に書き込み
