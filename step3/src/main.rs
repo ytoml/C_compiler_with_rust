@@ -4,7 +4,7 @@ use std::io::{stdin, BufRead, BufReader};
 use anyhow::{Context, Result};
 
 // tokenizerモジュールは未実装
-mod tokenizer::{Token, expect, expect_number, consume, at_eof};
+mod tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
 mod utils;
 mod options;
 use options::Opts;
@@ -23,25 +23,26 @@ fn main() {
         for line in reader.lines() {
             // このループ内でlineを式として解釈していく(以降のバージョンではこの部分の変数名はlineに統一する)
             let line = line.unwrap();
+			let token_lookat = tokenize(line);
 			
             let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
 
 			let mut token_lookat = tokenize(line);
 
 			// 頭は数字から入ることを想定
-			let num = expect_number!(token_lookat);
+			let num = expect_number(token_lookat);
 			asm += format!("    mov rax, {}\n", num).as_str();
 
 			// トークンを処理
 			loop {
 				if consume(token_lookat, "+") {
-					let num = expect_number!(token_lookat);
+					let num = expect_number(token_lookat);
 					asm += format!("    add rax, {}\n", num).as_str();
 					continue;
 				}
 
 				// +でなければ-を期待して処理
-				expect!(token_lookat, "-");
+				expect(token_lookat, "-");
 				asm += format!("    sub rax, {}\n", num).as_str();
 				
 
