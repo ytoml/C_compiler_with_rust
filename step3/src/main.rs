@@ -27,17 +27,18 @@ fn main() {
             let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
 
 			// よく考えたら参照で渡す意味そんなないかも
-			let token_stream = tokenize(&line);
+			let token_stream = tokenize(line);
 			let mut lookat: usize = 0;
 
 			// 頭は数字から入ることを想定
 			let num = expect_number(&token_stream, &mut lookat);
 			asm += format!("    mov rax, {}\n", num).as_str();
 
+
 			// トークンを処理
 			loop {
 				if consume(&token_stream, &mut lookat,  "+") {
-					let num = expect_number(&token_streamm, &mut lookat);
+					let num = expect_number(&token_stream, &mut lookat);
 					asm += format!("    add rax, {}\n", num).as_str();
 					continue;
 				}

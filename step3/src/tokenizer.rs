@@ -1,6 +1,3 @@
-// トークンの種類
-use anyhow::{Context, Result};
-
 use crate::{exit_eprintln};
 
 #[derive(Debug, PartialEq)]
@@ -40,19 +37,21 @@ impl Token {
 
 
 // 入力文字列のトークナイズ
-pub fn tokenize(string: &String) -> Vec<Token> {
-	let token_stream = vec![];
+pub fn tokenize(string: String) -> Vec<Token> {
+	// token_streamにTokenをプッシュしていく
+	let mut token_stream = vec![];
 
-	// 未完成
 	let len = string.len();
 	let string = string.as_str().chars().collect::<Vec<char>>(); 
 
 	let mut lookat = 0;
 	let mut c;
+
+
 	while lookat < len {
 		// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
 		match skipspace(&string, &mut lookat) {
-			Ok(num) => {},
+			Ok(()) => {},
 			Err(()) => {break;}
 		}
 
@@ -61,6 +60,7 @@ pub fn tokenize(string: &String) -> Vec<Token> {
 			token_stream.push(
 				Token::new(Tokenkind::TK_RESERVED, c)
 			);
+			lookat += 1;
 			continue;
 		}
 
@@ -73,18 +73,27 @@ pub fn tokenize(string: &String) -> Vec<Token> {
 			continue;
 		}
 	}
+
 	token_stream
 }
 
 // 空白を飛ばして読み進める
 fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 	let limit = string.len();
+
+	// 既にEOFだったならErrを即返す
+	if *index >= limit {
+		return Err(());
+	}
+
+	// 空白でなくなるまで読み進める
 	while string[*index] == ' ' {
 		*index += 1;
 		if *index >= limit {
 			return Err(());
 		}
 	}
+
 
 	Ok(())
 }
@@ -98,11 +107,17 @@ fn isdigit(c: char) -> bool{
 fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 	let mut c = string[*index];
 	let mut val = 0;
+	let limit = string.len();
 
 	// 数字を読む限りu32として加える
-	while c >= '0' && c <=  '9' {
+	while isdigit(c) {
 		val = val * 10 + (c.to_digit(10).unwrap() - '0'.to_digit(10).unwrap());
 		*index += 1;
+
+		// 最後に到達した場合は処理を終える
+		if *index >= limit {
+			return val;
+		}
 		c = string[*index];
 	} 
 
@@ -112,9 +127,9 @@ fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 
 
 // 次のトークンが数字であることを期待して次のトークンを読む関数
-pub fn expect_number(token_stream: Vec<Token>, index: &usize) -> i32 {
+pub fn expect_number(token_stream: &Vec<Token>, index: &mut usize) -> i32 {
 	if token_stream[*index].kind != Tokenkind::TK_NUM {
-		exit_eprintln!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", token_stream[*index].body.unwrap());
+		exit_eprintln!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", token_stream[*index].body.as_ref().unwrap());
 	}
 	let val = token_stream[*index].val.unwrap();
 
@@ -125,12 +140,12 @@ pub fn expect_number(token_stream: Vec<Token>, index: &usize) -> i32 {
 }
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとexitする)
-pub fn expect(token_stream: Vec<Token>, index: &mut usize, op: &str) {
+pub fn expect(token_stream: &Vec<Token>, index: &mut usize, op: &str) {
 	if token_stream[*index].kind != Tokenkind::TK_RESERVED{
-		exit_eprintln!("予約されていないトークン\"{}\"が発見されました。", token_stream[*index].body.unwrap());
+		exit_eprintln!("予約されていないトークン\"{}\"が発見されました。", token_stream[*index].body.as_ref().unwrap());
 	}
-	if token_stream[*index].body.unwrap() != op {
-		exit_eprintln!("\"{}\"を期待した位置で\"{}\"が発見されました。", op, token_stream[*index].body.unwrap());
+	if token_stream[*index].body.as_ref().unwrap() != op {
+		exit_eprintln!("\"{}\"を期待した位置で\"{}\"が発見されました。", op, token_stream[*index].body.as_ref().unwrap());
 	}
 	// 読み位置を1つ前に進める
 	*index += 1;
@@ -139,7 +154,7 @@ pub fn expect(token_stream: Vec<Token>, index: &mut usize, op: &str) {
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_stream: &Vec<Token>, index: &mut usize, op: &str) -> bool {
-	if token_stream[*index].kind != Tokenkind::TK_RESERVED || &*token_stream[*index].body.unwrap() != op {
+	if token_stream[*index].kind != Tokenkind::TK_RESERVED || token_stream[*index].body.as_ref().unwrap() != op {
 		return false;
 	}
 
@@ -151,8 +166,8 @@ pub fn consume(token_stream: &Vec<Token>, index: &mut usize, op: &str) -> bool {
 
 
 // EOFかどうかを判断する関数
-pub fn at_eof(token_stream: &Vec<Token>, index: usize) -> bool{
-	token_stream[index].kind == Tokenkind::TK_EOF
+pub fn at_eof(token_stream: &Vec<Token>, index: &usize) -> bool{
+	token_stream[*index].kind == Tokenkind::TK_EOF
 }
 
 
