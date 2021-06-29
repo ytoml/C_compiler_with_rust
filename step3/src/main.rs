@@ -4,10 +4,11 @@ use std::io::{stdin, BufRead, BufReader};
 use anyhow::{Context, Result};
 
 // tokenizerモジュールは未実装
-mod tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
+mod tokenizer;
 mod utils;
 mod options;
 use options::Opts;
+use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
 
 
 fn main() {
