@@ -65,8 +65,7 @@ pub fn tokenize(string: &String) -> Vec<Token> {
 
 		// 数字ならば、数字が終わるまでを読んでトークンを生成
 		if isdigit(c) {
-			// lookatを再宣言してるみたいになるのでライフタイム的によろしくないのでは？
-			let _ = strtol(&string, lookat);
+			let _ = strtol(&string, &mut lookat);
 			token_stream.push(
 				Token::new(Tokenkind::TK_NUM, c)
 			);
@@ -117,7 +116,7 @@ pub fn expect_number(token_stream: Vec<Token>, index: &usize) -> i32 {
 		exit_eprintln!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", token_stream[*index].body.unwrap());
 	}
 	let val = token_stream[*index].val.unwrap();
-	
+
 	// 読み位置を1つ前に進める
 	*index += 1;
 	
