@@ -10,16 +10,17 @@ pub enum Tokenkind {
 // Rustでは再帰的な構造が所有権の関係で難しいのでどうするか…
 pub struct Token {
 	pub kind: Tokenkind,
-	val: Some(i32),  
-	body: Some(String)
+	val: Option<i32>,  
+	body: Option<String>
 }
 
 impl Token {
-	pub fn new(kind: Tokenkind, body: impl Into<String>) -> Result<Token> {
+	fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
 		let body = body.into();
 		match kind {
 			Tokenkind::TK_NUM => {
-				let val = body.parse::<i32>().with_context(|| format!("\"{}\"をi32に変換できませんでした。", body))?;
+				// TK_NUMと共に数字以外の値が渡されることはないものとして、unwrapで処理
+				let val = body.parse::<i32>().unwrap();
 				Token {kind: kind, val: Some(val), body: Some(body)}
 			},
 			Tokenkind::TK_RESERVED => {
@@ -37,22 +38,22 @@ impl Token {
 // 入力文字列のトークナイズ
 pub fn tokenize(string: &String) -> Vec<Token> {
 	let token_stream = vec![];
-	head.next = None;
 
 	// 未完成
-	let string = line.as_str().chars(); 
+	let len = string.len();
+	let string = string.as_str().chars().collect::<Vec<char>>(); 
 
 	let mut lookat = 0;
 	let mut c;
-	while lookat < string.len() {
+	while lookat < len {
 		// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
-		match skipspace(string, lookat) {
+		match skipspace(&string, lookat) {
 			Ok(num) => {lookat = num;},
 			Err(()) => {break;}
 		}
 
 		c = string[lookat];
-		if (c == '+' || c == '-') {
+		if c == '+' || c == '-' {
 			token_stream.push(
 				Token::new(Tokenkind::TK_RESERVED, c)
 			);
@@ -60,26 +61,25 @@ pub fn tokenize(string: &String) -> Vec<Token> {
 		}
 
 		// 数字ならば、数字が終わるまでを読んでトークンを生成
-		if (isdigit(c)) {
-			let val;
-			(val, lookat) = strtol(string, lookat);
+		if isdigit(c) {
+			// lookatを再宣言してるみたいになるのでライフタイム的によろしくないのでは？
+			let (val, lookat) = strtol(&string, lookat);
 			token_stream.push(
 				Token::new(Tokenkind::TK_NUM, c)
 			);
 			continue;
 		}
-
-
 	}
+	token_stream
 }
 
 // 空白を飛ばして読み進める
-fn skipspace(string: &Vec<char>, index: i32) -> Result<i32, ()> {
+fn skipspace(string: &Vec<char>, index: usize) -> Result<usize, ()> {
 	let limit = string.len();
 	while string[index] == ' ' {
 		index += 1;
 		if index >= limit {
-			Err(())
+			return Err(());
 		}
 	}
 
@@ -87,12 +87,12 @@ fn skipspace(string: &Vec<char>, index: i32) -> Result<i32, ()> {
 }
 
 // 数字かどうかを判別する
-fn isdigit(c: char) {
+fn isdigit(c: char) -> bool{
 	c >= '0' && c <=  '9'
 }
 
 // 戻り値は読んだ数字と読んだ後のindex
-fn strtol(string: &Vec<char>, index: i32) -> (i32, i32) {
+fn strtol(string: &Vec<char>, index: usize) -> (i32, usize) {
 	let mut c = string[index];
 	let mut val = 0;
 
