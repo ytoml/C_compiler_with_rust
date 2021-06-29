@@ -35,8 +35,8 @@ fn main() {
 			asm += format!("    mov rax, {}\n", num).as_str();
 
 
-			// トークンを処理
-			loop {
+			// EOFまでトークンを処理
+			while !at_eof(&token_stream, &lookat) {
 				if consume(&token_stream, &mut lookat,  "+") {
 					let num = expect_number(&token_stream, &mut lookat);
 					asm += format!("    add rax, {}\n", num).as_str();
@@ -47,10 +47,7 @@ fn main() {
 				expect(&token_stream, &mut lookat,  "-");
 				let num = expect_number(&token_stream, &mut lookat);
 				asm += format!("    sub rax, {}\n", num).as_str();
-				
 
-				// EOF到達でloopを抜ける 
-				if at_eof(&token_stream, &lookat) {break;}
 			}
 
             

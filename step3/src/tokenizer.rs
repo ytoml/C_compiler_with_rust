@@ -56,7 +56,6 @@ pub fn tokenize(string: String) -> Vec<Token> {
 
 		c = string[lookat];
 		if c == '+' || c == '-' {
-			println!("{}", c);
 			token_stream.push(
 				Token::new(Tokenkind::TK_RESERVED, c)
 			);
@@ -67,7 +66,6 @@ pub fn tokenize(string: String) -> Vec<Token> {
 		// 数字ならば、数字が終わるまでを読んでトークンを生成
 		if isdigit(c) {
 			let num = strtol(&string, &mut lookat);
-			println!("{}", num);
 
 			token_stream.push(
 				Token::new(Tokenkind::TK_NUM, num.to_string())
@@ -173,7 +171,6 @@ pub fn consume(token_stream: &Vec<Token>, index: &mut usize, op: &str) -> bool {
 
 // EOFかどうかを判断する関数
 pub fn at_eof(token_stream: &Vec<Token>, index: &usize) -> bool{
-	println!("body = \"{}\"", token_stream[*index].body.as_ref().unwrap());
 	token_stream[*index].kind == Tokenkind::TK_EOF
 }
 
