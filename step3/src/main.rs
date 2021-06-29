@@ -24,31 +24,31 @@ fn main() {
         for line in reader.lines() {
             // このループ内でlineを式として解釈していく(以降のバージョンではこの部分の変数名はlineに統一する)
             let line = line.unwrap();
-			let token_lookat = tokenize(line);
-			
             let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
 
-			let mut token_lookat = tokenize(line);
+			// よく考えたら参照で渡す意味そんなないかも
+			let token_stream = tokenize(&line);
+			let mut lookat: usize = 0;
 
 			// 頭は数字から入ることを想定
-			let num = expect_number(token_lookat);
+			let num = expect_number(&token_stream, &mut lookat);
 			asm += format!("    mov rax, {}\n", num).as_str();
 
 			// トークンを処理
 			loop {
-				if consume(token_lookat, "+") {
-					let num = expect_number(token_lookat);
+				if consume(&token_stream, &mut lookat,  "+") {
+					let num = expect_number(&token_streamm, &mut lookat);
 					asm += format!("    add rax, {}\n", num).as_str();
 					continue;
 				}
 
 				// +でなければ-を期待して処理
-				expect(token_lookat, "-");
+				expect(&token_stream, &mut lookat,  "-");
 				asm += format!("    sub rax, {}\n", num).as_str();
 				
 
 				// EOF到達でloopを抜ける 
-				if at_eof(token_lookat) {break;}
+				if at_eof(&token_stream, &lookat) {break;}
 			}
 
             
@@ -68,73 +68,3 @@ fn main() {
     }
 
 }
-/* 一旦退避(この処理はtokenizerに移行)
-// 先頭から1文字ずつ値を読む。読み込んだ値が数値ならregに入れていき、そうでなければ演算子とみなす
-            // flagは、1つ前に演算子を読んだかを判定する。asmは出力する文字列(アセンブラコード)。
-            // 頭に+,-がくることについては許し、regが0なら計算を飛ばすという形で対処
-            let mut reg = 0;
-            let mut flag = false;
-            let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
-            let mut op_prev: char = ' ';
-            for c in line.as_str().chars() {
-                // 空白は無視
-                if c == ' ' {continue;}
-
-                // 数値ならそれまで読んだ結果を1桁繰り上げてから足す
-                if c >= '0' && c <= '9' {
-
-                    reg = reg * 10 + (c.to_digit(10).unwrap() - '0'.to_digit(10).unwrap());
-                    if flag {flag = false}
-
-                } else {
-                    // それ以外は演算子として扱う
-
-                    if flag {
-                        exit_eprintln!("\"{}\":演算子が連続しています。", c);
-                    }
-
-                    if reg == 0 {
-                        flag = true;
-                        continue;
-                    }
-
-                    match op_prev {
-                        '+' => {
-                            asm += format!("    add rax, {}\n", reg).as_str();
-                        }
-                        '-' => {
-                            asm += format!("    sub rax, {}\n", reg).as_str();
-                        }
-                        ' ' => {
-                            asm += format!("    mov rax, {}\n", reg).as_str();
-                        }
-                        _ => {
-                            exit_eprintln!("\"{}\":演算子として不正です。", op_prev);
-                        }
-                    }
-                    op_prev = c;
-                    // 読み込む整数のリセット及び演算子読みましたよフラグ
-                    reg = 0;
-                    flag = true;
-                }
-            }
-            // 演算子で終わる場合、エラー
-            if flag {
-                exit_eprintln!("式が演算子で終了しています。");
-            } 
-
-            if reg != 0 {
-                // あまり綺麗でないが、文末で最後の数字に対する計算を加える必要がある
-                match op_prev {
-                    '+' => {
-                        asm += format!("    add rax, {}\n", reg).as_str();
-                    }
-                    '-' => {
-                        asm += format!("    sub rax, {}\n", reg).as_str();
-                    }
-                    _ => {
-                        exit_eprintln!("\"{}\":演算子として不正です。", op_prev);
-                    }
-                }
-            }
-*/
