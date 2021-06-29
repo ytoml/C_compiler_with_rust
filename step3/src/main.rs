@@ -45,6 +45,7 @@ fn main() {
 
 				// +でなければ-を期待して処理
 				expect(&token_stream, &mut lookat,  "-");
+				let num = expect_number(&token_stream, &mut lookat);
 				asm += format!("    sub rax, {}\n", num).as_str();
 				
 
