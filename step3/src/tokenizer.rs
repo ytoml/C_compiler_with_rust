@@ -10,13 +10,14 @@ pub enum Tokenkind {
 	TK_EOF, // 入力終わり
 }
 
-// Rustでは再帰的な構造が所有権の関係で難しいのでどうするか…
+// ポインタ的にToken同士をつなぐのは諦めてVec<Token>で表現
 pub struct Token {
 	pub kind: Tokenkind,
 	val: Option<i32>,  
 	body: Option<String>
 }
 
+// 構造体にStringをうまく持たせるためのnewメソッド
 impl Token {
 	fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
 		let body = body.into();
@@ -149,7 +150,7 @@ pub fn consume(token_stream: &Vec<Token>, index: &mut usize, op: &str) -> bool {
 }
 
 
-// EOFかどうかを判断する関数(しばらくは改行文字もEOFとみなす)
+// EOFかどうかを判断する関数
 pub fn at_eof(token_stream: &Vec<Token>, index: usize) -> bool{
 	token_stream[index].kind == Tokenkind::TK_EOF
 }
