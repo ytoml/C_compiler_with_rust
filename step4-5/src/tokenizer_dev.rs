@@ -42,7 +42,7 @@ impl Token {
 
 
 // 入力文字列のトークナイズ
-pub fn tokenize(string: String) -> Option<Box<Token>> {
+pub fn tokenize(string: String) -> Box<Token> {
 	// Box<Token>を使って読み進める
 	let head = Token::new(Tokenkind::TK_HEAD, "");
 	let mut token_ptr: Box<Token> = Box::new(head);
@@ -83,7 +83,8 @@ pub fn tokenize(string: String) -> Option<Box<Token>> {
 
 	token_ptr.next = Some(Box::new(Token::new(Tokenkind::TK_EOF, "")));
 
-	head.next
+	// このnextは必ず存在するのでunwrap()してOK
+	head.next.unwrap()
 }
 
 // 空白を飛ばして読み進める
@@ -136,7 +137,7 @@ fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 
 
 // 次のトークンが数字であることを期待して次のトークンを読む関数
-pub fn expect_number(token_ptr: &mut Box<Token>) -> i32 {
+pub fn expect_number(token_ptr: &Box<Token>) -> i32 {
 	if token_ptr.kind != Tokenkind::TK_NUM {
 		exit_eprintln!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", token_ptr.body.as_ref().unwrap());
 	}
@@ -149,7 +150,7 @@ pub fn expect_number(token_ptr: &mut Box<Token>) -> i32 {
 }
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとexitする)
-pub fn expect(token_ptr: &mut Box<Token>, op: &str) {
+pub fn expect(token_ptr: &Box<Token>, op: &str) {
 
 	if token_ptr.kind != Tokenkind::TK_RESERVED{
 		exit_eprintln!("予約されていないトークン\"{}\"が発見されました。", token_ptr.body.as_ref().unwrap());
@@ -164,7 +165,7 @@ pub fn expect(token_ptr: &mut Box<Token>, op: &str) {
 
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
-pub fn consume(token_ptr: &mut Box<Token>, op: &str) -> bool {
+pub fn consume(token_ptr: &Box<Token>, op: &str) -> bool {
 	if token_ptr.kind != Tokenkind::TK_RESERVED || token_ptr.body.as_ref().unwrap() != op {
 		return false;
 	}

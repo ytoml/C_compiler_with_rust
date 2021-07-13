@@ -6,12 +6,13 @@ use anyhow::{Context, Result};
 // tokenizerモジュールは未実装
 mod tokenizer;
 mod tokenizer_dev;
-mod parser;
+// mod parser;
 mod utils;
 mod options;
 use options::Opts;
-use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
-use parser::*;
+use tokenizer_dev::{Token, tokenize, expect, expect_number, consume, at_eof};
+// use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
+// use parser::*;
 
 
 fn main() {
@@ -30,25 +31,24 @@ fn main() {
             let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
 
 			// よく考えたら参照で渡す意味そんなないかも
-			let token_stream = tokenize(line);
-			let mut lookat: usize = 0;
+			let mut token_ptr: Box<Token> = tokenize(line);
 
 			// 頭は数字から入ることを想定
-			let num = expect_number(&token_stream, &mut lookat);
+			let num = expect_number(&token_ptr);
 			asm += format!("    mov rax, {}\n", num).as_str();
 
 
 			// EOFまでトークンを処理
-			while !at_eof(&token_stream, &lookat) {
-				if consume(&token_stream, &mut lookat,  "+") {
-					let num = expect_number(&token_stream, &mut lookat);
+			while !at_eof(&token_ptr) {
+				if consume(&token_ptr, "+") {
+					let num = expect_number(&token_ptr);
 					asm += format!("    add rax, {}\n", num).as_str();
 					continue;
 				}
 
 				// +でなければ-を期待して処理
-				expect(&token_stream, &mut lookat,  "-");
-				let num = expect_number(&token_stream, &mut lookat);
+				expect(&token_ptr, "-");
+				let num = expect_number(&token_ptr);
 				asm += format!("    sub rax, {}\n", num).as_str();
 
 			}
