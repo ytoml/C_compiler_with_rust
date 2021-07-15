@@ -1,10 +1,12 @@
 use clap::Clap;
 use std::fs::File;
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::io::{stdin, BufRead, BufReader};
 use anyhow::{Context, Result};
 
 // tokenizerモジュールは未実装
-mod tokenizer;
+// mod tokenizer;
 mod tokenizer_dev;
 // mod parser;
 mod utils;
@@ -30,25 +32,24 @@ fn main() {
             let line = line.unwrap();
             let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
 
-			// よく考えたら参照で渡す意味そんなないかも
-			let mut token_ptr: Box<Token> = tokenize(line);
+			let mut token_ptr: Rc<RefCell<Token>> = tokenize(line);
 
 			// 頭は数字から入ることを想定
-			let num = expect_number(&token_ptr);
+			let num = expect_number(&mut token_ptr);
 			asm += format!("    mov rax, {}\n", num).as_str();
 
 
 			// EOFまでトークンを処理
 			while !at_eof(&token_ptr) {
-				if consume(&token_ptr, "+") {
-					let num = expect_number(&token_ptr);
+				if consume(&mut token_ptr, "+") {
+					let num = expect_number(&mut token_ptr);
 					asm += format!("    add rax, {}\n", num).as_str();
 					continue;
 				}
 
 				// +でなければ-を期待して処理
-				expect(&token_ptr, "-");
-				let num = expect_number(&token_ptr);
+				expect(&mut token_ptr, "-");
+				let num = expect_number(&mut token_ptr);
 				asm += format!("    sub rax, {}\n", num).as_str();
 
 			}

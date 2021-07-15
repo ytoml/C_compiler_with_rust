@@ -1,4 +1,7 @@
 use crate::{exit_eprintln};
+use std::borrow::{Borrow, BorrowMut};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {
@@ -8,14 +11,15 @@ pub enum Tokenkind {
 	TK_EOF, // 入力終わり
 }
 
-// Boxを利用すればポインタを使える
+// Rc<RefCell<T>>により共有可能な参照(ポインタ風)を持たせる
 pub struct Token {
 	pub kind: Tokenkind,
 	pub val: Option<i32>,  
 	pub body: Option<String>,
-	pub next: Option<Box<Token>>,
+	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 	
 }
+
 
 // 構造体にStringをうまく持たせるためのnewメソッド
 impl Token {
@@ -42,11 +46,13 @@ impl Token {
 
 
 // 入力文字列のトークナイズ
-pub fn tokenize(string: String) -> Box<Token> {
-	// Box<Token>を使って読み進める
-	let head = Token::new(Tokenkind::TK_HEAD, "");
-	let mut token_ptr: Box<Token> = Box::new(head);
-	head.next = Some(token_ptr);
+pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
+	// Rcを使って読み進める
+	let mut token_ptr: Rc<RefCell<Token>> = Rc::new(RefCell::new(Token::new(Tokenkind::TK_HEAD,"")));
+	let mut tmp_ptr: Rc<RefCell<Token>>;
+
+	// Rcなのでcloneしても中身は同じものを指す
+	let head_ptr = token_ptr.clone();
 
 	// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
 	let len: usize = string.len();
@@ -64,8 +70,9 @@ pub fn tokenize(string: String) -> Box<Token> {
 
 		c = string[lookat];
 		if c == '+' || c == '-' {
-			token_ptr.next = Some(Box::new(Token::new(Tokenkind::TK_RESERVED, c)));
-			token_ptr = token_ptr.next.unwrap();
+			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, c))));
+			tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone();
+			token_ptr = tmp_ptr;
 
 			lookat += 1;
 			continue;
@@ -74,17 +81,19 @@ pub fn tokenize(string: String) -> Box<Token> {
 		// 数字ならば、数字が終わるまでを読んでトークンを生成
 		if isdigit(c) {
 			let num = strtol(&string, &mut lookat);
-			token_ptr.next = Some(Box::new(Token::new(Tokenkind::TK_NUM, num.to_string())));
-			token_ptr = token_ptr.next.unwrap();
+			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_NUM, num.to_string()))));
+			tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone();
+			token_ptr = tmp_ptr;
 
 			continue;
 		}
 	}
 
-	token_ptr.next = Some(Box::new(Token::new(Tokenkind::TK_EOF, "")));
+	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_EOF, ""))));
 
 	// このnextは必ず存在するのでunwrap()してOK
-	head.next.unwrap()
+	let ret_ptr = (*head_ptr).borrow().next.as_ref().unwrap().clone();
+	ret_ptr
 }
 
 // 空白を飛ばして読み進める
@@ -137,49 +146,53 @@ fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 
 
 // 次のトークンが数字であることを期待して次のトークンを読む関数
-pub fn expect_number(token_ptr: &Box<Token>) -> i32 {
-	if token_ptr.kind != Tokenkind::TK_NUM {
-		exit_eprintln!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", token_ptr.body.as_ref().unwrap());
+pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
+	if (**token_ptr).borrow().kind != Tokenkind::TK_NUM {
+		exit_eprintln!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", (**token_ptr).borrow().body.as_ref().unwrap());
 	}
-	let val = token_ptr.val.unwrap();
+	let val = (**token_ptr).borrow().val.unwrap();
 
 	// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
-	*token_ptr = token_ptr.next.unwrap();
+	let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
+	*token_ptr = tmp_ptr;
+
 	
 	val
 }
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとexitする)
-pub fn expect(token_ptr: &Box<Token>, op: &str) {
+pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 
-	if token_ptr.kind != Tokenkind::TK_RESERVED{
-		exit_eprintln!("予約されていないトークン\"{}\"が発見されました。", token_ptr.body.as_ref().unwrap());
+	if (**token_ptr).borrow().kind != Tokenkind::TK_RESERVED{
+		exit_eprintln!("予約されていないトークン\"{}\"が発見されました。", (**token_ptr).borrow().body.as_ref().unwrap());
 	}
-	if token_ptr.body.as_ref().unwrap() != op {
-		exit_eprintln!("\"{}\"を期待した位置で\"{}\"が発見されました。", op, token_ptr.body.as_ref().unwrap());
+	if (**token_ptr).borrow().body.as_ref().unwrap() != op {
+		exit_eprintln!("\"{}\"を期待した位置で\"{}\"が発見されました。", op, (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 
 	// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
-	*token_ptr = token_ptr.next.unwrap();
+	let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
+	*token_ptr = tmp_ptr;
 }
 
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
-pub fn consume(token_ptr: &Box<Token>, op: &str) -> bool {
-	if token_ptr.kind != Tokenkind::TK_RESERVED || token_ptr.body.as_ref().unwrap() != op {
+pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
+	if (**token_ptr).borrow().kind != Tokenkind::TK_RESERVED || (**token_ptr).borrow().body.as_ref().unwrap() != op {
 		return false;
 	}
 
 	// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
-	*token_ptr = token_ptr.next.unwrap();
+	let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
+	*token_ptr = tmp_ptr;
 
 	true
 }
 
 
 // EOFかどうかを判断する関数
-pub fn at_eof(token_ptr: &Box<Token>) -> bool{
-	token_ptr.kind == Tokenkind::TK_EOF
+pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
+	(**token_ptr).borrow().kind == Tokenkind::TK_EOF
 }
 
 
