@@ -6,13 +6,12 @@ use std::io::{stdin, BufRead, BufReader};
 use anyhow::{Context, Result};
 
 // tokenizerモジュールは未実装
-// mod tokenizer;
-mod tokenizer_dev;
+mod tokenizer;
 // mod parser;
 mod utils;
 mod options;
 use options::Opts;
-use tokenizer_dev::{Token, tokenize, expect, expect_number, consume, at_eof};
+use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
 // use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
 // use parser::*;
 
