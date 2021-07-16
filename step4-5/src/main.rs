@@ -7,13 +7,13 @@ use anyhow::{Context, Result};
 
 // tokenizerモジュールは未実装
 mod tokenizer;
-// mod parser;
+mod parser;
 mod utils;
 mod options;
 use options::Opts;
 use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
 // use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
-// use parser::*;
+use parser::*;
 
 
 fn main() {
