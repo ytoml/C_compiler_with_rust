@@ -22,7 +22,7 @@ pub struct Node {
 }
 
 
-fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
+pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 	if (**node).borrow().kind == Nodekind::ND_NUM {
 		// ND_NUMの時点でunwrapできる
 		*asm += format!("push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
@@ -110,7 +110,7 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 
-fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node = mul(token_ptr);
 
 	loop {

@@ -13,7 +13,7 @@ mod options;
 use options::Opts;
 use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
 // use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
-use parser::*;
+use parser::{gen, expr};
 
 
 fn main() {
@@ -29,33 +29,20 @@ fn main() {
         for line in reader.lines() {
             // このループ内でlineを式として解釈していく(以降のバージョンではこの部分の変数名はlineに統一する)
             let line = line.unwrap();
-            let mut asm = ".intel_syntax noprefix\n.globl main\nmain:\n".to_string();
+            let mut asm = ".intel_syntax noprefix\n".to_string();
+			asm += ".globl main\n";
+			asm += "main:\n";
 
+			// トークナイズしてトークンリストを生成したのち、構文木を生成
 			let mut token_ptr: Rc<RefCell<Token>> = tokenize(line);
+			let node_ptr = expr(&mut token_ptr);
 
-			// 頭は数字から入ることを想定
-			let num = expect_number(&mut token_ptr);
-			asm += format!("    mov rax, {}\n", num).as_str();
-
-
-			// EOFまでトークンを処理
-			while !at_eof(&token_ptr) {
-				if consume(&mut token_ptr, "+") {
-					let num = expect_number(&mut token_ptr);
-					asm += format!("    add rax, {}\n", num).as_str();
-					continue;
-				}
-
-				// +でなければ-を期待して処理
-				expect(&mut token_ptr, "-");
-				let num = expect_number(&mut token_ptr);
-				asm += format!("    sub rax, {}\n", num).as_str();
-
-			}
-
+			// 構文木からコードを生成(asmに追加)
+			gen(&node_ptr, &mut asm);
             
-			// リターン命令を加える
-            asm += format!("    ret").as_str();
+			// 結果のpopとリターン命令を追加
+			asm += "	pop rax\n";
+            asm += "    ret\n";
 
 
             // 最後に一気に書き込み
