@@ -69,7 +69,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 		}
 
 		c = string[lookat];
-		if c == '+' || c == '-' {
+		if c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')'{
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, c))));
 			tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone();
 			token_ptr = tmp_ptr;
@@ -197,3 +197,86 @@ pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
 
 
 
+
+#[test]
+fn tokenizer_test1() {
+	let mut tmp_ptr;
+
+	let mut token_ptr = tokenize("1+1-1".to_string());
+	{
+		println!("\ntest1{}", "-".to_string().repeat(40));
+
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+	}
+}	
+
+#[test]
+fn tokenizer_test_2() {
+
+	let mut tmp_ptr;
+
+	let mut token_ptr = tokenize("2*(1+1)-1".to_string());
+	{
+		println!("\ntest2{}", "-".to_string().repeat(40));
+
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+		println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+		tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+		eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+	}
+}
