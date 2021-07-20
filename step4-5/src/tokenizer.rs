@@ -75,6 +75,25 @@ impl Display for Token {
 	}
 }
 
+
+// トークンのポインタを読み進める
+pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
+	let tmp_ptr;
+
+	// nextがNoneならパニック
+	match (**token_ptr).borrow().next.as_ref() {
+		Some(ptr) => {
+			tmp_ptr = ptr.clone();
+		},
+		None => {
+			eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", (**token_ptr).borrow().kind);
+			panic!();
+		}
+	}
+
+	*token_ptr = tmp_ptr;
+}
+
 // 入力文字列のトークナイズ
 pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	// Rcを使って読み進める
@@ -82,7 +101,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	let mut tmp_ptr: Rc<RefCell<Token>>;
 
 	// Rcなのでcloneしても中身は同じものを指す
-	let head_ptr = token_ptr.clone();
+	let mut head_ptr = token_ptr.clone();
 
 	// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
 	let len: usize = string.len();
@@ -101,8 +120,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 		c = string[lookat];
 		if c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')'{
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, c))));
-			tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone();
-			token_ptr = tmp_ptr;
+			token_ptr_exceed(&mut token_ptr);
 
 			lookat += 1;
 			continue;
@@ -112,8 +130,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 		if isdigit(c) {
 			let num = strtol(&string, &mut lookat);
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_NUM, num.to_string()))));
-			tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone();
-			token_ptr = tmp_ptr;
+			token_ptr_exceed(&mut token_ptr);
 
 			continue;
 		}
@@ -121,9 +138,9 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_EOF, ""))));
 
-	// このnextは必ず存在するのでunwrap()してOK
-	let ret_ptr = (*head_ptr).borrow().next.as_ref().unwrap().clone();
-	ret_ptr
+
+	token_ptr_exceed(&mut head_ptr);
+	head_ptr
 }
 
 // 空白を飛ばして読み進める
@@ -182,10 +199,7 @@ pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 	}
 	let val = (**token_ptr).borrow().val.unwrap();
 
-	// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
-	let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
-	*token_ptr = tmp_ptr;
-
+	token_ptr_exceed(token_ptr);
 	
 	val
 }
@@ -200,9 +214,7 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 		exit_eprintln!("\"{}\"を期待した位置で\"{}\"が発見されました。", op, (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 
-	// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
-	let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
-	*token_ptr = tmp_ptr;
+	token_ptr_exceed(token_ptr);
 }
 
 
@@ -212,10 +224,7 @@ pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
 		return false;
 	}
 
-	// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
-	let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
-	*token_ptr = tmp_ptr;
-
+	token_ptr_exceed(token_ptr);
 	true
 }
 

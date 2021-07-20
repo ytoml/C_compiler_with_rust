@@ -4,6 +4,7 @@ use crate::tokenizer::*;
 use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::fmt::{Formatter, Display, Result};
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
@@ -20,6 +21,34 @@ pub struct Node {
 	right: Option<Rc<RefCell<Node>>>,
 	val: Option<i32>
 }
+
+static REP_NODE:usize = 40;
+
+impl Display for Node {
+	fn fmt(&self, f:&mut Formatter) -> Result {
+
+		writeln!(f, "{}", "-".to_string().repeat(REP_NODE));
+		writeln!(f, "Nodekind : {:?}", self.kind);
+		if let Some(e) = self.left.as_ref() {
+			writeln!(f, "left: exist(kind:{:?})", (**self.left.as_ref().unwrap()).borrow().kind);
+		} else {
+			writeln!(f, "left: not exist");
+		}
+
+		if let Some(e) = self.left.as_ref() {
+			writeln!(f, "right: exist(kind:{:?})", (**self.right.as_ref().unwrap()).borrow().kind);
+		} else {
+			writeln!(f, "right: not exist");
+		}
+
+		if let Some(e) = self.val.as_ref() {
+			writeln!(f, "val: {}", e)
+		} else {
+			writeln!(f, "val: not exist")
+		}
+	}
+}
+
 
 
 pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
@@ -89,36 +118,24 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
-fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node = primary(token_ptr);
-
-	loop {
-		if consume(token_ptr, "*") {
-			node = new_node(Nodekind::ND_MUL, node, primary(token_ptr));
-
-		} else if consume(token_ptr, "/") {
-			node = new_node(Nodekind::ND_DIV, node, primary(token_ptr));
-
-		} else {
-			break;
-		}
-	}
-
-	node
-
-}
-
-
 pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node = mul(token_ptr);
+	let mut node_ptr = mul(token_ptr);
+	println!("{}", (**token_ptr).borrow());
 
 	loop {
 		if consume(token_ptr, "+") {
-			node = new_node(Nodekind::ND_ADD, node, mul(token_ptr));
+			node_ptr = new_node(Nodekind::ND_ADD, node_ptr, mul(token_ptr));
+
+			// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
+			let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
+			*token_ptr = tmp_ptr;
 
 		} else if consume(token_ptr, "-") {
-			node = new_node(Nodekind::ND_SUB, node, mul(token_ptr));
+			node_ptr = new_node(Nodekind::ND_SUB, node_ptr, mul(token_ptr));
+
+			// 参照を次のトークンに移す(この時点でEOFでないのでnext.unwrap()して良い)
+			let tmp_ptr = (**token_ptr).borrow().next.as_ref().unwrap().clone();
+			*token_ptr = tmp_ptr;
 
 		} else {
 			break;
@@ -126,20 +143,101 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	}
 
-	node
+	// テスト用
+	println!("{}",(*node_ptr).borrow());
+
+
+	node_ptr
 }
 
+fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let mut node_ptr = primary(token_ptr);
+	// println!("{}", (**token_ptr).borrow());
+
+	loop {
+		if consume(token_ptr, "*") {
+			node_ptr = new_node(Nodekind::ND_MUL, node_ptr, primary(token_ptr));
+
+		} else if consume(token_ptr, "/") {
+			node_ptr = new_node(Nodekind::ND_DIV, node_ptr, primary(token_ptr));
+
+		} else {
+			break;
+		}
+	}
+
+
+	node_ptr
+
+}
+
+
+
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let node;
+	let node_ptr;
 	if consume(token_ptr, "(") {
-		node = expr(token_ptr);
+		node_ptr = expr(token_ptr);
 
 		expect(token_ptr, ")");
 
 	} else {
-		node = new_node_num(*(**token_ptr).borrow().val.as_ref().unwrap());
+		node_ptr = new_node_num(*(**token_ptr).borrow().val.as_ref().unwrap());
 
 	}
 
-	node
+	
+	println!("{}", (**token_ptr).borrow());
+
+	node_ptr
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	static REP:usize = 80;
+
+	#[test]
+	fn test_display() {
+		println!("test_display{}", "-".to_string().repeat(40));
+		let node = new_node_num(0);
+		println!("{}", (*node).borrow());
+	}
+
+
+	#[test]
+	fn test_parser_addsub() {
+		println!("test_parser{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize("1+2+3-1".to_string());
+		let node_ptr = expr(&mut token_ptr);
+		let mut asm = "".to_string();
+		gen(&node_ptr, &mut asm);
+
+		println!("{}", asm);
+
+	}
+
+	#[test]
+	fn test_parser_muldiv() {
+		println!("test_parser{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize("1+2*3-4/2".to_string());
+		let node_ptr = expr(&mut token_ptr);
+		let mut asm = "".to_string();
+		gen(&node_ptr, &mut asm);
+
+		println!("{}", asm);
+
+	}
+
+	#[test]
+	fn test_parser_brackets() {
+		println!("test_parser_brackets{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize("1+2+3-1".to_string());
+		let node_ptr = expr(&mut token_ptr);
+		let mut asm = "".to_string();
+		gen(&node_ptr, &mut asm);
+
+		println!("{}", asm);
+
+	}
 }
