@@ -42,7 +42,7 @@ fn main() {
             
 			// 結果のpopとリターン命令を追加
 			asm += "	pop rax\n";
-            asm += "    ret\n";
+            asm += "	ret\n";
 
 
             // 最後に一気に書き込み

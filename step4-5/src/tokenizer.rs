@@ -68,9 +68,9 @@ impl Display for Token {
 		}
 
 		if let Some(e) = self.next.as_ref() {
-			writeln!(f, "left: exist(kind:{:?})", (**self.next.as_ref().unwrap()).borrow().kind)
+			writeln!(f, "next: exist(kind:{:?})", (**self.next.as_ref().unwrap()).borrow().kind)
 		} else {
-			writeln!(f, "left: not exist")
+			writeln!(f, "next: not exist")
 		}
 	}
 }
@@ -235,6 +235,7 @@ pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
 }
 
 
+#[cfg(test)]
 mod tests {
 	use super::*;
 	
