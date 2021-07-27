@@ -151,6 +151,8 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 			continue;
 		}
+
+		exit_eprintln!("トークナイズできません");
 	}
 
 	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_EOF, ""))));
@@ -186,19 +188,7 @@ fn isdigit(c: char) -> bool{
 	c >= '0' && c <=  '9'
 }
 
-// // 複数文字の文字をスライスで比較
-// fn strcmp(slice: &[char], s: &str) -> bool {
-// 	let s_vec = s.chars().collect::<Vec<char>>(); 
-// 	if slice.len() != s_vec.len() {
-// 		return false;
-// 	}
 
-// 	for i in 0..slice.len() {
-// 		if slice[i] != s_vec[i] {return false;}
-// 	}
-
-// 	true
-// }
 
 // 数字を読みつつindexを進める
 fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {

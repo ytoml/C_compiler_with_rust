@@ -12,7 +12,13 @@ pub enum Nodekind {
 	ND_SUB,
 	ND_MUL,
 	ND_DIV,
-	ND_NUM
+	ND_NUM,
+	ND_EQ,
+	ND_NE,
+	ND_GT,
+	ND_GE,
+	ND_LT,
+	ND_LE,
 }
 
 pub struct Node {
@@ -61,10 +67,10 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 	gen((**node).borrow().left.as_ref().unwrap(), asm);
 	gen((**node).borrow().right.as_ref().unwrap(), asm);
 
-
 	*asm += "	pop rdi\n";
 	*asm += "	pop rax\n";
 
+	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
 	match (**node).borrow().kind {
 		Nodekind::ND_ADD => {
 			*asm += "	add rax, rdi\n";
@@ -79,6 +85,36 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 			*asm += "	cqo\n";
 			*asm += "	idiv rdi\n";
 		},
+		Nodekind::ND_EQ => {
+			*asm += "	cmp rax, rdi\n";
+			*asm += "	sete al\n";
+			*asm += "	movzb rax, al\n";
+		},
+		Nodekind::ND_NE => {
+			*asm += "	cmp rax, rdi\n";
+			*asm += "	setne al\n";
+			*asm += "	movzb rax, al\n";
+		},
+		Nodekind::ND_LT => {
+			*asm += "	cmp rax, rdi\n";
+			*asm += "	setl al\n";
+			*asm += "	movzb rax, al\n";
+		},
+		Nodekind::ND_LE => {
+			*asm += "	cmp rax, rdi\n";
+			*asm += "	setle al\n";
+			*asm += "	movzb rax, al\n";
+		},
+		Nodekind::ND_GT => {
+			*asm += "	cmp rdi, rax\n";
+			*asm += "	setl al\n";
+			*asm += "	movzb rax, al\n";
+		},
+		Nodekind::ND_GE => {
+			*asm += "	cmp rdi, rax\n";
+			*asm += "	setle al\n";
+			*asm += "	movzb rax, al\n";
+		},
 		_ => {
 			exit_eprintln!();
 		},
@@ -89,8 +125,6 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 }
 
 
-
-
 fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
 	let node_ptr = Rc::new(RefCell::new(
 		Node {
@@ -99,7 +133,6 @@ fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -
 			right: Some(right),
 			val: None
 		}
-
 	));
 
 	node_ptr
@@ -119,9 +152,57 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 }
 
 pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let mut node_ptr = relational(token_ptr);
+
+	// 生成規則: expr = equality
+	// 生成規則: equality = relational ("==" relational | "!=" relational)?
+	loop {
+		if consume(token_ptr, "==") {
+			node_ptr = new_node(Nodekind::ND_EQ, node_ptr, relational(token_ptr));
+
+		} else if consume(token_ptr, "!=") {
+			node_ptr = new_node(Nodekind::ND_NE, node_ptr, relational(token_ptr));
+
+		} else {
+			break;
+		}
+	}
+
+	node_ptr
+}
+
+
+fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let mut node_ptr = add(token_ptr);
+
+	// 生成規則: relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+	loop {
+		if consume(token_ptr, "<") {
+			node_ptr = new_node(Nodekind::ND_LT, node_ptr, add(token_ptr));
+
+		} else if consume(token_ptr, "<=") {
+			node_ptr = new_node(Nodekind::ND_LE, node_ptr, add(token_ptr));
+
+		} else if consume(token_ptr, ">") {
+			node_ptr = new_node(Nodekind::ND_GT, node_ptr, add(token_ptr));
+
+		} else if consume(token_ptr, ">=") {
+			node_ptr = new_node(Nodekind::ND_GE, node_ptr, add(token_ptr));
+
+		} else{
+			break;
+		}
+	}
+
+
+	node_ptr
+
+}
+
+pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = mul(token_ptr);
 
-	// 生成規則: expr = mul ("+" mul | "-" mul)*
+	// 生成規則: add = mul ("+" mul | "-" mul)*
 	loop {
 		if consume(token_ptr, "+") {
 			node_ptr = new_node(Nodekind::ND_ADD, node_ptr, mul(token_ptr));
@@ -129,11 +210,9 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		} else if consume(token_ptr, "-") {
 			node_ptr = new_node(Nodekind::ND_SUB, node_ptr, mul(token_ptr));
 
-
 		} else {
 			break;
 		}
-
 	}
 
 	node_ptr
@@ -142,11 +221,10 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = unary(token_ptr);
 
-	// 生成規則: mul = primary ("*" mul | "/" mul)*
+	// 生成規則: mul = unray ("*" unary | "/" unary)*
 	loop {
 		if consume(token_ptr, "*") {
 			node_ptr = new_node(Nodekind::ND_MUL, node_ptr, unary(token_ptr));
-
 
 		} else if consume(token_ptr, "/") {
 			node_ptr = new_node(Nodekind::ND_DIV, node_ptr, unary(token_ptr));
@@ -156,9 +234,7 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		}
 	}
 
-
 	node_ptr
-
 }
 
 
@@ -169,7 +245,6 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	if consume(token_ptr, "+") {
 		node_ptr = primary(token_ptr);
 
-
 	} else if consume(token_ptr, "-") {
 		node_ptr = new_node(Nodekind::ND_SUB, new_node_num(0), primary(token_ptr));
 
@@ -178,7 +253,6 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	}
 
 	node_ptr
-	
 }
 
 
@@ -241,8 +315,9 @@ mod tests {
 
 	#[test]
 	fn test_parser_brackets() {
+		let equation = "(1+2)/3-1*20".to_string();
 		println!("test_parser_brackets{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("(1+2)/3-1*20".to_string());
+		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
 		gen(&node_ptr, &mut asm);
@@ -253,8 +328,22 @@ mod tests {
 
 	#[test]
 	fn test_parser_unary() {
+		let equation = "(-1+2)*(-1)+(+3)/(+1)".to_string();
 		println!("test_parser_unary{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("(-1+2)*(-1)+(+3)/(+1)".to_string());
+		let mut token_ptr = tokenize(equation);
+		let node_ptr = expr(&mut token_ptr);
+		let mut asm = "".to_string();
+		gen(&node_ptr, &mut asm);
+
+		println!("{}", asm);
+
+	}
+	
+	#[test]
+	fn test_parser_eq() {
+		let equation = "(-1+2)*(-1)+(+3)/(+1) == 30 + 1".to_string();
+		println!("test_parser_unary{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
 		gen(&node_ptr, &mut asm);
