@@ -4,6 +4,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
 use std::fmt;
+use std::iter::FromIterator;
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {
@@ -18,6 +19,7 @@ pub struct Token {
 	pub kind: Tokenkind,
 	pub val: Option<i32>,  
 	pub body: Option<String>,
+	pub len: usize, // 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
 	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 	
 }
@@ -29,18 +31,20 @@ impl Token {
 		let body = body.into();
 		match kind {
 			Tokenkind::TK_HEAD => {
-				Token {kind: kind, val: None, body: None, next: None}
+				Token {kind: kind, val: None, body: None, len: 0, next: None}
 			},
 			Tokenkind::TK_NUM => {
 				// TK_NUMと共に数字以外の値が渡されることはないものとして、unwrapで処理
 				let val = body.parse::<i32>().unwrap();
-				Token {kind: kind, val: Some(val), body: Some(body), next: None}
+				let len = body.chars().count(); // len()を使うとバイト数になってややこしくなるので注意
+				Token {kind: kind, val: Some(val), body: Some(body), len: len, next: None}
 			},
 			Tokenkind::TK_RESERVED => {
-				Token {kind: kind, val: None, body: Some(body), next: None}
+				let len = body.chars().count(); // len()を使うとバイト数になってややこしくなるので注意
+				Token {kind: kind, val: None, body: Some(body), len: len, next: None}
 			},
 			Tokenkind::TK_EOF => {
-				Token {kind: kind, val: None, body: Some("EOF".to_string()), next: None}
+				Token {kind: kind, val: None, body: Some("EOF".to_string()), len: 0, next: None}
 			},
 		}
 	}
@@ -107,6 +111,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	let len: usize = string.len();
 	let mut lookat: usize = 0;
 	let mut c: char;
+	let mut slice: String;
 	let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
 
 
@@ -117,8 +122,20 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 			Err(()) => {break;}
 		}
 
+		// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
+		if lookat + 1 < len {
+			slice = String::from_iter(string[lookat..lookat+2].iter());
+			if slice == "==" || slice == "!=" || slice == ">=" || slice == "<=" {
+				(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, slice))));
+				token_ptr_exceed(&mut token_ptr);
+
+				lookat += 2;
+				continue;
+			}
+		}
+
 		c = string[lookat];
-		if c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')'{
+		if c == '<' || c == '>' || c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')'{
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, c))));
 			token_ptr_exceed(&mut token_ptr);
 
@@ -168,6 +185,20 @@ fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 fn isdigit(c: char) -> bool{
 	c >= '0' && c <=  '9'
 }
+
+// // 複数文字の文字をスライスで比較
+// fn strcmp(slice: &[char], s: &str) -> bool {
+// 	let s_vec = s.chars().collect::<Vec<char>>(); 
+// 	if slice.len() != s_vec.len() {
+// 		return false;
+// 	}
+
+// 	for i in 0..slice.len() {
+// 		if slice[i] != s_vec[i] {return false;}
+// 	}
+
+// 	true
+// }
 
 // 数字を読みつつindexを進める
 fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
@@ -340,4 +371,60 @@ mod tests {
 		}
 	}
 
+	#[test]
+	fn tokenizer_test_3() {
+
+
+		let mut token_ptr = tokenize("2*(1+1)-1 <= 2".to_string());
+		{
+			println!("\ntest2{}", "-".to_string().repeat(40));
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
 }
