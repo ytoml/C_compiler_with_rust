@@ -204,7 +204,7 @@ fn isdigit(c: &char) -> bool{
 	*c >= '0' && *c <= '9'
 }
 
-fn is_ident(token_ptr: &Rc<RefCell<Token>>) -> bool {
+pub fn is_ident(token_ptr: &Rc<RefCell<Token>>) -> bool {
 	(**token_ptr).borrow().kind == Tokenkind::TK_IDENT
 }
 
