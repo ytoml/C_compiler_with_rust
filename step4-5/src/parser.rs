@@ -147,7 +147,6 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		if consume(token_ptr, "*") {
 			node_ptr = new_node(Nodekind::ND_MUL, node_ptr, primary(token_ptr));
 
-
 		} else if consume(token_ptr, "/") {
 			node_ptr = new_node(Nodekind::ND_DIV, node_ptr, primary(token_ptr));
 
