@@ -12,6 +12,8 @@ pub enum Nodekind {
 	ND_SUB,
 	ND_MUL,
 	ND_DIV,
+	ND_ASSIGN,
+	ND_LVAR,
 	ND_NUM,
 	ND_EQ,
 	ND_NE,
@@ -25,7 +27,8 @@ pub struct Node {
 	pub kind: Nodekind,
 	left: Option<Rc<RefCell<Node>>>,
 	right: Option<Rc<RefCell<Node>>>,
-	val: Option<i32>
+	val: Option<i32>,
+	offset: Option<usize> // ベースポインタからのオフセット(ローカル変数時のみ)
 }
 
 static REP_NODE:usize = 40;
@@ -126,36 +129,88 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 
 
 fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
-	let node_ptr = Rc::new(RefCell::new(
+	Rc::new(RefCell::new(
 		Node {
 			kind: kind,
 			left: Some(left), 
 			right: Some(right),
-			val: None
+			val: None,
+			offset: None
 		}
-	));
-
-	node_ptr
+	))
 }
 
+// 数字に対応するノード
 fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
-	let node_ptr = Rc::new(RefCell::new(
+	Rc::new(RefCell::new(
 		Node {
 			kind: Nodekind::ND_NUM,
 			left: None,
 			right: None,
-			val: Some(val)
+			val: Some(val),
+			offset: None
 		}
-	));
+	))
+}
+
+// ローカル変数に対応するノード(現在は1文字のみ)
+fn new_node_lvar(c: char) -> Rc<RefCell<Node>> {
+	let offset = c as usize - 'a' as usize +1;
+	
+	Rc::new(RefCell::new(
+		Node {
+			kind: Nodekind::ND_LVAR,
+			left: None,
+			right: None,
+			val: None,
+			offset: Some(offset)
+		}
+
+	))
+}
+
+
+// 生成規則: program = stmt*
+fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
+	let mut statements :Vec<Rc<RefCell<Node>>>= Vec::new();
+	while !at_eof(token_ptr) {
+		statements.push(stmt(token_ptr));
+	}
+
+	statements
+}
+
+
+//  生成規則: stmt = expr ";"
+fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+
+
+	let node_ptr = expr(token_ptr);
+	expect(token_ptr, ";");
 
 	node_ptr
 }
 
+// 生成規則: expr = assign
 pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr = relational(token_ptr);
+	assign(token_ptr)
+}
 
-	// 生成規則: expr = equality
-	// 生成規則: equality = relational ("==" relational | "!=" relational)?
+// 生成規則: assign = equality ("=" assign)?
+fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+
+	let mut node_ptr = equality(token_ptr);
+	if consume(token_ptr, "=") {
+		node_ptr = assign(token_ptr);
+	}
+	
+	node_ptr
+}
+
+// 生成規則: equality = relational ("==" relational | "!=" relational)?
+pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+
+	let mut node_ptr = relational(token_ptr);
 	loop {
 		if consume(token_ptr, "==") {
 			node_ptr = new_node(Nodekind::ND_EQ, node_ptr, relational(token_ptr));
@@ -171,11 +226,10 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
+// 生成規則: relational = add ("<" add | "<=" add | ">" add | ">=" add)*
 fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = add(token_ptr);
 
-	// 生成規則: relational = add ("<" add | "<=" add | ">" add | ">=" add)*
 	loop {
 		if consume(token_ptr, "<") {
 			node_ptr = new_node(Nodekind::ND_LT, node_ptr, add(token_ptr));
@@ -199,10 +253,10 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 }
 
+// 生成規則: add = mul ("+" mul | "-" mul)*
 pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = mul(token_ptr);
 
-	// 生成規則: add = mul ("+" mul | "-" mul)*
 	loop {
 		if consume(token_ptr, "+") {
 			node_ptr = new_node(Nodekind::ND_ADD, node_ptr, mul(token_ptr));
@@ -218,10 +272,10 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
+// 生成規則: mul = unary ("*" unary | "/" unary)*
 fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = unary(token_ptr);
 
-	// 生成規則: mul = unray ("*" unary | "/" unary)*
 	loop {
 		if consume(token_ptr, "*") {
 			node_ptr = new_node(Nodekind::ND_MUL, node_ptr, unary(token_ptr));
@@ -238,14 +292,15 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 
+// 生成規則: unary = ("+" | "-")? primary
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
-	// 生成規則: unary = ("+" | "-")? primary
 	if consume(token_ptr, "+") {
 		node_ptr = primary(token_ptr);
 
 	} else if consume(token_ptr, "-") {
+		// 単項演算のマイナスは0から引く形にする。
 		node_ptr = new_node(Nodekind::ND_SUB, new_node_num(0), primary(token_ptr));
 
 	} else {
@@ -257,16 +312,19 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 
 
+// 生成規則: primary = num | ident | "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
-	// 生成規則: primary = "(" expr ")" | num
 	if consume(token_ptr, "(") {
 		node_ptr = expr(token_ptr);
 
 		expect(token_ptr, ")");
 
-	} else {
+	} else if is_ident(token_ptr) {
+		node_ptr = new_node_lvar(token_ptr);
+
+	} 	else {
 		node_ptr = new_node_num(expect_number(token_ptr));
 
 	}
