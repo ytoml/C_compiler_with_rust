@@ -140,7 +140,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 		// 単項演算子ならば、単純にそのトークンを生成する
 		c = string[lookat];
-		if c == '<' || c == '>' || c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')' || c == '=' {
+		if c == '<' || c == '>' || c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')' || c == '=' || c == ';' {
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, c))));
 			token_ptr_exceed(&mut token_ptr);
 

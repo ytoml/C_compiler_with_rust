@@ -61,10 +61,35 @@ impl Display for Node {
 
 
 pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
-	if (**node).borrow().kind == Nodekind::ND_NUM {
-		// ND_NUMの時点でunwrapできる
-		*asm += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
-		return;
+	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
+	match (**node).borrow().kind {
+		Nodekind::ND_NUM => {
+			// ND_NUMの時点でunwrapできる
+			*asm += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
+			return;
+		},
+		Nodekind::ND_LVAR => {
+			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
+			gen_lval(node, asm);
+			*asm += "	pop rax\n"; // gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
+			*asm += "	mov rax, [rax]\n";
+			*asm += "	push rax\n";
+			return;
+		},
+		Nodekind::ND_ASSIGN => {
+			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_lval内でエラー)
+			gen_lval((**node).borrow().left.as_ref().unwrap(), asm);
+			gen((**node).borrow().right.as_ref().unwrap(), asm);
+
+			// 上記gen2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
+			*asm += "	pop rdi\n"; 
+			*asm += "	pop rax\n"; 
+			*asm += "	mov [rax], rdi\n";
+			*asm += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
+			return;
+		},
+		_ => {}// 他のパターンなら、ここでは何もしない
+		
 	} 
 
 	gen((**node).borrow().left.as_ref().unwrap(), asm);
@@ -119,12 +144,25 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 			*asm += "	movzb rax, al\n";
 		},
 		_ => {
-			exit_eprintln!();
+			// 上記にないNodekindはここに到達する前にreturnしているはず
+			exit_eprintln!("不正なNodekindです");
 		},
 	}
 
 	*asm += "	push rax\n";
 
+}
+
+// 正しく左辺値を識別して不正な代入("(a+1)=2;"のような)を防ぐためのジェネレータ関数
+fn gen_lval(node: &Rc<RefCell<Node>>, asm: &mut String) {
+	if (**node).borrow().kind != Nodekind::ND_LVAR {
+		exit_eprintln!("代入の左辺値が変数ではありません");
+	}
+
+	// 変数に対応するオフセットをスタックにプッシュする
+	*asm += "	mov rax, rbp\n";
+	*asm += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
+	*asm += "	push rax\n";
 }
 
 
@@ -153,9 +191,9 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 	))
 }
 
-// ローカル変数に対応するノード(現在は1文字のみ)
+// 左辺値(今のうちはローカル変数)に対応するノード(現在は1文字のみ)
 fn new_node_lvar(c: char) -> Rc<RefCell<Node>> {
-	let offset = c as usize - 'a' as usize +1;
+	let offset = (c as usize - 'a' as usize)*8 +1;
 	
 	Rc::new(RefCell::new(
 		Node {
@@ -322,11 +360,12 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		expect(token_ptr, ")");
 
 	} else if is_ident(token_ptr) {
-		node_ptr = new_node_lvar(token_ptr);
+		let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
+		let cs:Vec<char> = body.chars().collect();
+		node_ptr = new_node_lvar(cs[0]);
 
-	} 	else {
+	} else {
 		node_ptr = new_node_num(expect_number(token_ptr));
-
 	}
 
 	node_ptr
@@ -405,6 +444,22 @@ mod tests {
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
 		gen(&node_ptr, &mut asm);
+
+		println!("{}", asm);
+
+	}
+	#[test]
+	fn test_parser_assign() {
+		let equation = "a = 1; a + 1;".to_string();
+		println!("test_parser_unary{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut asm = "".to_string();
+		for node_ptr in node_heads {
+			gen(&node_ptr, &mut asm);
+
+			asm += "	pop rax\n";
+		}
 
 		println!("{}", asm);
 
