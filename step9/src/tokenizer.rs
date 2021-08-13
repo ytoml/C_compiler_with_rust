@@ -138,7 +138,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 			}
 		}
 
-		// 単項演算子ならば、単純にそのトークンを生成する
+		// 単項演算子、括弧、代入演算子、文末のセミコロンを予約
 		c = string[lookat];
 		if c == '<' || c == '>' || c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')' || c == '=' || c == ';' {
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_RESERVED, c))));
@@ -387,7 +387,7 @@ mod tests {
 
 		let mut token_ptr = tokenize("2*(1+1)-1 <= 2".to_string());
 		{
-			println!("\ntest2{}", "-".to_string().repeat(40));
+			println!("\ntest3{}", "-".to_string().repeat(40));
 
 			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
 			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
@@ -430,6 +430,50 @@ mod tests {
 
 			token_ptr_exceed(&mut token_ptr);
 			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+	#[test]
+	fn tokenizer_test_4() {
+
+		let mut token_ptr = tokenize("a = 1; a + 1;".to_string());
+		{
+			println!("\ntest4{}", "-".to_string().repeat(40));
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
 			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
 
 			token_ptr_exceed(&mut token_ptr);
