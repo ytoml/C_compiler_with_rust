@@ -25,32 +25,38 @@ fn main() {
         let f = File::open(path).unwrap();
         let reader = BufReader::new(f);
 
-		// 1行ごとに処理
-        for line in reader.lines() {
-            // このループ内でlineを式として解釈していく(以降のバージョンではこの部分の変数名はlineに統一する)
-            let line = line.unwrap();
-            let mut asm = ".intel_syntax noprefix\n".to_string();
-			asm += ".globl main\n";
-			asm += "main:\n";
+		// 改行含め、コード全体を1つの文字列としてトークナイザに入れたい
+		let code = "".to_string();
+		for line in reader.lines() {
+			code += format!(" {}", line.unwrap()).as_str();
+		}
 
-			// トークナイズしてトークンリストを生成したのち、構文木を生成
-			let mut token_ptr: Rc<RefCell<Token>> = tokenize(line);
-			let node_ptr = expr(&mut token_ptr);
+		// asmに
+		let mut asm = ".intel_syntax noprefix\n".to_string();
+		asm += ".globl main\n";
+		asm += "main:\n";
 
+		// トークナイズしてトークンリストを生成したのち、構文木を生成
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
+		
+		let node_heads = program(&mut token_ptr);
+		let mut asm = "".to_string();
+		// 構文木が複数(stmtの数)生成されているはずなのでそれぞれについて回す
+		for node_ptr in node_heads {
 			// 構文木からコードを生成(asmに追加)
 			gen(&node_ptr, &mut asm);
-            
-			// 結果のpopとリターン命令を追加
+
 			asm += "	pop rax\n";
-            asm += "	ret\n";
+		}
+
+		// 結果のpopとリターン命令を追加
+		asm += "	pop rax\n";
+		asm += "	ret\n";
 
 
-            // 最後に一気に書き込み
-            println!("{}", asm);
+		// 最後に一気に書き込み
+		println!("{}", asm);
 
-            // 序盤はファイルの最初1行だけを解釈する
-			break;
-        }
     } else {
 		// fileが指定されていない場合、exit
 		exit_eprintln!("{}{}を指定してください。", "ソース", "ファイル");

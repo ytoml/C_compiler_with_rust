@@ -193,7 +193,7 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 
 // 左辺値(今のうちはローカル変数)に対応するノード(現在は1文字のみ)
 fn new_node_lvar(c: char) -> Rc<RefCell<Node>> {
-	let offset = (c as usize - 'a' as usize)*8 +1;
+	let offset = (c as usize - 'a' as usize +1)*8;
 	
 	Rc::new(RefCell::new(
 		Node {
@@ -360,15 +360,11 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		expect(token_ptr, ")");
 
 	} else if is_ident(token_ptr) {
-
 		node_ptr = new_node_lvar(expect_ident(token_ptr));
-
-		// let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
-		// let cs:Vec<char> = body.chars().collect();
-
 
 	} else {
 		node_ptr = new_node_num(expect_number(token_ptr));
+
 	}
 
 	node_ptr
