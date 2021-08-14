@@ -188,7 +188,7 @@ fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 	}
 
 	// 空白でなくなるまで読み進める
-	while string[*index] == ' ' {
+	while string[*index] == ' ' || string[*index] == '\n' {
 		*index += 1;
 		if *index >= limit {
 			return Err(());
@@ -245,7 +245,22 @@ pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 	val
 }
 
-// 期待する次のトークンを(文字列で)指定して読む関数(失敗するとexitする)
+// 次のトークンが識別子(変数など)であることを期待して次のトークンを読む関数
+pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> char {
+	if (**token_ptr).borrow().kind != Tokenkind::TK_IDENT {
+		exit_eprintln!("識別子を期待した位置で\"{}\"が発見されました。", (**token_ptr).borrow().body.as_ref().unwrap());
+	}
+	let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
+	let cs:Vec<char> = body.chars().collect();
+
+	token_ptr_exceed(token_ptr);
+	
+	// 現段階では識別子として1文字しかサポートしない
+	cs[0]
+}
+
+
+//  予約済みトークンを期待し、(文字列で)指定して読む関数(失敗するとexitする)
 pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 
 	if (**token_ptr).borrow().kind != Tokenkind::TK_RESERVED{
@@ -257,6 +272,7 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 
 	token_ptr_exceed(token_ptr);
 }
+
 
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
