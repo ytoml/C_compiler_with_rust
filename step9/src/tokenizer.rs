@@ -299,7 +299,7 @@ mod tests {
 
 
 	#[test]
-	fn tokenizer_test1() {
+	fn tokenizer_test_1() {
 		let mut tmp_ptr;
 
 		let mut token_ptr = tokenize("1+1-1".to_string());
@@ -444,6 +444,50 @@ mod tests {
 		let mut token_ptr = tokenize("a = 1; a + 1;".to_string());
 		{
 			println!("\ntest4{}", "-".to_string().repeat(40));
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+	#[test]
+	fn tokenizer_test_5() {
+
+		let mut token_ptr = tokenize("z = 1; z + 1;".to_string());
+		{
+			println!("\ntest5{}", "-".to_string().repeat(40));
 
 			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
 			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
