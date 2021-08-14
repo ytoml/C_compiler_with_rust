@@ -11,9 +11,8 @@ mod parser;
 mod utils;
 mod options;
 use options::Opts;
-use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
-// use tokenizer::{Token, tokenize, expect, expect_number, consume, at_eof};
-use parser::{gen, expr};
+use tokenizer::{Token, tokenize};
+use parser::{gen, program};
 
 
 fn main() {
@@ -26,7 +25,7 @@ fn main() {
         let reader = BufReader::new(f);
 
 		// 改行含め、コード全体を1つの文字列としてトークナイザに入れたい
-		let code = "".to_string();
+		let mut code = "".to_string();
 		for line in reader.lines() {
 			code += format!(" {}", line.unwrap()).as_str();
 		}

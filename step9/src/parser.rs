@@ -209,7 +209,7 @@ fn new_node_lvar(c: char) -> Rc<RefCell<Node>> {
 
 
 // 生成規則: program = stmt*
-fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
+pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
 	while !at_eof(token_ptr) {
 		statements.push(stmt(token_ptr));
