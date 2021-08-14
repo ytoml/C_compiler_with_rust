@@ -210,7 +210,7 @@ fn new_node_lvar(c: char) -> Rc<RefCell<Node>> {
 
 // 生成規則: program = stmt*
 fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-	let mut statements :Vec<Rc<RefCell<Node>>>= Vec::new();
+	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
 	while !at_eof(token_ptr) {
 		statements.push(stmt(token_ptr));
 	}
@@ -360,9 +360,12 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		expect(token_ptr, ")");
 
 	} else if is_ident(token_ptr) {
-		let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
-		let cs:Vec<char> = body.chars().collect();
-		node_ptr = new_node_lvar(cs[0]);
+
+		node_ptr = new_node_lvar(expect_ident(token_ptr));
+
+		// let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
+		// let cs:Vec<char> = body.chars().collect();
+
 
 	} else {
 		node_ptr = new_node_num(expect_number(token_ptr));
@@ -384,7 +387,6 @@ mod tests {
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
 	}
-
 
 	#[test]
 	fn test_parser_addsub() {
@@ -448,6 +450,7 @@ mod tests {
 		println!("{}", asm);
 
 	}
+
 	#[test]
 	fn test_parser_assign() {
 		let equation = "a = 1; a + 1;".to_string();
