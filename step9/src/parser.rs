@@ -159,7 +159,7 @@ fn gen_lval(node: &Rc<RefCell<Node>>, asm: &mut String) {
 		exit_eprintln!("代入の左辺値が変数ではありません");
 	}
 
-	// 変数に対応するオフセットをスタックにプッシュする
+	// 変数に対応するアドレスをスタックにプッシュする
 	*asm += "	mov rax, rbp\n";
 	*asm += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
 	*asm += "	push rax\n";
@@ -239,7 +239,7 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = equality(token_ptr);
 	if consume(token_ptr, "=") {
-		node_ptr = assign(token_ptr);
+		node_ptr = new_node(Nodekind::ND_ASSIGN, node_ptr,  assign(token_ptr));
 	}
 	
 	node_ptr
@@ -249,16 +249,11 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = relational(token_ptr);
-	loop {
-		if consume(token_ptr, "==") {
-			node_ptr = new_node(Nodekind::ND_EQ, node_ptr, relational(token_ptr));
+	if consume(token_ptr, "==") {
+		node_ptr = new_node(Nodekind::ND_EQ, node_ptr, relational(token_ptr));
 
-		} else if consume(token_ptr, "!=") {
-			node_ptr = new_node(Nodekind::ND_NE, node_ptr, relational(token_ptr));
-
-		} else {
-			break;
-		}
+	} else if consume(token_ptr, "!=") {
+		node_ptr = new_node(Nodekind::ND_NE, node_ptr, relational(token_ptr));
 	}
 
 	node_ptr
@@ -450,7 +445,7 @@ mod tests {
 	#[test]
 	fn test_parser_assign() {
 		let equation = "a = 1; a + 1;".to_string();
-		println!("test_parser_unary{}", "-".to_string().repeat(REP));
+		println!("test_parser_assign{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
 		let mut asm = "".to_string();
