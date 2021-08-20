@@ -1,5 +1,4 @@
 use crate::{exit_eprintln};
-use std::borrow::{Borrow, BorrowMut};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
@@ -58,29 +57,28 @@ impl Token {
 
 impl Display for Token {
 	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
-
-		writeln!(f, "{}", "-".to_string().repeat(40));
-
-		writeln!(f, "Tokenkind : {:?}", self.kind);
-
+		let mut s = format!("{}\n", "-".to_string().repeat(40));
+		s = format!("{}Tokenkind : {:?}\n", s, self.kind);
 
 		if let Some(e) = self.body.as_ref() {
-			writeln!(f, "body: {}", e);
+			s = format!("{}body: {}\n", s, e);
 		} else {
-			writeln!(f, "body: not exist");
+			s = format!("{}body: not exist\n", s);
 		}
 
 		if let Some(e) = self.val.as_ref() {
-			writeln!(f, "val: {}", e);
+			s = format!("{}val: {}\n", s, e);
 		} else {
-			writeln!(f, "val: not exist");
+			s = format!("{}val: not exist\n", s);
 		}
 
 		if let Some(e) = self.next.as_ref() {
-			writeln!(f, "next: exist(kind:{:?})", (**self.next.as_ref().unwrap()).borrow().kind)
+			s = format!("{}next: exist(kind:{:?})\n", s, e.borrow().kind);
 		} else {
-			writeln!(f, "next: not exist")
+			s = format!("{}next: not exist\n", s);
 		}
+
+		writeln!(f, "{}", s)
 	}
 }
 
@@ -302,7 +300,7 @@ mod tests {
 
 		let mut token_ptr = tokenize("1+1-1".to_string());
 		{
-			println!("\ndisplay_test{}", "-".to_string().repeat(40));
+			println!("\ndisplay_test\n{}", "-".to_string().repeat(40));
 
 			while !at_eof(&token_ptr) {
 				println!("{}", (*token_ptr).borrow());

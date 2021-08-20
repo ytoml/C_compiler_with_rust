@@ -1,7 +1,5 @@
 // 再帰下降構文のパーサ
-use crate::{exit_eprintln};
-use crate::tokenizer::*;
-use std::borrow::Borrow;
+use crate::tokenizer::{Token, consume, expect, expect_number, expect_ident, is_ident, at_eof};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Formatter, Display, Result};
@@ -25,10 +23,10 @@ pub enum Nodekind {
 
 pub struct Node {
 	pub kind: Nodekind,
-	left: Option<Rc<RefCell<Node>>>,
-	right: Option<Rc<RefCell<Node>>>,
-	val: Option<i32>,
-	offset: Option<usize> // ベースポインタからのオフセット(ローカル変数時のみ)
+	pub left: Option<Rc<RefCell<Node>>>,
+	pub right: Option<Rc<RefCell<Node>>>,
+	pub val: Option<i32>,
+	pub offset: Option<usize> // ベースポインタからのオフセット(ローカル変数時のみ)
 }
 
 static REP_NODE:usize = 40;
@@ -36,136 +34,32 @@ static REP_NODE:usize = 40;
 impl Display for Node {
 	fn fmt(&self, f:&mut Formatter) -> Result {
 
-		writeln!(f, "{}", "-".to_string().repeat(REP_NODE));
-		writeln!(f, "Nodekind : {:?}", self.kind);
-		if let Some(e) = self.left.as_ref() {
-			writeln!(f, "left: exist(kind:{:?})", (**self.left.as_ref().unwrap()).borrow().kind);
-		} else {
-			writeln!(f, "left: not exist");
-		}
+		let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
+		s = format!("{}Nodekind : {:?}\n", s, self.kind);
 
 		if let Some(e) = self.left.as_ref() {
-			writeln!(f, "right: exist(kind:{:?})", (**self.right.as_ref().unwrap()).borrow().kind);
+			s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);
 		} else {
-			writeln!(f, "right: not exist");
+			s = format!("{}left: not exist\n", s);
+		}
+
+		if let Some(e) = self.right.as_ref() {
+			s = format!("{}right: exist(kind:{:?})\n", s, e.borrow().kind);
+		} else {
+			s = format!("{}right: not exist\n", s);
 		}
 
 		if let Some(e) = self.val.as_ref() {
-			writeln!(f, "val: {}", e)
+			s = format!("{}val: {}\n", s, e);
 		} else {
-			writeln!(f, "val: not exist")
+			s = format!("{}val: not exist\n", s);
 		}
+
+		write!(f, "{}", s)
 	}
 }
 
-
-
-pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
-	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
-	match (**node).borrow().kind {
-		Nodekind::ND_NUM => {
-			// ND_NUMの時点でunwrapできる
-			*asm += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
-			return;
-		},
-		Nodekind::ND_LVAR => {
-			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
-			gen_lval(node, asm);
-			*asm += "	pop rax\n"; // gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
-			*asm += "	mov rax, [rax]\n";
-			*asm += "	push rax\n";
-			return;
-		},
-		Nodekind::ND_ASSIGN => {
-			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_lval内でエラー)
-			gen_lval((**node).borrow().left.as_ref().unwrap(), asm);
-			gen((**node).borrow().right.as_ref().unwrap(), asm);
-
-			// 上記gen2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
-			*asm += "	pop rdi\n"; 
-			*asm += "	pop rax\n"; 
-			*asm += "	mov [rax], rdi\n";
-			*asm += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
-			return;
-		},
-		_ => {}// 他のパターンなら、ここでは何もしない
-		
-	} 
-
-	gen((**node).borrow().left.as_ref().unwrap(), asm);
-	gen((**node).borrow().right.as_ref().unwrap(), asm);
-
-	*asm += "	pop rdi\n";
-	*asm += "	pop rax\n";
-
-	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
-	match (**node).borrow().kind {
-		Nodekind::ND_ADD => {
-			*asm += "	add rax, rdi\n";
-		},
-		Nodekind::ND_SUB => {
-			*asm += "	sub rax, rdi\n";
-		},
-		Nodekind::ND_MUL => {
-			*asm += "	imul rax, rdi\n";
-		},
-		Nodekind::ND_DIV  => {
-			*asm += "	cqo\n";
-			*asm += "	idiv rdi\n";
-		},
-		Nodekind::ND_EQ => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	sete al\n";
-			*asm += "	movzb rax, al\n";
-		},
-		Nodekind::ND_NE => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	setne al\n";
-			*asm += "	movzb rax, al\n";
-		},
-		Nodekind::ND_LT => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	setl al\n";
-			*asm += "	movzb rax, al\n";
-		},
-		Nodekind::ND_LE => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	setle al\n";
-			*asm += "	movzb rax, al\n";
-		},
-		Nodekind::ND_GT => {
-			*asm += "	cmp rdi, rax\n";
-			*asm += "	setl al\n";
-			*asm += "	movzb rax, al\n";
-		},
-		Nodekind::ND_GE => {
-			*asm += "	cmp rdi, rax\n";
-			*asm += "	setle al\n";
-			*asm += "	movzb rax, al\n";
-		},
-		_ => {
-			// 上記にないNodekindはここに到達する前にreturnしているはず
-			exit_eprintln!("不正なNodekindです");
-		},
-	}
-
-	*asm += "	push rax\n";
-
-}
-
-// 正しく左辺値を識別して不正な代入("(a+1)=2;"のような)を防ぐためのジェネレータ関数
-fn gen_lval(node: &Rc<RefCell<Node>>, asm: &mut String) {
-	if (**node).borrow().kind != Nodekind::ND_LVAR {
-		exit_eprintln!("代入の左辺値が変数ではありません");
-	}
-
-	// 変数に対応するアドレスをスタックにプッシュする
-	*asm += "	mov rax, rbp\n";
-	*asm += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
-	*asm += "	push rax\n";
-}
-
-
+// ノードの作成
 fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
 		Node {
@@ -221,7 +115,6 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 //  生成規則: stmt = expr ";"
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-
 
 	let node_ptr = expr(token_ptr);
 	expect(token_ptr, ";");
@@ -365,97 +258,13 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
-#[cfg(test)]
 mod tests {
-	use super::*;
-
-	static REP:usize = 80;
+	use super::new_node_num;
 
 	#[test]
 	fn test_display() {
 		println!("test_display{}", "-".to_string().repeat(40));
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
-	}
-
-	#[test]
-	fn test_parser_addsub() {
-		println!("test_parser{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("1+2+3-1".to_string());
-		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
-
-		println!("{}", asm);
-
-	}
-
-	#[test]
-	fn test_parser_muldiv() {
-		println!("test_parser{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("1+2*3-4/2".to_string());
-		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
-
-		println!("{}", asm);
-
-	}
-
-	#[test]
-	fn test_parser_brackets() {
-		let equation = "(1+2)/3-1*20".to_string();
-		println!("test_parser_brackets{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
-		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
-
-		println!("{}", asm);
-
-	}
-
-	#[test]
-	fn test_parser_unary() {
-		let equation = "(-1+2)*(-1)+(+3)/(+1)".to_string();
-		println!("test_parser_unary{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
-		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
-
-		println!("{}", asm);
-
-	}
-	
-	#[test]
-	fn test_parser_eq() {
-		let equation = "(-1+2)*(-1)+(+3)/(+1) == 30 + 1".to_string();
-		println!("test_parser_unary{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
-		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
-
-		println!("{}", asm);
-
-	}
-
-	#[test]
-	fn test_parser_assign() {
-		let equation = "a = 1; a + 1;".to_string();
-		println!("test_parser_assign{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut asm = "".to_string();
-		for node_ptr in node_heads {
-			gen(&node_ptr, &mut asm);
-
-			asm += "	pop rax\n";
-		}
-
-		println!("{}", asm);
-
 	}
 }

@@ -9,9 +9,11 @@ mod tokenizer;
 mod parser;
 mod utils;
 mod options;
+mod generator;
 use options::Opts;
 use tokenizer::{Token, tokenize};
-use parser::{gen, program};
+use parser::{program};
+use generator::gen;
 
 
 fn main() {
