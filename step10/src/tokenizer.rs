@@ -1,4 +1,6 @@
 use crate::{exit_eprintln};
+use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
@@ -21,14 +23,12 @@ pub struct Token {
 	pub body: Option<String>,
 	pub len: usize, // 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
 	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
-	
 }
-
 
 // 構造体にStringをうまく持たせるためのnewメソッド
 impl Token {
 	fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
-		let body = body.into();
+		let body: String = body.into();
 		match kind {
 			Tokenkind::TK_HEAD => {
 				Token {kind: kind, val: None, body: None, len: 0, next: None}
@@ -73,7 +73,7 @@ impl Display for Token {
 		}
 
 		if let Some(e) = self.next.as_ref() {
-			s = format!("{}next: exist(kind:{:?})\n", s, e.borrow().kind);
+			s = format!("{}next: exist(kind:{:?})\n", s, (**e).borrow().kind);
 		} else {
 			s = format!("{}next: not exist\n", s);
 		}
@@ -81,6 +81,47 @@ impl Display for Token {
 		writeln!(f, "{}", s)
 	}
 }
+
+
+// LVar構造体を作成する意味があまりなさそうなのでHashMapで済ませることにする
+
+// struct LVar {
+// 	pub name: String,
+// 	pub len: usize,
+// 	pub offset: usize,
+// 	pub next: Option<Rc<RefCell<LVar>>>,
+// }
+
+
+// // LVarのnewメソッドなど
+// impl LVar {
+// 	// LVarのオフセットはTokenizer側で計算して渡すものとする
+// 	fn new(name: impl Into<String>, offset: usize) -> LVar {
+// 		let name: String = name.into();
+// 		let len = name.chars().count();
+
+// 		LVar {name: name, len: len, offset: offset, next: None}
+// 	}
+// }
+
+
+// impl Display for LVar {
+// 	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
+
+// 		let mut s = format!("{}\n", "-".to_string().repeat(40));
+// 		s = format!("{}name : {:?}\n", s, self.name);
+// 		s = format!("{}len : {:?}\n", s, self.len);
+// 		s = format!("{}offset : {:?}\n", s, self.offset);
+
+// 		if let Some(e) = self.next.as_ref() {
+// 			s = format!("{}next: exist(name:{:?})\n", s, (**e).borrow().name);
+// 		} else {
+// 			s = format!("{}next: not exist\n", s);
+// 		}
+
+// 		writeln!(f, "{}", s)
+// 	}
+// }
 
 
 // トークンのポインタを読み進める
@@ -93,21 +134,38 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 			tmp_ptr = ptr.clone();
 		},
 		None => {
-			eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", (**token_ptr).borrow().kind);
-			panic!();
+			exit_eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", (**token_ptr).borrow().kind);
 		}
 	}
-
 	*token_ptr = tmp_ptr;
 }
 
+// ローカル変数リストのポインタを読み進める
+// fn lvar_ptr_exceed(lvar_ptr: &mut Rc<RefCell<LVar>>) {
+// 	let tmp_ptr;
+
+// 	// nextがNoneならパニック
+// 	match (**lvar_ptr).borrow().next.as_ref() {
+// 		Some(ptr) => {
+// 			tmp_ptr = ptr.clone();
+// 		},
+// 		None => {
+// 			exit_eprintln!("次のポインタを読めません。(現在のポインタのname:{:?})", (**lvar_ptr).borrow().name);
+// 		}
+// 	}
+// 	*lvar_ptr = tmp_ptr;
+// }
+
+
 // 入力文字列のトークナイズ
-pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
+pub fn tokenize(string: String) -> (Rc<RefCell<Token>>, HashMap<String, usize>) {
 	// Rcを使って読み進める
 	let mut token_ptr: Rc<RefCell<Token>> = Rc::new(RefCell::new(Token::new(Tokenkind::TK_HEAD,"")));
-
-	// Rcなのでcloneしても中身は同じものを指す
-	let mut head_ptr = token_ptr.clone();
+	let mut token_head_ptr = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
+	
+	//　複数文字のローカル変数を処理し、オフセットを適切に生成: map(name, offset)
+	let mut lvar_map: HashMap<String, usize> = HashMap::new();
+	let mut max_offset: usize = 0;
 
 	// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
 	let len: usize = string.len();
@@ -115,6 +173,8 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	let mut c: char;
 	let mut slice: String;
 	let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
+
+	
 
 
 	while lookat < len {
@@ -156,15 +216,28 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 		}
 
 
-		// まずは、1文字の変数のみをサポート
-		if c >= 'a' && c <= 'z' {
-			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_IDENT, c))));
+		// 英字とアンダーバーを先頭とする文字を識別子としてサポートする
+		if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
+			let name = read_lvar(&string, &mut lookat);
+
+			match lvar_map.get(&name) {
+				// 見つかった場合は特に何もしなくて良い
+				Some(offset) => {},
+
+				// 同じ名前の引数が見つからない場合はmax_offsetを動かして割り当てる
+				None => {
+					max_offset += 8;
+					lvar_map.insert(name.clone(), max_offset);
+				}
+			}
+
+			// 上記で見つかっても見つからなくてもトークン列にはTK_IDENTとして追加する必要がある
+			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_IDENT, name))));
 			token_ptr_exceed(&mut token_ptr);
 
 			lookat += 1;
 			continue;
 		}
-
 
 		exit_eprintln!("トークナイズできません");
 	}
@@ -172,8 +245,10 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_EOF, ""))));
 
 
-	token_ptr_exceed(&mut head_ptr);
-	head_ptr
+	token_ptr_exceed(&mut token_head_ptr);
+
+	// パーサでトークン列とローカル変数リスト両方使用するので両方返す
+	(token_head_ptr, lvar_map)
 }
 
 // 空白を飛ばして読み進める
@@ -192,7 +267,6 @@ fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 			return Err(());
 		}
 	}
-
 
 	Ok(())
 }
@@ -228,6 +302,43 @@ fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 
 	val
 }
+
+fn canbe_ident_part (c: &char) -> bool {
+	return (*c >= 'a' && *c <= 'z') | (*c >= 'A' && *c <= 'Z') | (*c >= '0' && *c <= '9') | (*c == '_')
+}
+
+// LVarに対応する文字列を抽出しつつ、indexを進める
+fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
+	let mut name = "".to_string();
+
+	// 1文字ずつみて連結する
+	while canbe_ident_part(&string[*index]) {
+		name = format!("{}{}", name, string[*index]);
+		*index += 1;
+	}
+
+	name
+}
+
+
+// ローカル変数リストを先頭から見てnameに一致するものがあるかどうかを確認する
+// fn find_lvar(lvar_head_ptr: &Rc<RefCell<LVar>>, name: &String) ->usize {
+// 	let mut look_ptr = lvar_head_ptr.clone();
+// 	let mut found: usize = 0;
+
+
+// 	while let Some(ptr) = (*look_ptr).borrow().next.as_ref() {
+// 		lvar_ptr_exceed(&mut look_ptr);
+// 		if (*look_ptr).borrow().name == *name {
+// 			// 見つかったならばその位置を返す(0はベースポインタを指してしまうので、ここで０が代入されないことを保証すべき)
+// 			found = (*look_ptr).borrow().offset;
+
+// 			break;
+// 		}
+// 	}
+
+// 	return found
+// }
 
 
 
@@ -295,10 +406,11 @@ mod tests {
 	use super::*;
 	
 	#[test]
-	fn display_test() {
+	fn display_test_token() {
 		let mut tmp_ptr;
 
-		let mut token_ptr = tokenize("1+1-1".to_string());
+		let ret = tokenize("1+1-1".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
 		{
 			println!("\ndisplay_test\n{}", "-".to_string().repeat(40));
 
@@ -308,15 +420,33 @@ mod tests {
 			}
 			println!("{}", (*token_ptr).borrow());
 		}
-		
 	}
 
 
 	#[test]
-	fn tokenizer_test_1() {
+	fn display_test_lvar() {
 		let mut tmp_ptr;
 
-		let mut token_ptr = tokenize("1+1-1".to_string());
+		let ret = tokenize("1+1-1".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+
+		{
+			println!("\ndisplay_test\n{}", "-".to_string().repeat(40));
+
+			while !at_eof(&token_ptr) {
+				println!("{}", (*token_ptr).borrow());
+				tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
+			}
+			println!("{}", (*token_ptr).borrow());
+		}
+	}
+
+	#[test]
+	fn tokenizer_test_1() {
+		let mut tmp_ptr;
+		let ret = tokenize("1+1-1".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+
 		{
 			println!("\ntest1{}", "-".to_string().repeat(40));
 
@@ -350,7 +480,9 @@ mod tests {
 
 		let mut tmp_ptr;
 
-		let mut token_ptr = tokenize("2*(1+1)-1".to_string());
+		let ret = tokenize("2*(1+1)-1".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+
 		{
 			println!("\ntest2{}", "-".to_string().repeat(40));
 
@@ -399,7 +531,8 @@ mod tests {
 	fn tokenizer_test_3() {
 
 
-		let mut token_ptr = tokenize("2*(1+1)-1 <= 2".to_string());
+		let ret = tokenize("2*(1+1)-1 <= 2".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
 		{
 			println!("\ntest3{}", "-".to_string().repeat(40));
 
@@ -455,7 +588,8 @@ mod tests {
 	#[test]
 	fn tokenizer_test_4() {
 
-		let mut token_ptr = tokenize("a = 1; a + 1;".to_string());
+		let ret = tokenize("a = 1; a + 1;".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
 		{
 			println!("\ntest4{}", "-".to_string().repeat(40));
 
@@ -499,7 +633,8 @@ mod tests {
 	#[test]
 	fn tokenizer_test_5() {
 
-		let mut token_ptr = tokenize("z = 1; z + 1;".to_string());
+		let ret = tokenize("z = 1; z + 1;".to_string());
+		let token_ptr: Rc<RefCell<Token>> = ret.0;
 		{
 			println!("\ntest5{}", "-".to_string().repeat(40));
 
