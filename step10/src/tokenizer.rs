@@ -1,6 +1,4 @@
 use crate::{exit_eprintln};
-use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
@@ -83,46 +81,6 @@ impl Display for Token {
 }
 
 
-// LVar構造体を作成する意味があまりなさそうなのでHashMapで済ませることにする
-
-// struct LVar {
-// 	pub name: String,
-// 	pub len: usize,
-// 	pub offset: usize,
-// 	pub next: Option<Rc<RefCell<LVar>>>,
-// }
-
-
-// // LVarのnewメソッドなど
-// impl LVar {
-// 	// LVarのオフセットはTokenizer側で計算して渡すものとする
-// 	fn new(name: impl Into<String>, offset: usize) -> LVar {
-// 		let name: String = name.into();
-// 		let len = name.chars().count();
-
-// 		LVar {name: name, len: len, offset: offset, next: None}
-// 	}
-// }
-
-
-// impl Display for LVar {
-// 	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
-
-// 		let mut s = format!("{}\n", "-".to_string().repeat(40));
-// 		s = format!("{}name : {:?}\n", s, self.name);
-// 		s = format!("{}len : {:?}\n", s, self.len);
-// 		s = format!("{}offset : {:?}\n", s, self.offset);
-
-// 		if let Some(e) = self.next.as_ref() {
-// 			s = format!("{}next: exist(name:{:?})\n", s, (**e).borrow().name);
-// 		} else {
-// 			s = format!("{}next: not exist\n", s);
-// 		}
-
-// 		writeln!(f, "{}", s)
-// 	}
-// }
-
 
 // トークンのポインタを読み進める
 pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
@@ -140,32 +98,13 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 	*token_ptr = tmp_ptr;
 }
 
-// ローカル変数リストのポインタを読み進める
-// fn lvar_ptr_exceed(lvar_ptr: &mut Rc<RefCell<LVar>>) {
-// 	let tmp_ptr;
-
-// 	// nextがNoneならパニック
-// 	match (**lvar_ptr).borrow().next.as_ref() {
-// 		Some(ptr) => {
-// 			tmp_ptr = ptr.clone();
-// 		},
-// 		None => {
-// 			exit_eprintln!("次のポインタを読めません。(現在のポインタのname:{:?})", (**lvar_ptr).borrow().name);
-// 		}
-// 	}
-// 	*lvar_ptr = tmp_ptr;
-// }
-
 
 // 入力文字列のトークナイズ
-pub fn tokenize(string: String) -> (Rc<RefCell<Token>>, HashMap<String, usize>) {
+pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	// Rcを使って読み進める
 	let mut token_ptr: Rc<RefCell<Token>> = Rc::new(RefCell::new(Token::new(Tokenkind::TK_HEAD,"")));
 	let mut token_head_ptr = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
 	
-	//　複数文字のローカル変数を処理し、オフセットを適切に生成: map(name, offset)
-	let mut lvar_map: HashMap<String, usize> = HashMap::new();
-	let mut max_offset: usize = 0;
 
 	// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
 	let len: usize = string.len();
@@ -220,22 +159,10 @@ pub fn tokenize(string: String) -> (Rc<RefCell<Token>>, HashMap<String, usize>) 
 		if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
 			let name = read_lvar(&string, &mut lookat);
 
-			match lvar_map.get(&name) {
-				// 見つかった場合は特に何もしなくて良い
-				Some(offset) => {},
-
-				// 同じ名前の引数が見つからない場合はmax_offsetを動かして割り当てる
-				None => {
-					max_offset += 8;
-					lvar_map.insert(name.clone(), max_offset);
-				}
-			}
-
-			// 上記で見つかっても見つからなくてもトークン列にはTK_IDENTとして追加する必要がある
+			// トークン列にTK_IDENTとして追加する必要がある
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_IDENT, name))));
 			token_ptr_exceed(&mut token_ptr);
 
-			lookat += 1;
 			continue;
 		}
 
@@ -247,8 +174,7 @@ pub fn tokenize(string: String) -> (Rc<RefCell<Token>>, HashMap<String, usize>) 
 
 	token_ptr_exceed(&mut token_head_ptr);
 
-	// パーサでトークン列とローカル変数リスト両方使用するので両方返す
-	(token_head_ptr, lvar_map)
+	token_head_ptr
 }
 
 // 空白を飛ばして読み進める
@@ -321,27 +247,6 @@ fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
 }
 
 
-// ローカル変数リストを先頭から見てnameに一致するものがあるかどうかを確認する
-// fn find_lvar(lvar_head_ptr: &Rc<RefCell<LVar>>, name: &String) ->usize {
-// 	let mut look_ptr = lvar_head_ptr.clone();
-// 	let mut found: usize = 0;
-
-
-// 	while let Some(ptr) = (*look_ptr).borrow().next.as_ref() {
-// 		lvar_ptr_exceed(&mut look_ptr);
-// 		if (*look_ptr).borrow().name == *name {
-// 			// 見つかったならばその位置を返す(0はベースポインタを指してしまうので、ここで０が代入されないことを保証すべき)
-// 			found = (*look_ptr).borrow().offset;
-
-// 			break;
-// 		}
-// 	}
-
-// 	return found
-// }
-
-
-
 // 次のトークンが数字であることを期待して次のトークンを読む関数
 pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 	if (**token_ptr).borrow().kind != Tokenkind::TK_NUM {
@@ -409,8 +314,7 @@ mod tests {
 	fn display_test_token() {
 		let mut tmp_ptr;
 
-		let ret = tokenize("1+1-1".to_string());
-		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("1+1-1".to_string());
 		{
 			println!("\ndisplay_test\n{}", "-".to_string().repeat(40));
 
@@ -422,30 +326,11 @@ mod tests {
 		}
 	}
 
-
-	#[test]
-	fn display_test_lvar() {
-		let mut tmp_ptr;
-
-		let ret = tokenize("1+1-1".to_string());
-		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
-
-		{
-			println!("\ndisplay_test\n{}", "-".to_string().repeat(40));
-
-			while !at_eof(&token_ptr) {
-				println!("{}", (*token_ptr).borrow());
-				tmp_ptr = (*token_ptr).borrow().next.as_ref().unwrap().clone(); token_ptr = tmp_ptr;
-			}
-			println!("{}", (*token_ptr).borrow());
-		}
-	}
 
 	#[test]
 	fn tokenizer_test_1() {
 		let mut tmp_ptr;
-		let ret = tokenize("1+1-1".to_string());
-		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("1+1-1".to_string());
 
 		{
 			println!("\ntest1{}", "-".to_string().repeat(40));
@@ -479,9 +364,7 @@ mod tests {
 	fn tokenizer_test_2() {
 
 		let mut tmp_ptr;
-
-		let ret = tokenize("2*(1+1)-1".to_string());
-		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("2*(1+1)-1".to_string());
 
 		{
 			println!("\ntest2{}", "-".to_string().repeat(40));
@@ -531,8 +414,7 @@ mod tests {
 	fn tokenizer_test_3() {
 
 
-		let ret = tokenize("2*(1+1)-1 <= 2".to_string());
-		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("2*(1+1)-1 <= 2".to_string());
 		{
 			println!("\ntest3{}", "-".to_string().repeat(40));
 
@@ -588,8 +470,7 @@ mod tests {
 	#[test]
 	fn tokenizer_test_4() {
 
-		let ret = tokenize("a = 1; a + 1;".to_string());
-		let mut token_ptr: Rc<RefCell<Token>> = ret.0;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("a = 1; a + 1;".to_string());
 		{
 			println!("\ntest4{}", "-".to_string().repeat(40));
 
@@ -633,8 +514,7 @@ mod tests {
 	#[test]
 	fn tokenizer_test_5() {
 
-		let ret = tokenize("z = 1; z + 1;".to_string());
-		let token_ptr: Rc<RefCell<Token>> = ret.0;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("z = 1; z + 1;".to_string());
 		{
 			println!("\ntest5{}", "-".to_string().repeat(40));
 
@@ -669,6 +549,66 @@ mod tests {
 			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
 			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
 
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+	#[test]
+	fn tokenizer_test_6() {
+
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("_abc = 1; def + 1; var22 = 22;".to_string());
+		{
+			println!("\ntest5{}", "-".to_string().repeat(40));
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
 			token_ptr_exceed(&mut token_ptr);
 			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
 			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
