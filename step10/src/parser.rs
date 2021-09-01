@@ -96,6 +96,9 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	let name: String = name.into();
 	let offset;
 
+
+	// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
+	let mut not_found: bool = false;
 	match LOCALS.lock().unwrap().get(&name) {
 		Some(_offset) => {
 			offset = *_offset;
@@ -104,8 +107,12 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 		None => {
 			*LVAR_MAX_OFFSET.lock().unwrap() += 8;
 			offset = *LVAR_MAX_OFFSET.lock().unwrap();
-			LOCALS.lock().unwrap().insert(name, offset); // デッドロックするかも？
+			not_found = true;
 		}
+	}
+
+	if not_found {
+		LOCALS.lock().unwrap().insert(name, offset); 
 	}
 	
 	Rc::new(RefCell::new(
