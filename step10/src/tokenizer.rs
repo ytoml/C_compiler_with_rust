@@ -260,17 +260,16 @@ pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 }
 
 // 次のトークンが識別子(変数など)であることを期待して次のトークンを読む関数
-pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> char {
+pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 	if (**token_ptr).borrow().kind != Tokenkind::TK_IDENT {
 		exit_eprintln!("識別子を期待した位置で\"{}\"が発見されました。", (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 	let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
-	let cs:Vec<char> = body.chars().collect();
 
 	token_ptr_exceed(token_ptr);
 	
 	// 現段階では識別子として1文字しかサポートしない
-	cs[0]
+	body
 }
 
 

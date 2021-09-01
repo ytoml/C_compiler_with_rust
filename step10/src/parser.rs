@@ -105,7 +105,7 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
-			*LVAR_MAX_OFFSET.lock().unwrap() += 8; // どうもバグがあるらしい
+			*LVAR_MAX_OFFSET.lock().unwrap() += 8; 
 			offset = *LVAR_MAX_OFFSET.lock().unwrap();
 			not_found = true;
 		}
