@@ -12,7 +12,7 @@ mod options;
 mod generator;
 use options::Opts;
 use tokenizer::{Token, tokenize};
-use parser::{program};
+use parser::{program, LVAR_MAX_OFFSET};
 use generator::gen;
 
 
@@ -38,7 +38,7 @@ fn main() {
 		// プロローグ(変数の格納領域の確保)
 		asm += "	push rbp\n";
 		asm += "	mov rbp, rsp\n";
-		asm += "	sub rsp, 208\n";
+		asm += format!("	sub rsp, {}\n", LVAR_MAX_OFFSET.lock().unwrap());
 		
 		// 構文木が複数(stmtの数)生成されているはずなのでそれぞれについて回す
 		for node_ptr in node_heads {
