@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::fmt::{Formatter, Display, Result};
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
@@ -105,7 +105,7 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
-			*LVAR_MAX_OFFSET.lock().unwrap() += 8;
+			*LVAR_MAX_OFFSET.lock().unwrap() += 8; // どうもバグがあるらしい
 			offset = *LVAR_MAX_OFFSET.lock().unwrap();
 			not_found = true;
 		}
