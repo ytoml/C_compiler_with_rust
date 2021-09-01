@@ -38,7 +38,7 @@ fn main() {
 		// プロローグ(変数の格納領域の確保)
 		asm += "	push rbp\n";
 		asm += "	mov rbp, rsp\n";
-		asm += format!("	sub rsp, {}\n", LVAR_MAX_OFFSET.lock().unwrap());
+		asm += format!("	sub rsp, {}\n", LVAR_MAX_OFFSET.lock().unwrap()).as_str();
 		
 		// 構文木が複数(stmtの数)生成されているはずなのでそれぞれについて回す
 		for node_ptr in node_heads {
