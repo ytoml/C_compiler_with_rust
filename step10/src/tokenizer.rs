@@ -21,14 +21,12 @@ pub struct Token {
 	pub body: Option<String>,
 	pub len: usize, // 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
 	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
-	
 }
-
 
 // 構造体にStringをうまく持たせるためのnewメソッド
 impl Token {
 	fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
-		let body = body.into();
+		let body: String = body.into();
 		match kind {
 			Tokenkind::TK_HEAD => {
 				Token {kind: kind, val: None, body: None, len: 0, next: None}
@@ -73,7 +71,7 @@ impl Display for Token {
 		}
 
 		if let Some(e) = self.next.as_ref() {
-			s = format!("{}next: exist(kind:{:?})\n", s, e.borrow().kind);
+			s = format!("{}next: exist(kind:{:?})\n", s, (**e).borrow().kind);
 		} else {
 			s = format!("{}next: not exist\n", s);
 		}
@@ -81,6 +79,7 @@ impl Display for Token {
 		writeln!(f, "{}", s)
 	}
 }
+
 
 
 // トークンのポインタを読み進める
@@ -93,21 +92,19 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 			tmp_ptr = ptr.clone();
 		},
 		None => {
-			eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", (**token_ptr).borrow().kind);
-			panic!();
+			exit_eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", (**token_ptr).borrow().kind);
 		}
 	}
-
 	*token_ptr = tmp_ptr;
 }
+
 
 // 入力文字列のトークナイズ
 pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	// Rcを使って読み進める
 	let mut token_ptr: Rc<RefCell<Token>> = Rc::new(RefCell::new(Token::new(Tokenkind::TK_HEAD,"")));
-
-	// Rcなのでcloneしても中身は同じものを指す
-	let mut head_ptr = token_ptr.clone();
+	let mut token_head_ptr = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
+	
 
 	// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
 	let len: usize = string.len();
@@ -115,6 +112,8 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	let mut c: char;
 	let mut slice: String;
 	let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
+
+	
 
 
 	while lookat < len {
@@ -156,15 +155,16 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 		}
 
 
-		// まずは、1文字の変数のみをサポート
-		if c >= 'a' && c <= 'z' {
-			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_IDENT, c))));
+		// 英字とアンダーバーを先頭とする文字を識別子としてサポートする
+		if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
+			let name = read_lvar(&string, &mut lookat);
+
+			// トークン列にTK_IDENTとして追加する必要がある
+			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_IDENT, name))));
 			token_ptr_exceed(&mut token_ptr);
 
-			lookat += 1;
 			continue;
 		}
-
 
 		exit_eprintln!("トークナイズできません");
 	}
@@ -172,8 +172,9 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::TK_EOF, ""))));
 
 
-	token_ptr_exceed(&mut head_ptr);
-	head_ptr
+	token_ptr_exceed(&mut token_head_ptr);
+
+	token_head_ptr
 }
 
 // 空白を飛ばして読み進める
@@ -186,13 +187,12 @@ fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 	}
 
 	// 空白でなくなるまで読み進める
-	while string[*index] == ' ' || string[*index] == '\n' {
+	while string[*index] == ' ' || string[*index] == '\n' ||  string[*index] == '\t' {
 		*index += 1;
 		if *index >= limit {
 			return Err(());
 		}
 	}
-
 
 	Ok(())
 }
@@ -229,6 +229,22 @@ fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 	val
 }
 
+fn canbe_ident_part (c: &char) -> bool {
+	return (*c >= 'a' && *c <= 'z') | (*c >= 'A' && *c <= 'Z') | (*c >= '0' && *c <= '9') | (*c == '_')
+}
+
+// LVarに対応する文字列を抽出しつつ、indexを進める
+fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
+	let mut name = "".to_string();
+
+	// 1文字ずつみて連結する
+	while canbe_ident_part(&string[*index]) {
+		name = format!("{}{}", name, string[*index]);
+		*index += 1;
+	}
+
+	name
+}
 
 
 // 次のトークンが数字であることを期待して次のトークンを読む関数
@@ -292,13 +308,15 @@ pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use std::borrow::Borrow;
+
+use super::*;
 	
 	#[test]
-	fn display_test() {
+	fn display_test_token() {
 		let mut tmp_ptr;
 
-		let mut token_ptr = tokenize("1+1-1".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("1+1-1".to_string());
 		{
 			println!("\ndisplay_test\n{}", "-".to_string().repeat(40));
 
@@ -308,15 +326,14 @@ mod tests {
 			}
 			println!("{}", (*token_ptr).borrow());
 		}
-		
 	}
 
 
 	#[test]
 	fn tokenizer_test_1() {
 		let mut tmp_ptr;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("1+1-1".to_string());
 
-		let mut token_ptr = tokenize("1+1-1".to_string());
 		{
 			println!("\ntest1{}", "-".to_string().repeat(40));
 
@@ -349,8 +366,8 @@ mod tests {
 	fn tokenizer_test_2() {
 
 		let mut tmp_ptr;
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("2*(1+1)-1".to_string());
 
-		let mut token_ptr = tokenize("2*(1+1)-1".to_string());
 		{
 			println!("\ntest2{}", "-".to_string().repeat(40));
 
@@ -399,7 +416,7 @@ mod tests {
 	fn tokenizer_test_3() {
 
 
-		let mut token_ptr = tokenize("2*(1+1)-1 <= 2".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("2*(1+1)-1 <= 2".to_string());
 		{
 			println!("\ntest3{}", "-".to_string().repeat(40));
 
@@ -455,7 +472,7 @@ mod tests {
 	#[test]
 	fn tokenizer_test_4() {
 
-		let mut token_ptr = tokenize("a = 1; a + 1;".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("a = 1; a + 1;".to_string());
 		{
 			println!("\ntest4{}", "-".to_string().repeat(40));
 
@@ -499,7 +516,7 @@ mod tests {
 	#[test]
 	fn tokenizer_test_5() {
 
-		let mut token_ptr = tokenize("z = 1; z + 1;".to_string());
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("z = 1; z + 1;".to_string());
 		{
 			println!("\ntest5{}", "-".to_string().repeat(40));
 
@@ -539,4 +556,92 @@ mod tests {
 			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
 		}
 	}
+
+	#[test]
+	fn tokenizer_test_6() {
+
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("_abc = 1; def + 1; var22 = 22;".to_string());
+		{
+			println!("\ntest5{}", "-".to_string().repeat(40));
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_IDENT);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_NUM);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_RESERVED);
+			println!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+			
+			token_ptr_exceed(&mut token_ptr);
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+	#[test]
+	fn tokenizer_test_7(){
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize(
+			"local = -1;
+			local_ = 2;
+			local_1 = local_a = local;
+			oops = 3;
+			LOCAL = local * 30;
+			local = (100 + 30 / 5 - 99) * (local > local);
+			LOCAL + local*local + (LOCAL + local_)* local_1 + oops;".to_string()
+		);
+
+		{
+			println!("\ntest5{}", "-".to_string().repeat(40));
+
+			for _ in 0..59 {
+				println!("token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+				token_ptr_exceed(&mut token_ptr);
+			}
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+
+
 }
