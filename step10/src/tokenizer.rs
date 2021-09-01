@@ -187,7 +187,7 @@ fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 	}
 
 	// 空白でなくなるまで読み進める
-	while string[*index] == ' ' || string[*index] == '\n' {
+	while string[*index] == ' ' || string[*index] == '\n' ||  string[*index] == '\t' {
 		*index += 1;
 		if *index >= limit {
 			return Err(());
@@ -308,7 +308,9 @@ pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
 
 #[cfg(test)]
 mod tests {
-	use super::*;
+	use std::borrow::Borrow;
+
+use super::*;
 	
 	#[test]
 	fn display_test_token() {
@@ -614,4 +616,32 @@ mod tests {
 			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
 		}
 	}
+
+	#[test]
+	fn tokenizer_test_7(){
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize(
+			"local = -1;
+			local_ = 2;
+			local_1 = local_a = local;
+			oops = 3;
+			LOCAL = local * 30;
+			local = (100 + 30 / 5 - 99) * (local > local);
+			LOCAL + local*local + (LOCAL + local_)* local_1 + oops;".to_string()
+		);
+
+		{
+			println!("\ntest5{}", "-".to_string().repeat(40));
+
+			for _ in 0..59 {
+				println!("token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+				token_ptr_exceed(&mut token_ptr);
+			}
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::TK_EOF);
+			eprintln!("OK: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+
+
 }
