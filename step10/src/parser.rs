@@ -2,7 +2,13 @@
 use crate::tokenizer::{Token, consume, expect, expect_number, expect_ident, is_ident, at_eof};
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 use std::fmt::{Formatter, Display, Result};
+
+static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
@@ -86,8 +92,21 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 }
 
 // 左辺値(今のうちはローカル変数)に対応するノード(現在は1文字のみ)
-fn new_node_lvar(c: char) -> Rc<RefCell<Node>> {
-	let offset = (c as usize - 'a' as usize +1)*8;
+fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
+	let name: String = name.into();
+	let offset;
+
+	match LOCALS.lock().unwrap().get(&name) {
+		Some(_offset) => {
+			offset = *_offset;
+		}, 
+		// 見つからなければオフセットの最大値を伸ばす
+		None => {
+			*LVAR_MAX_OFFSET.lock().unwrap() += 8;
+			offset = *LVAR_MAX_OFFSET.lock().unwrap();
+			LOCALS.lock().unwrap().insert(name, offset); // デッドロックするかも？
+		}
+	}
 	
 	Rc::new(RefCell::new(
 		Node {
