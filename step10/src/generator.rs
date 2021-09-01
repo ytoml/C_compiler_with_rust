@@ -118,8 +118,8 @@ mod tests {
 
 
 	#[test]
-	fn test_parser_addsub() {
-		println!("test_parser{}", "-".to_string().repeat(REP));
+	fn test_addsub() {
+		println!("test_{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize("1+2+3-1".to_string());
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
@@ -130,8 +130,8 @@ mod tests {
 	}
 
 	#[test]
-	fn test_parser_muldiv() {
-		println!("test_parser{}", "-".to_string().repeat(REP));
+	fn test_muldiv() {
+		println!("test_{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize("1+2*3-4/2".to_string());
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
@@ -142,9 +142,9 @@ mod tests {
 	}
 
 	#[test]
-	fn test_parser_brackets() {
+	fn test_brackets() {
 		let equation = "(1+2)/3-1*20".to_string();
-		println!("test_parser_brackets{}", "-".to_string().repeat(REP));
+		println!("test_brackets{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
@@ -155,9 +155,9 @@ mod tests {
 	}
 
 	#[test]
-	fn test_parser_unary() {
+	fn test_unary() {
 		let equation = "(-1+2)*(-1)+(+3)/(+1)".to_string();
-		println!("test_parser_unary{}", "-".to_string().repeat(REP));
+		println!("test_unary{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
@@ -168,9 +168,9 @@ mod tests {
 	}
 	
 	#[test]
-	fn test_parser_eq() {
+	fn test_eq() {
 		let equation = "(-1+2)*(-1)+(+3)/(+1) == 30 + 1".to_string();
-		println!("test_parser_unary{}", "-".to_string().repeat(REP));
+		println!("test_unary{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
 		let mut asm = "".to_string();
@@ -181,9 +181,25 @@ mod tests {
 	}
 
 	#[test]
-	fn test_parser_assign() {
+	fn test_assign_1() {
 		let equation = "a = 1; a + 1;".to_string();
-		println!("test_parser_assign{}", "-".to_string().repeat(REP));
+		println!("test_assign{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut asm = "".to_string();
+		for node_ptr in node_heads {
+			gen(&node_ptr, &mut asm);
+
+			asm += "	pop rax\n";
+		}
+
+		println!("{}", asm);
+
+	}
+	#[test]
+	fn test_assign_2() {
+		let equation = "local = 1; local_value = local + 1; local_value99 = local_value + 3;".to_string();
+		println!("test_assign{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
 		let mut asm = "".to_string();
