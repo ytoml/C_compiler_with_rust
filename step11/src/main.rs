@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 
-// tokenizerモジュールは未実装
 mod tokenizer;
 mod parser;
 mod utils;
@@ -13,7 +12,7 @@ mod generator;
 use options::Opts;
 use tokenizer::{Token, tokenize};
 use parser::{program, LVAR_MAX_OFFSET};
-use generator::gen;
+use generator::{gen, ASM};
 
 
 fn main() {
@@ -28,33 +27,26 @@ fn main() {
 
 		// トークナイズしてトークンリストを生成したのち、構文木を生成
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = program(&mut token_ptr); // ここでLVAR_MAX_OFFSETがセットされる
 
-		// asmにアセンブリを文字列として追加していく
-		let mut asm = ".intel_syntax noprefix\n".to_string();
-		asm += ".globl main\n";
-		asm += "main:\n";
+		// ASMにアセンブリを文字列として追加していく
+		*ASM.lock().unwrap() += "main:\n";
 		
 		// プロローグ(変数の格納領域の確保)
-		asm += "	push rbp\n";
-		asm += "	mov rbp, rsp\n";
-		asm += format!("	sub rsp, {}\n", LVAR_MAX_OFFSET.lock().unwrap()).as_str();
+		*ASM.lock().unwrap() += "	push rbp\n";
+		*ASM.lock().unwrap() += "	mov rbp, rsp\n";
+		*ASM.lock().unwrap() += format!("	sub rsp, {}\n", LVAR_MAX_OFFSET.lock().unwrap()).as_str();
 		
 		// 構文木が複数(stmtの数)生成されているはずなのでそれぞれについて回す
 		for node_ptr in node_heads {
-			// 構文木からコードを生成(asmに追加)
-			gen(&node_ptr, &mut asm);
+			// 構文木からコードを生成(*ASM.lock().unwrap()に追加)
+			gen(&node_ptr);
 
-			asm += "	pop rax\n";
+			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
-		// エピローグ(リターン処理)
-		asm += "	mov rsp, rbp\n";
-		asm += "	pop rbp\n";
-		asm += "	ret\n";
-
 		// 最後に一気に書き込み
-		println!("{}", asm);
+		println!("{}", *ASM.lock().unwrap());
 
     } else {
 		// fileが指定されていない場合、exit
