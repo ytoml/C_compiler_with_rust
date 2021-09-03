@@ -6,12 +6,12 @@ use std::cell::RefCell;
 pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
-		Nodekind::ND_NUM => {
-			// ND_NUMの時点でunwrapできる
+		Nodekind::NumNd => {
+			// NumNdの時点でunwrapできる
 			*asm += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
 			return;
 		},
-		Nodekind::ND_LVAR => {
+		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			gen_lval(node, asm);
 			*asm += "	pop rax\n"; // gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
@@ -19,7 +19,7 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 			*asm += "	push rax\n";
 			return;
 		},
-		Nodekind::ND_ASSIGN => {
+		Nodekind::AssignNd => {
 			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_lval内でエラー)
 			gen_lval((**node).borrow().left.as_ref().unwrap(), asm);
 			gen((**node).borrow().right.as_ref().unwrap(), asm);
@@ -43,45 +43,45 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
 	match (**node).borrow().kind {
-		Nodekind::ND_ADD => {
+		Nodekind::AddNd => {
 			*asm += "	add rax, rdi\n";
 		},
-		Nodekind::ND_SUB => {
+		Nodekind::SubNd => {
 			*asm += "	sub rax, rdi\n";
 		},
-		Nodekind::ND_MUL => {
+		Nodekind::MulNd => {
 			*asm += "	imul rax, rdi\n";
 		},
-		Nodekind::ND_DIV  => {
+		Nodekind::DivNd  => {
 			*asm += "	cqo\n";
 			*asm += "	idiv rdi\n";
 		},
-		Nodekind::ND_EQ => {
+		Nodekind::EqNd => {
 			*asm += "	cmp rax, rdi\n";
 			*asm += "	sete al\n";
 			*asm += "	movzb rax, al\n";
 		},
-		Nodekind::ND_NE => {
+		Nodekind::NEqNd => {
 			*asm += "	cmp rax, rdi\n";
 			*asm += "	setne al\n";
 			*asm += "	movzb rax, al\n";
 		},
-		Nodekind::ND_LT => {
+		Nodekind::LThanNd => {
 			*asm += "	cmp rax, rdi\n";
 			*asm += "	setl al\n";
 			*asm += "	movzb rax, al\n";
 		},
-		Nodekind::ND_LE => {
+		Nodekind::LEqNd => {
 			*asm += "	cmp rax, rdi\n";
 			*asm += "	setle al\n";
 			*asm += "	movzb rax, al\n";
 		},
-		Nodekind::ND_GT => {
+		Nodekind::GThanNd => {
 			*asm += "	cmp rdi, rax\n";
 			*asm += "	setl al\n";
 			*asm += "	movzb rax, al\n";
 		},
-		Nodekind::ND_GE => {
+		Nodekind::GEqNd => {
 			*asm += "	cmp rdi, rax\n";
 			*asm += "	setle al\n";
 			*asm += "	movzb rax, al\n";
@@ -98,7 +98,7 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 
 // 正しく左辺値を識別して不正な代入("(a+1)=2;"のような)を防ぐためのジェネレータ関数
 fn gen_lval(node: &Rc<RefCell<Node>>, asm: &mut String) {
-	if (**node).borrow().kind != Nodekind::ND_LVAR {
+	if (**node).borrow().kind != Nodekind::LvarNd {
 		exit_eprintln!("代入の左辺値が変数ではありません");
 	}
 

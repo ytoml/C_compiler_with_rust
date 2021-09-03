@@ -1,5 +1,5 @@
 // 再帰下降構文のパーサ
-use crate::tokenizer::{Token, consume, expect, expect_number, expect_ident, is_ident, at_eof};
+use crate::tokenizer::{Token, Tokenkind, consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -12,19 +12,20 @@ pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
-	ND_ADD,
-	ND_SUB,
-	ND_MUL,
-	ND_DIV,
-	ND_ASSIGN,
-	ND_LVAR,
-	ND_NUM,
-	ND_EQ,
-	ND_NE,
-	ND_GT,
-	ND_GE,
-	ND_LT,
-	ND_LE,
+	AddNd, // '+'
+	SubNd, // '-'
+	MulNd, // '*'
+	DivNd, // '/'
+	AssignNd, // '='
+	LvarNd, // 左辺値
+	NumNd, // 数値
+	EqNd, // "=="
+	NEqNd, // "!="
+	GThanNd, // '>'
+	GEqNd, // ">="
+	LThanNd, // '<'
+	LEqNd, // "<="
+	ReturnNd, // return
 }
 
 pub struct Node {
@@ -82,7 +83,7 @@ fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -
 fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
 		Node {
-			kind: Nodekind::ND_NUM,
+			kind: Nodekind::NumNd,
 			left: None,
 			right: None,
 			val: Some(val),
@@ -117,7 +118,7 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	
 	Rc::new(RefCell::new(
 		Node {
-			kind: Nodekind::ND_LVAR,
+			kind: Nodekind::LvarNd,
 			left: None,
 			right: None,
 			val: None,
@@ -139,10 +140,23 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 }
 
 
-//  生成規則: stmt = expr ";"
+//  生成規則: stmt = (expr | "return" expr ) ";"
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let node_ptr: Rc<RefCell<Node>>;
 
-	let node_ptr = expr(token_ptr);
+	if consume_kind(token_ptr, Tokenkind::ReturnTk) {
+		// ReturnNdはここでしか生成しないため、ここにハードコードする
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::ReturnNd,
+				left: Some(expr(token_ptr)),
+				right: None, val: None, offset: None,
+			}
+		));
+	} else {
+		node_ptr = expr(token_ptr);
+	}
+
 	expect(token_ptr, ";");
 
 	node_ptr
@@ -158,7 +172,7 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = equality(token_ptr);
 	if consume(token_ptr, "=") {
-		node_ptr = new_node(Nodekind::ND_ASSIGN, node_ptr,  assign(token_ptr));
+		node_ptr = new_node(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
 	}
 	
 	node_ptr
@@ -169,10 +183,10 @@ pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = relational(token_ptr);
 	if consume(token_ptr, "==") {
-		node_ptr = new_node(Nodekind::ND_EQ, node_ptr, relational(token_ptr));
+		node_ptr = new_node(Nodekind::EqNd, node_ptr, relational(token_ptr));
 
 	} else if consume(token_ptr, "!=") {
-		node_ptr = new_node(Nodekind::ND_NE, node_ptr, relational(token_ptr));
+		node_ptr = new_node(Nodekind::NEqNd, node_ptr, relational(token_ptr));
 	}
 
 	node_ptr
@@ -184,16 +198,16 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "<") {
-			node_ptr = new_node(Nodekind::ND_LT, node_ptr, add(token_ptr));
+			node_ptr = new_node(Nodekind::LThanNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, "<=") {
-			node_ptr = new_node(Nodekind::ND_LE, node_ptr, add(token_ptr));
+			node_ptr = new_node(Nodekind::LEqNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, ">") {
-			node_ptr = new_node(Nodekind::ND_GT, node_ptr, add(token_ptr));
+			node_ptr = new_node(Nodekind::GThanNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, ">=") {
-			node_ptr = new_node(Nodekind::ND_GE, node_ptr, add(token_ptr));
+			node_ptr = new_node(Nodekind::GEqNd, node_ptr, add(token_ptr));
 
 		} else{
 			break;
@@ -211,10 +225,10 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "+") {
-			node_ptr = new_node(Nodekind::ND_ADD, node_ptr, mul(token_ptr));
+			node_ptr = new_node(Nodekind::AddNd, node_ptr, mul(token_ptr));
 
 		} else if consume(token_ptr, "-") {
-			node_ptr = new_node(Nodekind::ND_SUB, node_ptr, mul(token_ptr));
+			node_ptr = new_node(Nodekind::SubNd, node_ptr, mul(token_ptr));
 
 		} else {
 			break;
@@ -230,10 +244,10 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "*") {
-			node_ptr = new_node(Nodekind::ND_MUL, node_ptr, unary(token_ptr));
+			node_ptr = new_node(Nodekind::MulNd, node_ptr, unary(token_ptr));
 
 		} else if consume(token_ptr, "/") {
-			node_ptr = new_node(Nodekind::ND_DIV, node_ptr, unary(token_ptr));
+			node_ptr = new_node(Nodekind::DivNd, node_ptr, unary(token_ptr));
 
 		} else {
 			break;
@@ -253,7 +267,7 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	} else if consume(token_ptr, "-") {
 		// 単項演算のマイナスは0から引く形にする。
-		node_ptr = new_node(Nodekind::ND_SUB, new_node_num(0), primary(token_ptr));
+		node_ptr = new_node(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
 
 	} else {
 		node_ptr = primary(token_ptr);
@@ -285,7 +299,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 mod tests {
-	use super::new_node_num;
+	use super::*;
 
 	#[test]
 	fn test_display() {
