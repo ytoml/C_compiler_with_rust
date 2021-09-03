@@ -2,89 +2,107 @@ use crate::{exit_eprintln};
 use crate::parser::{Node, Nodekind};
 use std::rc::Rc;
 use std::cell::RefCell;
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
-pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
+pub static ASM: Lazy<Mutex<String>> = Lazy::new(
+	|| Mutex::new(
+		".intel_syntax noprefix\n.globl main\n".to_string()
+	)
+);
+
+pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
 		Nodekind::NumNd => {
 			// NumNdの時点でunwrapできる
-			*asm += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
+			*ASM.lock().unwrap() += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
 			return;
 		},
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
-			gen_lval(node, asm);
-			*asm += "	pop rax\n"; // gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
-			*asm += "	mov rax, [rax]\n";
-			*asm += "	push rax\n";
+			gen_lval(node);
+			*ASM.lock().unwrap() += "	pop rax\n"; // gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
+			*ASM.lock().unwrap() += "	mov rax, [rax]\n";
+			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
 		Nodekind::AssignNd => {
 			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_lval内でエラー)
-			gen_lval((**node).borrow().left.as_ref().unwrap(), asm);
-			gen((**node).borrow().right.as_ref().unwrap(), asm);
+			gen_lval((**node).borrow().left.as_ref().unwrap());
+			gen((**node).borrow().right.as_ref().unwrap());
 
 			// 上記gen2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
-			*asm += "	pop rdi\n"; 
-			*asm += "	pop rax\n"; 
-			*asm += "	mov [rax], rdi\n";
-			*asm += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
+			*ASM.lock().unwrap() += "	pop rdi\n"; 
+			*ASM.lock().unwrap() += "	pop rax\n"; 
+			*ASM.lock().unwrap() += "	mov [rax], rdi\n";
+			*ASM.lock().unwrap() += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
 			return;
 		},
+		Nodekind::ReturnNd => {
+			// リターンならleftの値を評価してretする。
+			gen((**node).borrow().left.as_ref().unwrap());
+			*ASM.lock().unwrap() += "	pop rax\n";
+			*ASM.lock().unwrap() += "	mov rsp, rbp\n";
+			*ASM.lock().unwrap() += "	pop rbp\n";
+			*ASM.lock().unwrap() += "	ret\n";
+			return;
+		}
+
 		_ => {}// 他のパターンなら、ここでは何もしない
 		
 	} 
 
-	gen((**node).borrow().left.as_ref().unwrap(), asm);
-	gen((**node).borrow().right.as_ref().unwrap(), asm);
+	gen((**node).borrow().left.as_ref().unwrap());
+	gen((**node).borrow().right.as_ref().unwrap());
 
-	*asm += "	pop rdi\n";
-	*asm += "	pop rax\n";
+	*ASM.lock().unwrap() += "	pop rdi\n";
+	*ASM.lock().unwrap() += "	pop rax\n";
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
 	match (**node).borrow().kind {
 		Nodekind::AddNd => {
-			*asm += "	add rax, rdi\n";
+			*ASM.lock().unwrap() += "	add rax, rdi\n";
 		},
 		Nodekind::SubNd => {
-			*asm += "	sub rax, rdi\n";
+			*ASM.lock().unwrap() += "	sub rax, rdi\n";
 		},
 		Nodekind::MulNd => {
-			*asm += "	imul rax, rdi\n";
+			*ASM.lock().unwrap() += "	imul rax, rdi\n";
 		},
 		Nodekind::DivNd  => {
-			*asm += "	cqo\n";
-			*asm += "	idiv rdi\n";
+			*ASM.lock().unwrap() += "	cqo\n";
+			*ASM.lock().unwrap() += "	idiv rdi\n";
 		},
 		Nodekind::EqNd => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	sete al\n";
-			*asm += "	movzb rax, al\n";
+			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
+			*ASM.lock().unwrap() += "	sete al\n";
+			*ASM.lock().unwrap() += "	movzb rax, al\n";
 		},
 		Nodekind::NEqNd => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	setne al\n";
-			*asm += "	movzb rax, al\n";
+			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
+			*ASM.lock().unwrap() += "	setne al\n";
+			*ASM.lock().unwrap() += "	movzb rax, al\n";
 		},
 		Nodekind::LThanNd => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	setl al\n";
-			*asm += "	movzb rax, al\n";
+			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
+			*ASM.lock().unwrap() += "	setl al\n";
+			*ASM.lock().unwrap() += "	movzb rax, al\n";
 		},
 		Nodekind::LEqNd => {
-			*asm += "	cmp rax, rdi\n";
-			*asm += "	setle al\n";
-			*asm += "	movzb rax, al\n";
+			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
+			*ASM.lock().unwrap() += "	setle al\n";
+			*ASM.lock().unwrap() += "	movzb rax, al\n";
 		},
 		Nodekind::GThanNd => {
-			*asm += "	cmp rdi, rax\n";
-			*asm += "	setl al\n";
-			*asm += "	movzb rax, al\n";
+			*ASM.lock().unwrap() += "	cmp rdi, rax\n";
+			*ASM.lock().unwrap() += "	setl al\n";
+			*ASM.lock().unwrap() += "	movzb rax, al\n";
 		},
 		Nodekind::GEqNd => {
-			*asm += "	cmp rdi, rax\n";
-			*asm += "	setle al\n";
-			*asm += "	movzb rax, al\n";
+			*ASM.lock().unwrap() += "	cmp rdi, rax\n";
+			*ASM.lock().unwrap() += "	setle al\n";
+			*ASM.lock().unwrap() += "	movzb rax, al\n";
 		},
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
@@ -92,20 +110,20 @@ pub fn gen(node: &Rc<RefCell<Node>>, asm: &mut String) {
 		},
 	}
 
-	*asm += "	push rax\n";
+	*ASM.lock().unwrap() += "	push rax\n";
 
 }
 
 // 正しく左辺値を識別して不正な代入("(a+1)=2;"のような)を防ぐためのジェネレータ関数
-fn gen_lval(node: &Rc<RefCell<Node>>, asm: &mut String) {
+fn gen_lval(node: &Rc<RefCell<Node>>) {
 	if (**node).borrow().kind != Nodekind::LvarNd {
 		exit_eprintln!("代入の左辺値が変数ではありません");
 	}
 
 	// 変数に対応するアドレスをスタックにプッシュする
-	*asm += "	mov rax, rbp\n";
-	*asm += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
-	*asm += "	push rax\n";
+	*ASM.lock().unwrap() += "	mov rax, rbp\n";
+	*ASM.lock().unwrap() += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
+	*ASM.lock().unwrap() += "	push rax\n";
 }
 
 #[cfg(test)]
@@ -122,10 +140,9 @@ mod tests {
 		println!("test_{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize("1+2+3-1".to_string());
 		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
+		gen(&node_ptr);
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 
@@ -134,10 +151,9 @@ mod tests {
 		println!("test_{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize("1+2*3-4/2".to_string());
 		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
+		gen(&node_ptr);
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 
@@ -147,10 +163,9 @@ mod tests {
 		println!("test_brackets{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
+		gen(&node_ptr);
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 
@@ -160,10 +175,9 @@ mod tests {
 		println!("test_unary{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
+		gen(&node_ptr);
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 	
@@ -173,10 +187,9 @@ mod tests {
 		println!("test_unary{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
-		let mut asm = "".to_string();
-		gen(&node_ptr, &mut asm);
+		gen(&node_ptr);
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 
@@ -186,14 +199,13 @@ mod tests {
 		println!("test_assign{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
-		let mut asm = "".to_string();
 		for node_ptr in node_heads {
-			gen(&node_ptr, &mut asm);
+			gen(&node_ptr);
 
-			asm += "	pop rax\n";
+			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 	#[test]
@@ -202,14 +214,13 @@ mod tests {
 		println!("test_assign{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
-		let mut asm = "".to_string();
 		for node_ptr in node_heads {
-			gen(&node_ptr, &mut asm);
+			gen(&node_ptr);
 
-			asm += "	pop rax\n";
+			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
-		println!("{}", asm);
+		println!("{}", ASM.lock().unwrap());
 
 	}
 }
