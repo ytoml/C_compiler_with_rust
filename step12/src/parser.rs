@@ -27,7 +27,7 @@ pub enum Nodekind {
 	LThanNd, // '<'
 	LEqNd, // "<="
 	IfNd, // if
-	ElseNd, // else
+	// ElseNd, // else
 	ForNd, // for
 	WhileNd, // while
 	ReturnNd, // return
@@ -39,10 +39,11 @@ pub struct Node {
 	pub left: Option<Rc<RefCell<Node>>>,
 	pub right: Option<Rc<RefCell<Node>>>,
 
-	// for (init; enter; routine) branch, if (enter) branch, while(enter) branch 
+	// for (init; enter; routine) branch, if (enter) branch else left, while(enter) branch 
 	pub init: Option<Rc<RefCell<Node>>>,
 	pub enter: Option<Rc<RefCell<Node>>>, 
 	pub routine: Option<Rc<RefCell<Node>>>, 
+	pub branch: Option<Rc<RefCell<Node>>>,
 
 	// プロパティとなる数値
 	pub val: Option<i32>,
@@ -52,7 +53,7 @@ pub struct Node {
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, left: None, right: None, init: None, enter: None, routine: None, val: None, offset: None,}
+		Node { kind: Nodekind::DefaultNd, left: None, right: None, init: None, enter: None, routine: None, branch: None, val: None, offset: None,}
 	}
 }
 
@@ -75,6 +76,30 @@ impl Display for Node {
 			s = format!("{}right: not exist\n", s);
 		}
 
+		if let Some(e) = self.init.as_ref() {
+			s = format!("{}init: exist(kind:{:?})\n", s, e.borrow().kind);
+		} else {
+			s = format!("{}init: not exist\n", s);
+		}
+
+		if let Some(e) = self.enter.as_ref() {
+			s = format!("{}enter: exist(kind:{:?})\n", s, e.borrow().kind);
+		} else {
+			s = format!("{}enter: not exist\n", s);
+		}
+
+		if let Some(e) = self.routine.as_ref() {
+			s = format!("{}routine: exist(kind:{:?})\n", s, e.borrow().kind);
+		} else {
+			s = format!("{}routine: not exist\n", s);
+		}
+
+		if let Some(e) = self.branch.as_ref() {
+			s = format!("{}branch: exist(kind:{:?})\n", s, e.borrow().kind);
+		} else {
+			s = format!("{}branch: not exist\n", s);
+		}
+
 		if let Some(e) = self.val.as_ref() {
 			s = format!("{}val: {}\n", s, e);
 		} else {
@@ -87,7 +112,7 @@ impl Display for Node {
 
 
 // ノードの作成
-fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
+fn new_node_calc(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
 		Node {
 			kind: kind,
@@ -157,56 +182,104 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 // 生成規則: stmt = 
 // expr? ";"
-// "if" "(" expr ")" stmt
+// "if" "(" expr ")" stmt ("else" stmt)? ; 今はelse ifは実装しない
 // "while" "(" expr ")" stmt
 // "for" "(" expr? ";" expr? ";" expr? ")" stmt 
 // "return" expr ";"
 // まだブロックには対応していない(一気に実装してごちゃつくのを防ぐため
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>>;
+	let node_ptr: Rc<RefCell<Node>>;
 
 	// if consume(token_ptr, ";") {return node_ptr;}
 
 	if consume(token_ptr, "if") {
-		// PENDING: 木構造考えてnode_ptrをどう更新するか決める必要がある
 		expect(token_ptr, "(");
-		node_ptr = expr(token_ptr);
+		let enter_ptr= expr(token_ptr);
 
 		expect(token_ptr, ")");
-		node_ptr = stmt(token_ptr);
+		let branch_ptr = stmt(token_ptr);
 
 		if consume(token_ptr, "else") {
-			node_ptr = stmt(token_ptr);
+			let else_ptr = stmt(token_ptr);
+			node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::IfNd,
+				enter: Some(enter_ptr),
+				branch: Some(branch_ptr),
+				left: Some(else_ptr),
+				..Default::default()
+				}
+			));
+		} else {
+			node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::IfNd,
+				enter: Some(enter_ptr),
+				branch: Some(branch_ptr),
+				..Default::default()
+				}
+			));
 		}
 		
 
 	} else if consume(token_ptr, "while") {
-		// PENDING: 同上
 		expect(token_ptr, "(");
-		node_ptr = expr(token_ptr);
+		let enter_ptr = expr(token_ptr);
 		expect(token_ptr, ")");
 
-		node_ptr = stmt(token_ptr);
+		let branch_ptr = expr(token_ptr);
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::WhileNd,
+				enter: Some(enter_ptr),
+				branch: Some(branch_ptr),
+				..Default::default()
+			}
+		));
 
 	} else if consume(token_ptr, "for") {
-		// PENDING: 同上
 		expect(token_ptr, "(");
 
+		let init: Option<Rc<RefCell<Node>>>;
+		let enter: Option<Rc<RefCell<Node>>>;
+		let routine: Option<Rc<RefCell<Node>>>;
+		let branch: Option<Rc<RefCell<Node>>>;
+
 		if consume(token_ptr, ";") {
-			node_ptr = expr(token_ptr);
-		} else {expect(token_ptr, ";")}
+			// consumeできた場合exprが何も書かれていないことに注意
+			init = None;
+		} else {
+			init = Some(expr(token_ptr));
+			expect(token_ptr, ";");
+		}
 
-
+		// concumeの条件分岐について同上なので注意
 		if consume(token_ptr, ";") {
-			node_ptr = expr(token_ptr);
-		} else {expect(token_ptr, ";")}
-
+			enter = None;
+		} else {
+			enter = Some(expr(token_ptr));
+			expect(token_ptr, ";")
+		}
 
 		if consume(token_ptr, ")") {
-			node_ptr = expr(token_ptr);
-		} else {expect(token_ptr, ")")}
+			routine = None;
+		} else {
+			routine = Some(expr(token_ptr));
+			expect(token_ptr, ")")
+		}
+
+		branch = Some(stmt(token_ptr));
 		
-		node_ptr = stmt(token_ptr);
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::ForNd,
+				init: init,
+				enter: enter,
+				routine: routine,
+				branch: branch,
+				..Default::default()
+			}
+		));
 
 	} else if consume_kind(token_ptr, Tokenkind::ReturnTk) {
 		// ReturnNdはここでしか生成しないため、ここにハードコードする
@@ -236,7 +309,7 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = equality(token_ptr);
 	if consume(token_ptr, "=") {
-		node_ptr = new_node(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
+		node_ptr = new_node_calc(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
 	}
 	
 	node_ptr
@@ -247,10 +320,10 @@ pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = relational(token_ptr);
 	if consume(token_ptr, "==") {
-		node_ptr = new_node(Nodekind::EqNd, node_ptr, relational(token_ptr));
+		node_ptr = new_node_calc(Nodekind::EqNd, node_ptr, relational(token_ptr));
 
 	} else if consume(token_ptr, "!=") {
-		node_ptr = new_node(Nodekind::NEqNd, node_ptr, relational(token_ptr));
+		node_ptr = new_node_calc(Nodekind::NEqNd, node_ptr, relational(token_ptr));
 	}
 
 	node_ptr
@@ -262,16 +335,16 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "<") {
-			node_ptr = new_node(Nodekind::LThanNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::LThanNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, "<=") {
-			node_ptr = new_node(Nodekind::LEqNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::LEqNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, ">") {
-			node_ptr = new_node(Nodekind::GThanNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::GThanNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, ">=") {
-			node_ptr = new_node(Nodekind::GEqNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::GEqNd, node_ptr, add(token_ptr));
 
 		} else{
 			break;
@@ -289,10 +362,10 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "+") {
-			node_ptr = new_node(Nodekind::AddNd, node_ptr, mul(token_ptr));
+			node_ptr = new_node_calc(Nodekind::AddNd, node_ptr, mul(token_ptr));
 
 		} else if consume(token_ptr, "-") {
-			node_ptr = new_node(Nodekind::SubNd, node_ptr, mul(token_ptr));
+			node_ptr = new_node_calc(Nodekind::SubNd, node_ptr, mul(token_ptr));
 
 		} else {
 			break;
@@ -308,10 +381,10 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "*") {
-			node_ptr = new_node(Nodekind::MulNd, node_ptr, unary(token_ptr));
+			node_ptr = new_node_calc(Nodekind::MulNd, node_ptr, unary(token_ptr));
 
 		} else if consume(token_ptr, "/") {
-			node_ptr = new_node(Nodekind::DivNd, node_ptr, unary(token_ptr));
+			node_ptr = new_node_calc(Nodekind::DivNd, node_ptr, unary(token_ptr));
 
 		} else {
 			break;
@@ -331,7 +404,7 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	} else if consume(token_ptr, "-") {
 		// 単項演算のマイナスは0から引く形にする。
-		node_ptr = new_node(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
+		node_ptr = new_node_calc(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
 
 	} else {
 		node_ptr = primary(token_ptr);
