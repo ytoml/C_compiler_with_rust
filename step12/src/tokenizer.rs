@@ -7,6 +7,7 @@ use std::iter::FromIterator;
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {
+	DefaultTk, // Default用のkind
 	HeadTk, // 先頭にのみ使用するkind
 	IdentTk, // 識別子
 	ReservedTk, // 記号
@@ -24,6 +25,13 @@ pub struct Token {
 	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 }
 
+impl Default for Token {
+	fn default() -> Token {
+		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None}
+	}
+
+}
+
 // 構造体にStringをうまく持たせるためのnewメソッド
 impl Token {
 	fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
@@ -31,25 +39,51 @@ impl Token {
 		let len = body.chars().count(); // len()を使うとバイト数になってややこしくなるので注意
 		match kind {
 			Tokenkind::HeadTk => {
-				Token {kind: kind, val: None, body: None, len: 0, next: None}
+				Token {kind: kind, .. Default::default()}
 			},
 			Tokenkind::IdentTk => {
-				Token {kind: kind, val: None, body: Some(body), len: len, next: None}
+				Token {
+					kind: kind, 
+					body: Some(body),
+					len: len,
+					.. Default::default()
+				}
 			},
 			Tokenkind::NumTk => {
 				// NumTkと共に数字以外の値が渡されることはないものとして、unwrapで処理
 				let val = body.parse::<i32>().unwrap();
-				Token {kind: kind, val: Some(val), body: Some(body), len: len, next: None}
+				Token {
+					kind: kind,
+					val: Some(val),
+					body: Some(body),
+					len: len,
+					next: None
+				}
 			},
 			Tokenkind::ReservedTk => {
-				Token {kind: kind, val: None, body: Some(body), len: len, next: None}
+				Token {
+					kind: kind,
+					body: Some(body),
+					len: len,
+					.. Default::default()
+				}
 			},
 			Tokenkind::ReturnTk => {
-				Token {kind: kind, val: None, body: Some("This is return Token.".to_string()), len: len, next: None}
+				Token {
+					kind: kind, 
+					body: Some("This is return Token.".to_string()),
+					len: 6,
+					.. Default::default()
+				}
 			}
 			Tokenkind::EOFTk => {
-				Token {kind: kind, val: None, body: Some("This is EOF Token.".to_string()), len: 0, next: None}
+				Token {
+					kind: kind, 
+					body: Some("This is EOF Token.".to_string()),
+					.. Default::default()
+				}
 			},
+			_ => Default::default() // DefaultTkの場合(想定されていない)
 		}
 	}
 }
