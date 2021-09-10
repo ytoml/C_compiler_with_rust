@@ -12,6 +12,7 @@ pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
+	DefaultNd, // defalut
 	AddNd, // '+'
 	SubNd, // '-'
 	MulNd, // '*'
@@ -25,19 +26,37 @@ pub enum Nodekind {
 	GEqNd, // ">="
 	LThanNd, // '<'
 	LEqNd, // "<="
+	IfNd, // if
+	ElseNd, // else
+	ForNd, // for
+	WhileNd, // while
 	ReturnNd, // return
 }
 
 pub struct Node {
 	pub kind: Nodekind,
+	// 通常ノード(計算式評価)用の左右ノード
 	pub left: Option<Rc<RefCell<Node>>>,
 	pub right: Option<Rc<RefCell<Node>>>,
+
+	// for (init; enter; routine) branch, if (enter) branch, while(enter) branch 
+	pub init: Option<Rc<RefCell<Node>>>,
+	pub enter: Option<Rc<RefCell<Node>>>, 
+	pub routine: Option<Rc<RefCell<Node>>>, 
+
+	// プロパティとなる数値
 	pub val: Option<i32>,
-	pub offset: Option<usize> // ベースポインタからのオフセット(ローカル変数時のみ)
+	pub offset: Option<usize>,// ベースポインタからのオフセット(ローカル変数時のみ)
+}
+
+// 初期化を簡単にするためにデフォルトを定義
+impl Default for Node {
+	fn default() -> Node {
+		Node { kind: Nodekind::DefaultNd, left: None, right: None, init: None, enter: None, routine: None, val: None, offset: None,}
+	}
 }
 
 static REP_NODE:usize = 40;
-
 impl Display for Node {
 	fn fmt(&self, f:&mut Formatter) -> Result {
 
@@ -66,6 +85,7 @@ impl Display for Node {
 	}
 }
 
+
 // ノードの作成
 fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
@@ -73,8 +93,7 @@ fn new_node(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -
 			kind: kind,
 			left: Some(left), 
 			right: Some(right),
-			val: None,
-			offset: None
+			.. Default::default()
 		}
 	))
 }
@@ -84,10 +103,8 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
 		Node {
 			kind: Nodekind::NumNd,
-			left: None,
-			right: None,
 			val: Some(val),
-			offset: None
+			.. Default::default()
 		}
 	))
 }
@@ -119,10 +136,8 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
 		Node {
 			kind: Nodekind::LvarNd,
-			left: None,
-			right: None,
-			val: None,
-			offset: Some(offset)
+			offset: Some(offset),
+			.. Default::default()
 		}
 
 	))
@@ -140,17 +155,66 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 }
 
 
-//  生成規則: stmt = (expr | "return" expr ) ";"
+// 生成規則: stmt = 
+// expr? ";"
+// "if" "(" expr ")" stmt
+// "while" "(" expr ")" stmt
+// "for" "(" expr? ";" expr? ";" expr? ")" stmt 
+// "return" expr ";"
+// まだブロックには対応していない(一気に実装してごちゃつくのを防ぐため
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let node_ptr: Rc<RefCell<Node>>;
+	let mut node_ptr: Rc<RefCell<Node>>;
 
-	if consume_kind(token_ptr, Tokenkind::ReturnTk) {
+	// if consume(token_ptr, ";") {return node_ptr;}
+
+	if consume(token_ptr, "if") {
+		// PENDING: 木構造考えてnode_ptrをどう更新するか決める必要がある
+		expect(token_ptr, "(");
+		node_ptr = expr(token_ptr);
+
+		expect(token_ptr, ")");
+		node_ptr = stmt(token_ptr);
+
+		if consume(token_ptr, "else") {
+			node_ptr = stmt(token_ptr);
+		}
+		
+
+	} else if consume(token_ptr, "while") {
+		// PENDING: 同上
+		expect(token_ptr, "(");
+		node_ptr = expr(token_ptr);
+		expect(token_ptr, ")");
+
+		node_ptr = stmt(token_ptr);
+
+	} else if consume(token_ptr, "for") {
+		// PENDING: 同上
+		expect(token_ptr, "(");
+
+		if consume(token_ptr, ";") {
+			node_ptr = expr(token_ptr);
+		} else {expect(token_ptr, ";")}
+
+
+		if consume(token_ptr, ";") {
+			node_ptr = expr(token_ptr);
+		} else {expect(token_ptr, ";")}
+
+
+		if consume(token_ptr, ")") {
+			node_ptr = expr(token_ptr);
+		} else {expect(token_ptr, ")")}
+		
+		node_ptr = stmt(token_ptr);
+
+	} else if consume_kind(token_ptr, Tokenkind::ReturnTk) {
 		// ReturnNdはここでしか生成しないため、ここにハードコードする
 		node_ptr = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::ReturnNd,
 				left: Some(expr(token_ptr)),
-				right: None, val: None, offset: None,
+				..Default::default()
 			}
 		));
 	} else {
