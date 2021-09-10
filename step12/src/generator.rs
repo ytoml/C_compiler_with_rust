@@ -11,6 +11,10 @@ pub static ASM: Lazy<Mutex<String>> = Lazy::new(
 	)
 );
 
+static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
+	|| Mutex::new(0)
+);
+
 pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
@@ -47,10 +51,70 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	pop rbp\n";
 			*ASM.lock().unwrap() += "	ret\n";
 			return;
-		}
+		},
+		Nodekind::IfNd => {
+			// PENDING
+			*CTR_COUNT.lock().unwrap() += 1;
+			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
 
+			gen((**node).borrow().enter.as_ref().unwrap());
+			*ASM.lock().unwrap() += "	pop rax\n";
+			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
+			*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
+			
+			gen((**node).borrow().branch.as_ref().unwrap());
+
+			// elseに対応
+			if let Some(ptr) = (**node).borrow().enter.as_ref() {
+				gen(ptr);
+			}
+
+			*ASM.lock().unwrap() += format!(".Lend{}\n", CTR_COUNT.lock().unwrap()).as_str();
+			return;
+		},
+		Nodekind::WhileNd => {
+			// PENDING
+			*CTR_COUNT.lock().unwrap() += 1;
+			let begin: String = format!(".LBegin{}\n", *CTR_COUNT.lock().unwrap());
+			let end: String = format!(".LEnd{}\n", *CTR_COUNT.lock().unwrap());
+
+			gen((**node).borrow().enter.as_ref().unwrap());
+			*ASM.lock().unwrap() += "	pop rax\n";
+			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
+			*ASM.lock().unwrap() += format!("	je {}", end).as_str();
+			
+			gen((**node).borrow().branch.as_ref().unwrap());
+
+			*ASM.lock().unwrap() += format!("	jmp {}", begin).as_str();
+
+			*ASM.lock().unwrap() += end.as_str();
+			return;
+		},
+		Nodekind::ForNd => {
+			// PENDING
+			*CTR_COUNT.lock().unwrap() += 1;
+			let begin: String = format!(".LBegin{}\n", *CTR_COUNT.lock().unwrap());
+			let end: String = format!(".LEnd{}\n", *CTR_COUNT.lock().unwrap());
+
+			if let Some(ptr) = (**node).borrow().init.as_ref() {
+				gen(ptr);
+			}
+			*ASM.lock().unwrap() += begin.as_str();
+			gen((**node).borrow().enter.as_ref().unwrap());
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
+			*ASM.lock().unwrap() += format!("	je {}", end).as_str();
+			
+			gen((**node).borrow().branch.as_ref().unwrap()); // for文内の処理
+			gen((**node).borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
+
+			*ASM.lock().unwrap() += format!("	jmp {}", begin).as_str();
+
+			*ASM.lock().unwrap() += end.as_str();
+			return;
+		}, 
 		_ => {}// 他のパターンなら、ここでは何もしない
-		
 	} 
 
 	gen((**node).borrow().left.as_ref().unwrap());
@@ -212,6 +276,66 @@ mod tests {
 	fn test_assign_2() {
 		let equation = "local = 1; local_value = local + 1; local_value99 = local_value + 3;".to_string();
 		println!("test_assign{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn test_if() {
+		let equation = "
+			i = 10;
+			if (1) i + 1;
+			x = i + 10;
+		".to_string();
+		println!("test_if{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn test_while() {
+		let equation = "
+			i = 10;
+			while (i > 1) i = i - 1;
+			i;
+		".to_string();
+		println!("test_while{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn test_for() {
+		let equation = "
+			sum = 10;
+			for (i = 0; i < 10; i = i + 1) sum += i;
+			sum;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
 		for node_ptr in node_heads {
