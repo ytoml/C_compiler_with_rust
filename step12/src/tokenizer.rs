@@ -413,11 +413,8 @@ pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 //  予約済みトークンを期待し、(文字列で)指定して読む関数(失敗するとexitする)
 pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 
-	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk{
-		exit_eprintln!("予約されていないトークン\"{}\"が発見されました。", (**token_ptr).borrow().body.as_ref().unwrap());
-	}
-	if (**token_ptr).borrow().body.as_ref().unwrap() != op {
-		exit_eprintln!("\"{}\"を期待した位置で\"{}\"が発見されました。", op, (**token_ptr).borrow().body.as_ref().unwrap());
+	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
+		exit_eprintln!("\"{}\"を期待した位置で予約されていないトークン\"{}\"が発見されました。", op, (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 
 	token_ptr_exceed(token_ptr);
