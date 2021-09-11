@@ -828,13 +828,13 @@ mod tests {
 	#[test]
 	fn tokenizer_test_10(){
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
-			for( ; ;  ) i = i + 1;
+			for( i = 10; ;  ) i = i + 1;
 			x = 20;
 			while(i == 0) x = x + 1;
 			if_ = 10
 			if(if_ >= 0) if_ - 100; else if_ * 100;
-			return_ = 10;
-			return return_;
+			return8 = 10;
+			return return8;
 			".to_string()
 		);
 
