@@ -34,7 +34,12 @@ pub enum Nodekind {
 }
 
 pub struct Node {
-	pub kind: Nodekind,
+	pub kind: Nodekind, // Nodeの種類
+
+	// プロパティとなる数値
+	pub val: Option<i32>,
+	pub offset: Option<usize>,// ベースポインタからのオフセット(ローカル変数時のみ)
+
 	// 通常ノード(計算式評価)用の左右ノード
 	pub left: Option<Rc<RefCell<Node>>>,
 	pub right: Option<Rc<RefCell<Node>>>,
@@ -45,9 +50,6 @@ pub struct Node {
 	pub routine: Option<Rc<RefCell<Node>>>, 
 	pub branch: Option<Rc<RefCell<Node>>>,
 
-	// プロパティとなる数値
-	pub val: Option<i32>,
-	pub offset: Option<usize>,// ベースポインタからのオフセット(ローカル変数時のみ)
 }
 
 // 初期化を簡単にするためにデフォルトを定義
@@ -63,6 +65,18 @@ impl Display for Node {
 
 		let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
 		s = format!("{}Nodekind : {:?}\n", s, self.kind);
+
+		if let Some(e) = self.val.as_ref() {
+			s = format!("{}val: {}\n", s, e);
+		} else {
+			s = format!("{}val: not exist\n", s);
+		}
+		
+		if let Some(e) = self.offset.as_ref() {
+			s = format!("{}offset: {}\n", s, e);
+		} else {
+			s = format!("{}offset: not exist\n", s);
+		}
 
 		if let Some(e) = self.left.as_ref() {
 			s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);
@@ -437,11 +451,47 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 mod tests {
 	use super::*;
+	use crate::tokenizer::tokenize;
+
+	static REP: usize = 40;
+
+	fn search_tree(tree: &Rc<RefCell<Node>>) {
+		let node: &Node = &*(*tree).borrow();
+		println!("{}", node);
+
+		if node.left.is_some() {search_tree(node.left.as_ref().unwrap());}
+		if node.right.is_some() {search_tree(node.right.as_ref().unwrap());}
+		if node.enter.is_some() {search_tree(node.enter.as_ref().unwrap());}
+		if node.routine.is_some() {search_tree(node.routine.as_ref().unwrap());}
+		if node.branch.is_some() {search_tree(node.branch.as_ref().unwrap());}
+	} 
+
+
 
 	#[test]
 	fn test_display() {
-		println!("test_display{}", "-".to_string().repeat(40));
+		println!("test_display{}", "-".to_string().repeat(REP));
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
+	}
+
+
+	#[test]
+	fn test_for() {
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let equation = "
+			sum = 10;
+			sum = sum + i;
+			for (i = 1 ; i < 10; i = i + 1) 10;;
+			sum;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
 	}
 }
