@@ -4,9 +4,12 @@ use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
 use std::fmt;
 use std::iter::FromIterator;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {
+	DefaultTk, // Default用のkind
 	HeadTk, // 先頭にのみ使用するkind
 	IdentTk, // 識別子
 	ReservedTk, // 記号
@@ -14,6 +17,24 @@ pub enum Tokenkind {
 	ReturnTk, // リターン
 	EOFTk, // 入力終わり
 }
+
+impl Display for Tokenkind {
+	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
+		let s: &str;
+		match self {
+			Tokenkind::DefaultTk => {s = "Default Token";},
+			Tokenkind::HeadTk => {s = "Head Token";},
+			Tokenkind::IdentTk => {s = "Identity Token";},
+			Tokenkind::ReservedTk => {s = "Reserved Token";},
+			Tokenkind::NumTk => {s = "Number Token";},
+			Tokenkind::ReturnTk => {s = "Return Token";}
+			Tokenkind::EOFTk => {s = "EOF Token";}
+		}
+
+		write!(f, "{}", s)
+	}
+}
+
 
 // Rc<RefCell<T>>により共有可能な参照(ポインタ風)を持たせる
 pub struct Token {
@@ -24,6 +45,13 @@ pub struct Token {
 	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 }
 
+impl Default for Token {
+	fn default() -> Token {
+		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None}
+	}
+
+}
+
 // 構造体にStringをうまく持たせるためのnewメソッド
 impl Token {
 	fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
@@ -31,25 +59,51 @@ impl Token {
 		let len = body.chars().count(); // len()を使うとバイト数になってややこしくなるので注意
 		match kind {
 			Tokenkind::HeadTk => {
-				Token {kind: kind, val: None, body: None, len: 0, next: None}
+				Token {kind: kind, .. Default::default()}
 			},
 			Tokenkind::IdentTk => {
-				Token {kind: kind, val: None, body: Some(body), len: len, next: None}
+				Token {
+					kind: kind, 
+					body: Some(body),
+					len: len,
+					.. Default::default()
+				}
 			},
 			Tokenkind::NumTk => {
 				// NumTkと共に数字以外の値が渡されることはないものとして、unwrapで処理
 				let val = body.parse::<i32>().unwrap();
-				Token {kind: kind, val: Some(val), body: Some(body), len: len, next: None}
+				Token {
+					kind: kind,
+					val: Some(val),
+					body: Some(body),
+					len: len,
+					next: None
+				}
 			},
 			Tokenkind::ReservedTk => {
-				Token {kind: kind, val: None, body: Some(body), len: len, next: None}
+				Token {
+					kind: kind,
+					body: Some(body),
+					len: len,
+					.. Default::default()
+				}
 			},
 			Tokenkind::ReturnTk => {
-				Token {kind: kind, val: None, body: Some("This is return Token.".to_string()), len: len, next: None}
+				Token {
+					kind: kind, 
+					body: Some("This is return Token.".to_string()),
+					len: 6,
+					.. Default::default()
+				}
 			}
 			Tokenkind::EOFTk => {
-				Token {kind: kind, val: None, body: Some("This is EOF Token.".to_string()), len: 0, next: None}
+				Token {
+					kind: kind, 
+					body: Some("This is EOF Token.".to_string()),
+					.. Default::default()
+				}
 			},
+			_ => Default::default() // DefaultTkの場合(想定されていない)
 		}
 	}
 }
@@ -120,34 +174,28 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 	while lookat < len {
 		// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
-		match skipspace(&string, &mut lookat) {
+		match skipspace(&string, &mut lookat, len) {
 			Ok(()) => {},
 			Err(()) => {break;}
 		}
 
-		// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
-		if lookat + 1 < len {
-			slice = String::from_iter(string[lookat..lookat+2].iter());
-			if slice == "==" || slice == "!=" || slice == ">=" || slice == "<=" {
-				(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReservedTk, slice))));
-				token_ptr_exceed(&mut token_ptr);
-
-				lookat += 2;
-				continue;
-			}
-		}
-
-		// 単項演算子、括弧、代入演算子、文末のセミコロンを予約
-		c = string[lookat];
-		if c == '<' || c == '>' || c == '+' || c == '-' || c == '*' || c == '/' || c == '(' || c == ')' || c == '=' || c == ';' {
-			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReservedTk, c))));
+		// 予約文字を判定
+		if let Some(body) = is_reserved(&string, &mut lookat, len) {
+			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReservedTk, body))));
 			token_ptr_exceed(&mut token_ptr);
-
-			lookat += 1;
 			continue;
 		}
 
+		if is_return(&string, &mut lookat, len) {
+			// トークン列にIdentTkとして追加する必要がある
+			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReturnTk, ""))));
+			token_ptr_exceed(&mut token_ptr);
+			
+			continue;
+		}
+		
 		// 数字ならば、数字が終わるまでを読んでトークンを生成
+		c = string[lookat];
 		if is_digit(&c) {
 			let num = strtol(&string, &mut lookat);
 			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, num.to_string()))));
@@ -155,16 +203,6 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 			continue;
 		}
-
-		if is_return(&string, &mut lookat) {
-
-			// トークン列にIdentTkとして追加する必要がある
-			(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReturnTk, "return"))));
-			token_ptr_exceed(&mut token_ptr);
-			
-			continue;
-		}
-
 
 		// 英字とアンダーバーを先頭とする文字を識別子としてサポートする
 		if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
@@ -182,27 +220,31 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::EOFTk, ""))));
 
-
 	token_ptr_exceed(&mut token_head_ptr);
 
 	token_head_ptr
 }
 
+
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
 
+static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["==", "!=", ">=", "<="]));
+static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![';', '(', ')', '+', '-', '*', '/', '=', '<', '>']));
+static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![' ', '\t', '\n']));
+
+
 // 空白を飛ばして読み進める
-fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
-	let limit = string.len();
+fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()> {
 
 	// 既にEOFだったならErrを即返す
-	if *index >= limit {
+	if *index >= len {
 		return Err(());
 	}
 
 	// 空白でなくなるまで読み進める
-	while string[*index] == ' ' || string[*index] == '\n' ||  string[*index] == '\t' {
+	while SPACES.lock().unwrap().contains(&string[*index]) {
 		*index += 1;
-		if *index >= limit {
+		if *index >= len {
 			return Err(());
 		}
 	}
@@ -214,8 +256,6 @@ fn skipspace(string: &Vec<char>, index: &mut usize) -> Result<(), ()> {
 fn is_digit(c: &char) -> bool{
 	*c >= '0' && *c <= '9'
 }
-
-
 
 // 数字を読みつつindexを進める
 fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
@@ -243,31 +283,92 @@ fn canbe_ident_part (c: &char) -> bool {
 	return (*c >= 'a' && *c <= 'z') | (*c >= 'A' && *c <= 'Z') | (*c >= '0' && *c <= '9') | (*c == '_')
 }
 
-// return文を読む
-fn is_return(string: &Vec<char>, index: &mut usize) -> bool {
-	// stringの残りにそもそもreturnの入る余地がなければそくreturn(index out of range回避)
-	if string.len() < *index + 6 {return false;}
 
-	// 1文字ずつみてreturnかどうか確認する(途中から6文字一気に見るのは難しいのと、Index out of rangeを避ける)
-	//またreturn後の1文字は\n, \t, whitespace, ';'しか許容しない
-
-	if string[*index] != 'r' {return false;}
-	if string[*index+1] != 'e' {return false;}
-	if string[*index+2] != 't' {return false;}
-	if string[*index+3] != 'u' {return false;}
-	if string[*index+4] != 'r' {return false;}
-	if string[*index+5] != 'n' {return false;}
-
-	// returnで';'なくコードが終わっているとどうせエラーになるのだが、そこはトークナイズではなく文法的な問題なのでparserに任せることにしてここではreturn trueにする
-	if string.len() > *index + 6 {
-		let next: char = string[*index+6];
-		if next != ' ' && next != '\n' && next != '\t' {return false;}
+// 予約されたトークンの後に空白なしで連続して良い文字であるかどうかを判別する。
+fn can_follow_reserved(string: &Vec<char>, index: usize) -> bool {
+	if let Some(c) = string.get(index) {
+		if UNI_RESERVED.lock().unwrap().contains(c) || SPACES.lock().unwrap().contains(c) {
+			return true;
+		}
+		return false;
 	}
-
-	// returnを読めたのでindexを進める
-	*index += 6;
+	// indexがout of bounds(=前のトークンが文末にある)ならトークナイズを許して後でパーサにエラーを出させる方針
 	true
 }
+
+
+// 予約されたトークンだった場合はSome(String)を返す
+fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<String> {
+
+	// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
+	let lim = *index+5;
+	if lim <= len {
+		let slice: String = String::from_iter(string[*index..lim].iter());
+		if slice == "while" && can_follow_reserved(string,lim) {
+			*index = lim;
+			return Some(slice);
+		}
+	}
+
+	// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
+	let lim = *index + 4;
+	if lim <= len {
+		let slice: String = String::from_iter(string[*index..lim].iter());
+		if slice == "else" && can_follow_reserved(string, lim) {
+			*index = lim;
+			return Some(slice);
+		}
+	}
+
+	// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
+	let lim = *index + 3;
+	if lim <= len {
+		let slice: String = String::from_iter(string[*index..lim].iter());
+		if slice == "for" && can_follow_reserved(string, lim) {
+			*index = lim;
+			return Some(slice);
+		}
+	}
+
+	// 2文字演算子とif
+	let lim = *index + 2;
+	if lim <= len {
+		let slice: String = String::from_iter(string[*index..(*index+2)].iter());
+		if BI_OPS.lock().unwrap().contains(&slice.as_str()) || (slice == "if" && can_follow_reserved(string, lim))  {
+			*index = lim;
+			return Some(slice);
+		}
+	}
+
+	// 単項演算子、括弧、代入演算子、文末のセミコロンを予約
+	if *index < len {
+		let c: char = string[*index];
+
+		if UNI_RESERVED.lock().unwrap().contains(&c) {
+			*index += 1;
+			return Some(c.to_string());
+		}
+	}
+
+	None
+}
+
+// return文を読む
+fn is_return(string: &Vec<char>, index: &mut usize, len: usize) -> bool {
+	// is_reservedと同じ要領でreturnを読み取る
+	let lim = *index + 6;
+	// stringの残りにそもそもreturnの入る余地がなければ即return(index out of range回避)
+	if lim >= len {return false;}
+
+	let slice: String = String::from_iter(string[*index..lim].iter());
+	if slice == "return" && can_follow_reserved(string, lim){
+		*index = lim;
+		true
+	} else {
+		false
+	}
+}
+
 
 // LVarに対応する文字列を抽出しつつ、indexを進める
 fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
@@ -703,6 +804,49 @@ mod tests {
 
 			assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
 			eprintln!("Token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+	#[test]
+	fn tokenizer_test_9(){
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize(
+			"a = 1; b = a * 8; return8 = 9; _return = 0; return 11;".to_string()
+		);
+
+		{
+			println!("\ntest9{}", "-".to_string().repeat(40));
+
+			for _ in 0..21 {
+				println!("token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+				token_ptr_exceed(&mut token_ptr);
+			}
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
+			eprintln!("Token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+	#[test]
+	fn tokenizer_test_10(){
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
+			for( i = 10; ;  ) i = i + 1;
+			x = 20;
+			while(i == 0) x = x + 1;
+			if_ = 10
+			if(if_ >= 0) if_ - 100; else if_ * 100;
+			return8 = 10;
+			return return8;
+			".to_string()
+		);
+
+		{
+			println!("\ntest10{}", "-".to_string().repeat(40));
+			while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
+				println!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
+				token_ptr_exceed(&mut token_ptr);
+			}
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
+			eprintln!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
 		}
 	}
 }
