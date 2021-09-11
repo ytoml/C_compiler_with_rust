@@ -78,6 +78,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			let begin: String = format!(".LBegin{}\n", *CTR_COUNT.lock().unwrap());
 			let end: String = format!(".LEnd{}\n", *CTR_COUNT.lock().unwrap());
 
+			*ASM.lock().unwrap() += begin.as_str();
 			gen((**node).borrow().enter.as_ref().unwrap());
 			*ASM.lock().unwrap() += "	pop rax\n";
 			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
@@ -332,7 +333,7 @@ mod tests {
 	fn test_for() {
 		let equation = "
 			sum = 10;
-			for (i = 0; i < 10; i = i + 1) sum += i;
+			for (i = 0; i < 10; i = i + 1) sum = sum + i;
 			sum;
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
