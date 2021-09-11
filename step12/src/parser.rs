@@ -44,18 +44,19 @@ pub struct Node {
 	pub left: Option<Rc<RefCell<Node>>>,
 	pub right: Option<Rc<RefCell<Node>>>,
 
-	// for (init; enter; routine) branch, if (enter) branch else left, while(enter) branch 
+	// for (init; enter; routine) branch, if (enter) branch else els, while(enter) branch 
 	pub init: Option<Rc<RefCell<Node>>>,
 	pub enter: Option<Rc<RefCell<Node>>>, 
 	pub routine: Option<Rc<RefCell<Node>>>, 
 	pub branch: Option<Rc<RefCell<Node>>>,
+	pub els: Option<Rc<RefCell<Node>>>,
 
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, left: None, right: None, init: None, enter: None, routine: None, branch: None, val: None, offset: None,}
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, }
 	}
 }
 
@@ -68,56 +69,38 @@ impl Display for Node {
 
 		if let Some(e) = self.val.as_ref() {
 			s = format!("{}val: {}\n", s, e);
-		} else {
-			s = format!("{}val: not exist\n", s);
 		}
 		
 		if let Some(e) = self.offset.as_ref() {
 			s = format!("{}offset: {}\n", s, e);
-		} else {
-			s = format!("{}offset: not exist\n", s);
-		}
+		} 
 
 		if let Some(e) = self.left.as_ref() {
 			s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);
-		} else {
-			s = format!("{}left: not exist\n", s);
-		}
+		} 
 
 		if let Some(e) = self.right.as_ref() {
 			s = format!("{}right: exist(kind:{:?})\n", s, e.borrow().kind);
-		} else {
-			s = format!("{}right: not exist\n", s);
 		}
 
 		if let Some(e) = self.init.as_ref() {
 			s = format!("{}init: exist(kind:{:?})\n", s, e.borrow().kind);
-		} else {
-			s = format!("{}init: not exist\n", s);
 		}
 
 		if let Some(e) = self.enter.as_ref() {
 			s = format!("{}enter: exist(kind:{:?})\n", s, e.borrow().kind);
-		} else {
-			s = format!("{}enter: not exist\n", s);
 		}
 
 		if let Some(e) = self.routine.as_ref() {
 			s = format!("{}routine: exist(kind:{:?})\n", s, e.borrow().kind);
-		} else {
-			s = format!("{}routine: not exist\n", s);
 		}
 
 		if let Some(e) = self.branch.as_ref() {
 			s = format!("{}branch: exist(kind:{:?})\n", s, e.borrow().kind);
-		} else {
-			s = format!("{}branch: not exist\n", s);
 		}
 
-		if let Some(e) = self.val.as_ref() {
-			s = format!("{}val: {}\n", s, e);
-		} else {
-			s = format!("{}val: not exist\n", s);
+		if let Some(e) = self.els.as_ref() {
+			s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);
 		}
 
 		write!(f, "{}", s)
@@ -208,19 +191,19 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	if consume(token_ptr, "if") {
 		expect(token_ptr, "(");
-		let enter_ptr= expr(token_ptr);
+		let enter= Some(expr(token_ptr));
 
 		expect(token_ptr, ")");
-		let branch_ptr = stmt(token_ptr);
+		let branch = Some(stmt(token_ptr));
 
 		if consume(token_ptr, "else") {
-			let else_ptr = stmt(token_ptr);
+			let els = Some(stmt(token_ptr));
 			node_ptr = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::IfNd,
-				enter: Some(enter_ptr),
-				branch: Some(branch_ptr),
-				left: Some(else_ptr),
+				enter: enter,
+				branch: branch,
+				els: els,
 				..Default::default()
 				}
 			));
@@ -228,8 +211,8 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			node_ptr = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::IfNd,
-				enter: Some(enter_ptr),
-				branch: Some(branch_ptr),
+				enter: enter,
+				branch: branch,
 				..Default::default()
 				}
 			));
@@ -238,15 +221,16 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	} else if consume(token_ptr, "while") {
 		expect(token_ptr, "(");
-		let enter_ptr = expr(token_ptr);
+		let enter = Some(expr(token_ptr));
 		expect(token_ptr, ")");
 
-		let branch_ptr = expr(token_ptr);
+		let branch = Some(stmt(token_ptr));
+
 		node_ptr = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::WhileNd,
-				enter: Some(enter_ptr),
-				branch: Some(branch_ptr),
+				enter: enter,
+				branch: branch,
 				..Default::default()
 			}
 		));
@@ -306,9 +290,8 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		));
 	} else {
 		node_ptr = expr(token_ptr);
+		expect(token_ptr, ";");
 	}
-
-	expect(token_ptr, ";");
 
 	node_ptr
 }
@@ -461,11 +444,12 @@ mod tests {
 
 		if node.left.is_some() {search_tree(node.left.as_ref().unwrap());}
 		if node.right.is_some() {search_tree(node.right.as_ref().unwrap());}
+		if node.init.is_some() {search_tree(node.init.as_ref().unwrap());}
 		if node.enter.is_some() {search_tree(node.enter.as_ref().unwrap());}
 		if node.routine.is_some() {search_tree(node.routine.as_ref().unwrap());}
 		if node.branch.is_some() {search_tree(node.branch.as_ref().unwrap());}
-	} 
-
+		if node.els.is_some() {search_tree(node.els.as_ref().unwrap());}
+	}
 
 
 	#[test]
@@ -482,7 +466,7 @@ mod tests {
 		let equation = "
 			sum = 10;
 			sum = sum + i;
-			for (i = 1 ; i < 10; i = i + 1) 10;;
+			for (i = 1 ; i < 10; i = i + 1) sum = sum +i;
 			sum;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
@@ -494,4 +478,62 @@ mod tests {
 			count += 1;
 		}
 	}
+
+	#[test]
+	fn test_while() {
+		println!("test_while{}", "-".to_string().repeat(REP));
+		let equation = "
+			sum = 10;
+			while(sum > 0) sum = sum - 1;
+			sum;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn test_if() {
+		println!("test_while{}", "-".to_string().repeat(REP));
+		let equation = "
+			i = 10;
+			if (i == 10) i = i / 5;
+			if (i == 2) i = i + 5; else i = i / 5;
+			i;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+
+	#[test]
+	fn test_combination() {
+		println!("test_combination{}", "-".to_string().repeat(REP));
+		let equation = "
+			i = 10;
+			if (i == 10) i = i / 5;
+			if (i == 2) i = i + 5; else i = i / 5;
+			i;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
 }
