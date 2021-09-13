@@ -57,62 +57,73 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*CTR_COUNT.lock().unwrap() += 1;
 			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
 
+			// 条件文の処理
 			gen((**node).borrow().enter.as_ref().unwrap());
 			*ASM.lock().unwrap() += "	pop rax\n";
-			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
+			*ASM.lock().unwrap() += "	cmp rax, 0\n"; 
+
+			// elseがある場合は微妙にjmp命令の位置が異なることに注意
+			if let Some(ptr) = (**node).borrow().els.as_ref() {
+				let els: String = format!(".LElse{}", *CTR_COUNT.lock().unwrap());
+
+				// falseは0なので、cmp rax, 0が真ならelseに飛ぶ
+				*ASM.lock().unwrap() += format!("je {}\n", els).as_str();
+				gen((**node).borrow().branch.as_ref().unwrap()); // if(true)の場合の処理
+				*ASM.lock().unwrap() += format!("jmp {}\n", end).as_str(); // elseを飛ばしてendへ
+
+				// elseの後ろの処理
+				*ASM.lock().unwrap() += format!("{}:\n", els).as_str();
+				gen(ptr);
+
+			} else {
+				// elseがない場合の処理
+				*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
+				gen((**node).borrow().branch.as_ref().unwrap());
+			}
+
+			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
+			return;
+		},
+		Nodekind::WhileNd => {
+			*CTR_COUNT.lock().unwrap() += 1;
+			let begin: String = format!(".LBegin{}", *CTR_COUNT.lock().unwrap());
+			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
+
+			*ASM.lock().unwrap() += format!("{}:\n", begin).as_str();
+			gen((**node).borrow().enter.as_ref().unwrap());
+			*ASM.lock().unwrap() += "	pop rax\n";
+			*ASM.lock().unwrap() += "	cmp rax, 0\n"; // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
 			*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
 			
 			gen((**node).borrow().branch.as_ref().unwrap());
 
-			// elseに対応
-			if let Some(ptr) = (**node).borrow().enter.as_ref() {
-				gen(ptr);
-			}
+			*ASM.lock().unwrap() += format!("	jmp {}\n", begin).as_str();
 
-			*ASM.lock().unwrap() += format!(".Lend{}\n", CTR_COUNT.lock().unwrap()).as_str();
-			return;
-		},
-		Nodekind::WhileNd => {
-			// PENDING
-			*CTR_COUNT.lock().unwrap() += 1;
-			let begin: String = format!(".LBegin{}\n", *CTR_COUNT.lock().unwrap());
-			let end: String = format!(".LEnd{}\n", *CTR_COUNT.lock().unwrap());
-
-			*ASM.lock().unwrap() += begin.as_str();
-			gen((**node).borrow().enter.as_ref().unwrap());
-			*ASM.lock().unwrap() += "	pop rax\n";
-			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
-			*ASM.lock().unwrap() += format!("	je {}", end).as_str();
-			
-			gen((**node).borrow().branch.as_ref().unwrap());
-
-			*ASM.lock().unwrap() += format!("	jmp {}", begin).as_str();
-
-			*ASM.lock().unwrap() += end.as_str();
+			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
 			return;
 		},
 		Nodekind::ForNd => {
-			// PENDING
 			*CTR_COUNT.lock().unwrap() += 1;
-			let begin: String = format!(".LBegin{}\n", *CTR_COUNT.lock().unwrap());
-			let end: String = format!(".LEnd{}\n", *CTR_COUNT.lock().unwrap());
+			let begin: String = format!(".LBegin{}", *CTR_COUNT.lock().unwrap());
+			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
 
 			if let Some(ptr) = (**node).borrow().init.as_ref() {
 				gen(ptr);
 			}
-			*ASM.lock().unwrap() += begin.as_str();
+
+			*ASM.lock().unwrap() += format!("{}:\n", begin).as_str();
 			gen((**node).borrow().enter.as_ref().unwrap());
 
 			*ASM.lock().unwrap() += "	pop rax\n";
-			*ASM.lock().unwrap() += "	cmp 0\n"; // falseは0なので、cmp 0が真ならエンドに飛ぶ
-			*ASM.lock().unwrap() += format!("	je {}", end).as_str();
+			*ASM.lock().unwrap() += "	cmp rax, 0\n"; // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
+			*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
 			
 			gen((**node).borrow().branch.as_ref().unwrap()); // for文内の処理
 			gen((**node).borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
 
-			*ASM.lock().unwrap() += format!("	jmp {}", begin).as_str();
+			*ASM.lock().unwrap() += format!("	jmp {}\n", begin).as_str();
 
-			*ASM.lock().unwrap() += end.as_str();
+			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
 			return;
 		}, 
 		_ => {}// 他のパターンなら、ここでは何もしない
@@ -334,7 +345,7 @@ mod tests {
 		let equation = "
 			sum = 10;
 			for (i = 0; i < 10; i = i + 1) sum = sum + i;
-			sum;
+			return sum;
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
