@@ -288,9 +288,12 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 				..Default::default()
 			}
 		));
+		expect(token_ptr, ";");
+
 	} else {
 		node_ptr = expr(token_ptr);
 		expect(token_ptr, ";");
+
 	}
 
 	node_ptr
