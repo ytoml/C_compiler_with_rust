@@ -178,18 +178,29 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 
 // 生成規則: stmt = 
-// expr? ";"
-// "if" "(" expr ")" stmt ("else" stmt)? ; 今はelse ifは実装しない
-// "while" "(" expr ")" stmt
-// "for" "(" expr? ";" expr? ";" expr? ")" stmt 
+// expr ";" | 
+// "{" stmt* "}" | 
+// "if" "(" expr ")" stmt ("else" stmt)? | ...(今はelse ifは実装しない)
+// "while" "(" expr ")" stmt | 
+// "for" "(" expr? ";" expr? ";" expr? ")" stmt |
 // "return" expr ";"
 // まだブロックには対応していない(一気に実装してごちゃつくのを防ぐため
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr: Rc<RefCell<Node>>;
 
 	// if consume(token_ptr, ";") {return node_ptr;}
+	if consume(token_ptr, "{") {
+		// PENDING
+		let childs: Vec<Option<RefCell<Node>>> = vec![];
+		node_ptr = Rc::new(RefCell::new(
+			Node{
+				childs: childs,
+				..Default::default()
+			}
 
-	if consume(token_ptr, "if") {
+		));
+
+	} else if consume(token_ptr, "if") {
 		expect(token_ptr, "(");
 		let enter= Some(expr(token_ptr));
 
@@ -528,6 +539,25 @@ mod tests {
 			if (i == 10) i = i / 5;
 			if (i == 2) i = i + 5; else i = i / 5;
 			i;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_block() {
+		println!("test_combination{}", "-".to_string().repeat(REP));
+		let equation = "
+			for( i = 10; ;  ) {i = i + 1;}
+			{}
+			{i = i + 1; }
+			return 10
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
