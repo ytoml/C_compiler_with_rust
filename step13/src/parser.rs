@@ -620,6 +620,7 @@ mod tests {
 				x = x - 20;
 				;
 			}
+			{{}}
 			{i = i + 1; 10;}
 			return 200;
 			return;
