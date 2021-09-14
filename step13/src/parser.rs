@@ -1,3 +1,4 @@
+use crate::exit_eprintln;
 // 再帰下降構文のパーサ
 use crate::tokenizer::{Token, Tokenkind, consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof};
 use std::rc::Rc;
@@ -31,6 +32,7 @@ pub enum Nodekind {
 	ForNd, // for
 	WhileNd, // while
 	ReturnNd, // return
+	BlockNd, // {}
 }
 
 pub struct Node {
@@ -51,12 +53,15 @@ pub struct Node {
 	pub branch: Option<Rc<RefCell<Node>>>,
 	pub els: Option<Rc<RefCell<Node>>>,
 
+	// {childs}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
+	pub childs: Vec<Option<Rc<RefCell<Node>>>>,
+
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, }
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, childs: vec![]}
 	}
 }
 
@@ -101,6 +106,17 @@ impl Display for Node {
 
 		if let Some(e) = self.els.as_ref() {
 			s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);
+		}
+
+		if self.childs.len() > 0 {
+			s = format!("{}childs: exist\n", s);
+			for node in &self.childs {
+				if let Some(e) = node.as_ref() {
+					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
+				} else {
+					s = format!("{}->NULL\n", s);
+				}
+			}
 		}
 
 		write!(f, "{}", s)
@@ -190,14 +206,22 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	// if consume(token_ptr, ";") {return node_ptr;}
 	if consume(token_ptr, "{") {
-		// PENDING
-		let childs: Vec<Option<RefCell<Node>>> = vec![];
+		let mut childs: Vec<Option<Rc<RefCell<Node>>>> = vec![];
+		loop {
+			if !consume(token_ptr, "}") {
+				if at_eof(token_ptr) {exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。");}
+				childs.push(Some(stmt(token_ptr)));
+			} else {
+				break;
+			}
+		}
+
 		node_ptr = Rc::new(RefCell::new(
 			Node{
+				kind: Nodekind::BlockNd,
 				childs: childs,
 				..Default::default()
 			}
-
 		));
 
 	} else if consume(token_ptr, "if") {
@@ -554,10 +578,10 @@ mod tests {
 	fn test_block() {
 		println!("test_combination{}", "-".to_string().repeat(REP));
 		let equation = "
-			for( i = 10; ;  ) {i = i + 1;}
+			for( i = 10; ; ) {i = i + 1;}
 			{}
 			{i = i + 1; }
-			return 10
+			return 10;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
