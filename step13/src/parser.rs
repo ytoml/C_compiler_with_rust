@@ -194,17 +194,22 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 
 // 生成規則: stmt = 
-// expr ";" | 
+// expr? ";" | 
 // "{" stmt* "}" | 
 // "if" "(" expr ")" stmt ("else" stmt)? | ...(今はelse ifは実装しない)
 // "while" "(" expr ")" stmt | 
 // "for" "(" expr? ";" expr? ";" expr? ")" stmt |
-// "return" expr ";"
+// "return" expr? ";"
 // まだブロックには対応していない(一気に実装してごちゃつくのを防ぐため
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr: Rc<RefCell<Node>>;
 
-	// if consume(token_ptr, ";") {return node_ptr;}
+	// exprなしのパターン: 実質NumNd 0があるのと同じと捉えれば良い
+	if consume(token_ptr, ";") {
+		node_ptr = new_node_num(0);
+		return node_ptr;
+	}
+
 	if consume(token_ptr, "{") {
 		let mut childs: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 		loop {
@@ -315,15 +320,24 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		));
 
 	} else if consume_kind(token_ptr, Tokenkind::ReturnTk) {
+		let left_ptr: Rc<RefCell<Node>>;
+
+		// exprなしのパターン: 実質NumNd 0があるのと同じと捉えれば良い
+		if consume(token_ptr, ";") {
+			left_ptr = new_node_num(0);
+		} else {
+			left_ptr = expr(token_ptr);
+			expect(token_ptr, ";");
+		}
+
 		// ReturnNdはここでしか生成しないため、ここにハードコードする
 		node_ptr = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::ReturnNd,
-				left: Some(expr(token_ptr)),
+				left: Some(left_ptr),
 				..Default::default()
 			}
 		));
-		expect(token_ptr, ";");
 
 	} else {
 		node_ptr = expr(token_ptr);
@@ -576,11 +590,11 @@ mod tests {
 
 	#[test]
 	fn test_block() {
-		println!("test_combination{}", "-".to_string().repeat(REP));
+		println!("test_block{}", "-".to_string().repeat(REP));
 		let equation = "
 			for( i = 10; ; ) {i = i + 1;}
 			{}
-			{i = i + 1; }
+			{i = i + 1; 10;}
 			return 10;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
@@ -593,4 +607,30 @@ mod tests {
 		} 
 	}
 
+	#[test]
+	fn test_block2() {
+		println!("test_block2{}", "-".to_string().repeat(REP));
+		let equation = "
+			while(i < 10) {i = i + 1; i = i * 2;}
+			x = 10;
+			if ( x == 10 ){
+				x = x + 200;
+				x = x / 20;
+			} else {
+				x = x - 20;
+				;
+			}
+			{i = i + 1; 10;}
+			return 200;
+			return;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
 }
