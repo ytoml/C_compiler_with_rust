@@ -166,7 +166,6 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 	let len: usize = string.len();
 	let mut lookat: usize = 0;
 	let mut c: char;
-	let mut slice: String;
 	let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
 
 	
@@ -229,7 +228,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
 
 static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["==", "!=", ">=", "<="]));
-static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![';', '(', ')', '+', '-', '*', '/', '=', '<', '>']));
+static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![';', '(', ')', '{', '}', '+', '-', '*', '/', '=', '<', '>']));
 static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![' ', '\t', '\n']));
 
 
@@ -761,7 +760,7 @@ mod tests {
 	}
 
 	#[test]
-	fn tokenizer_test_7(){
+	fn tokenizer_lvar(){
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(
 			"local = -1;
 			local_ = 2;
@@ -773,7 +772,7 @@ mod tests {
 		);
 
 		{
-			println!("\ntest5{}", "-".to_string().repeat(40));
+			println!("\nlvar{}", "-".to_string().repeat(40));
 
 			for _ in 0..59 {
 				println!("token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
@@ -786,31 +785,13 @@ mod tests {
 	}
 
 	#[test]
-	fn tokenizer_test_8(){
+	fn tokenizer_return(){
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(
 			"a = 1; b = a * 8; return8 = 9; _return = 0; return 11;".to_string()
 		);
 
 		{
-			println!("\ntest5{}", "-".to_string().repeat(40));
-
-			for _ in 0..21 {
-				println!("token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
-				token_ptr_exceed(&mut token_ptr);
-			}
-
-			assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
-			eprintln!("Token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
-		}
-	}
-	#[test]
-	fn tokenizer_test_9(){
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(
-			"a = 1; b = a * 8; return8 = 9; _return = 0; return 11;".to_string()
-		);
-
-		{
-			println!("\ntest9{}", "-".to_string().repeat(40));
+			println!("\nretutn{}", "-".to_string().repeat(40));
 
 			for _ in 0..21 {
 				println!("token: {}", (*token_ptr).borrow().body.as_ref().unwrap());
@@ -823,7 +804,7 @@ mod tests {
 	}
 
 	#[test]
-	fn tokenizer_test_10(){
+	fn tokenizer_test_ctrl(){
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
 			for( i = 10; ;  ) i = i + 1;
 			x = 20;
@@ -836,7 +817,7 @@ mod tests {
 		);
 
 		{
-			println!("\ntest10{}", "-".to_string().repeat(40));
+			println!("\ntest_ctrl{}", "-".to_string().repeat(40));
 			while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 				println!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
 				token_ptr_exceed(&mut token_ptr);
@@ -846,4 +827,27 @@ mod tests {
 			eprintln!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
 		}
 	}
+
+	#[test]
+	fn tokenizer_test_block(){
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
+			for( i = 10; ;  ) {i = i + 1;}
+			{}
+			{i = i + 1; }
+			return 10;
+			".to_string()
+		);
+
+		{
+			println!("\ntest_block{}", "-".to_string().repeat(40));
+			while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
+				println!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
+				token_ptr_exceed(&mut token_ptr);
+			}
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
+			eprintln!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
 }
