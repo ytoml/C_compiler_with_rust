@@ -75,14 +75,20 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 				// elseの後ろの処理
 				*ASM.lock().unwrap() += format!("{}:\n", els).as_str();
 				gen(ptr);
+				*ASM.lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 
 			} else {
 				// elseがない場合の処理
 				*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
 				gen((**node).borrow().branch.as_ref().unwrap());
+				*ASM.lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			}
 
+			// stmtでgenした後にはpopが呼ばれるはずであり、分岐後いきなりpopから始まるのはおかしい(し、そのpopは使われない)
+			// ブロック文やwhile文も単なる num; などと同じようにstmt自体が(使われない)戻り値を持つものだと思えば良い
 			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
+			*ASM.lock().unwrap() += "	push 0\n"; 
+
 			return;
 		},
 		Nodekind::WhileNd => {
@@ -97,10 +103,14 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
 			
 			gen((**node).borrow().branch.as_ref().unwrap());
+			*ASM.lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 
 			*ASM.lock().unwrap() += format!("	jmp {}\n", begin).as_str();
 
+			// if文と同じ理由でpushが必要
 			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
+			*ASM.lock().unwrap() += "	push 0\n"; 
+
 			return;
 		},
 		Nodekind::ForNd => {
@@ -120,11 +130,17 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += format!("	je {}\n", end).as_str();
 			
 			gen((**node).borrow().branch.as_ref().unwrap()); // for文内の処理
+			*ASM.lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+
+			
 			gen((**node).borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
 
 			*ASM.lock().unwrap() += format!("	jmp {}\n", begin).as_str();
 
+			// if文と同じ理由でpushが必要
 			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
+			*ASM.lock().unwrap() += "	push 0\n"; 
+
 			return;
 		}, 
 		Nodekind::BlockNd => {
@@ -134,6 +150,10 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 				gen(child.as_ref().unwrap());
 				*ASM.lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			}
+			
+			// このBlock自体がstmt扱いであり、このgenがreturnした先でもpop raxが生成されるはず
+			// これもif文と同じくpush 0をしておく
+			*ASM.lock().unwrap() += "	push 0\n"; 
 
 			return;
 		}
