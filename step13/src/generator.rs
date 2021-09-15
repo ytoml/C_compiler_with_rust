@@ -1,5 +1,6 @@
 use crate::{exit_eprintln};
 use crate::parser::{Node, Nodekind};
+use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
 use once_cell::sync::Lazy;
@@ -126,6 +127,16 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += format!("{}:\n", end).as_str();
 			return;
 		}, 
+		Nodekind::BlockNd => {
+
+			for child in &(**node).borrow().children {
+				// parserのコード的にNoneなchildはありえないはずであるため、直にunwrapする
+				gen(child.as_ref().unwrap());
+				*ASM.lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+			}
+
+			return;
+		}
 		_ => {}// 他のパターンなら、ここでは何もしない
 	} 
 
@@ -346,6 +357,31 @@ mod tests {
 			sum = 10;
 			for (i = 0; i < 10; i = i + 1) sum = sum + i;
 			return sum;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+	
+	#[test]
+	fn test_block() {
+		let equation = "
+			sum = 10;
+			sum2 = 20;
+			for (i = 0; i < 10; i = i + 1) {
+				sum = sum + i;
+				sum2 = sum2 + i;
+			}
+			return sum;
+			return;
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
