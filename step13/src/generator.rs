@@ -1,6 +1,5 @@
 use crate::{exit_eprintln};
 use crate::parser::{Node, Nodekind};
-use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
 use once_cell::sync::Lazy;
