@@ -53,15 +53,15 @@ pub struct Node {
 	pub branch: Option<Rc<RefCell<Node>>>,
 	pub els: Option<Rc<RefCell<Node>>>,
 
-	// {childs}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
-	pub childs: Vec<Option<Rc<RefCell<Node>>>>,
+	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
+	pub children: Vec<Option<Rc<RefCell<Node>>>>,
 
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, childs: vec![]}
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![]}
 	}
 }
 
@@ -108,9 +108,9 @@ impl Display for Node {
 			s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);
 		}
 
-		if self.childs.len() > 0 {
-			s = format!("{}childs: exist\n", s);
-			for node in &self.childs {
+		if self.children.len() > 0 {
+			s = format!("{}children: exist\n", s);
+			for node in &self.children {
 				if let Some(e) = node.as_ref() {
 					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
 				} else {
@@ -211,11 +211,11 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	}
 
 	if consume(token_ptr, "{") {
-		let mut childs: Vec<Option<Rc<RefCell<Node>>>> = vec![];
+		let mut children: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 		loop {
 			if !consume(token_ptr, "}") {
 				if at_eof(token_ptr) {exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。");}
-				childs.push(Some(stmt(token_ptr)));
+				children.push(Some(stmt(token_ptr)));
 			} else {
 				break;
 			}
@@ -224,7 +224,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		node_ptr = Rc::new(RefCell::new(
 			Node{
 				kind: Nodekind::BlockNd,
-				childs: childs,
+				children: children,
 				..Default::default()
 			}
 		));
