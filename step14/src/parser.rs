@@ -33,6 +33,7 @@ pub enum Nodekind {
 	WhileNd, // while
 	ReturnNd, // return
 	BlockNd, // {}
+	FuncNd, // func(): 現在は引数を考慮しない(現状はgccでコンパイルしたCプログラムのオブジェクトとリンクさせる)
 }
 
 pub struct Node {
@@ -464,7 +465,7 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 
 
-// 生成規則: primary = num | ident | "(" expr ")"
+// 生成規則: primary = num | ident ( "(" ")" )? | "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
@@ -474,8 +475,22 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		expect(token_ptr, ")");
 
 	} else if is_ident(token_ptr) {
-		node_ptr = new_node_lvar(expect_ident(token_ptr));
+		// PEND: もしかしたら Node に isfunc 的なフラグをつける方が良いのかも？
+		let var_name = expect_ident(token_ptr);
+		if consume(token_ptr, "(") {
 
+			// todo: LVAR_MAX_OFFSETへの操作や16バイトアラインメントへの対処が必要
+			node_ptr = Rc::new(RefCell::new(
+				Node {
+					kind: Nodekind::FuncNd,
+					..Default::default()
+				}
+			));
+
+			expect(token_ptr, ")");
+		} else {
+			node_ptr = new_node_lvar(var_name);
+		}
 	} else {
 		node_ptr = new_node_num(expect_number(token_ptr));
 
