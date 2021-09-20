@@ -653,4 +653,23 @@ mod tests {
 			count += 1;
 		} 
 	}
+
+	#[test]
+	fn test_func() {
+		println!("test_func{}", "-".to_string().repeat(REP));
+		let equation = "
+			call_fprint();
+			i = getOne();
+			j = getTwo();
+			return i + j;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
 }
