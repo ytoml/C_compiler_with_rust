@@ -34,6 +34,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 		Nodekind::FuncNd => {
 			// 単にcallを行う(戻り値はスタックに積まれるのでここでpopなど必要ないことに注意)
 			// gen_args(node);
+			*ASM.lock().unwrap() += format!("	and rsp, ~0x10").as_str(); // 16の倍数に align
 			*ASM.lock().unwrap() += format!("	call {}\n", (**node).borrow().name.as_ref().unwrap()).as_str();
 		},
 		Nodekind::AssignNd => {
