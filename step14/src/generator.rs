@@ -31,6 +31,11 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
+		Nodekind::FuncNd => {
+			// 単にcallを行う(戻り値はスタックに積まれるのでここでpopなど必要ないことに注意)
+			// gen_args(node);
+			*ASM.lock().unwrap() += format!("	call {}\n", (**node).borrow().name.as_ref().unwrap()).as_str();
+		},
 		Nodekind::AssignNd => {
 			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_lval内でエラー)
 			gen_lval((**node).borrow().left.as_ref().unwrap());
