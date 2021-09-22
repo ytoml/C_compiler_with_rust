@@ -359,4 +359,35 @@ mod tests {
 		println!("{}", ASM.lock().unwrap());
 
 	}
+
+
+	#[test]
+	fn test_overall() {
+		let equation = "
+			sum = 10;
+			i = 10;
+			sum = i = i + 20;
+			sum;
+			a = 1; b = 2;
+			sum = 0;
+			sum = sum + 1;
+			sum = sum + 1;
+			sum = sum + a;
+			return_ = sum;
+			return_ = sum = sum + (a + b) * 3;
+			_sum = 44;
+			a_b_c = 2;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
 }
