@@ -465,7 +465,7 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: primary = num | ident ( "(" ")" )? | "(" expr ")"
+// 生成規則: primary = num | ident ( "(" (expr ",")* expr? ")" )? | "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
@@ -478,13 +478,33 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		let var_name = expect_ident(token_ptr);
 		if consume(token_ptr, "(") {
 
+			// 引数を6つまでサポート
+			let mut args:Vec<Option<Rc<RefCell<Node>>>> = vec![];
+			if !consume(token_ptr, ")") {
+				// 引数が1つ以上あるパターン
+				let mut argc: usize = 0;
+				loop {
+					if argc >= 6 {
+						exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+					}
+					if at_eof(token_ptr) {exit_eprintln!("関数呼び出しの\'(\'にマッチする\')\'が見つかりません。");}
+					args.push(Some(expr(token_ptr)));
+					argc += 1;
+
+					// ','が読めたなら次の引数があるが、なければ引数列挙が終わらなければならない
+					if !consume(token_ptr, ",") {
+						expect(token_ptr, ")");
+						break;
+					}
+				}
+			}
+
 			// 関数に対応するノード: あくまで今は外部とリンクさせて呼び出すため、関数を置くアドレスなどは気にしなくて良い
-			// アラインメントは generator の仕事(多分)
-			// TODO: 引数対応(6個まで)は後で良いので、今は args はなし(空のVec)としておく
 			node_ptr = Rc::new(RefCell::new(
 				Node {
 					kind: Nodekind::FuncNd,
 					name: Some(var_name),
+					args: args,
 					..Default::default()
 				}
 			));
