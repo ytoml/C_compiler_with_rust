@@ -125,6 +125,16 @@ impl Display for Node {
 			}
 		}
 
+		if self.args.len() > 0 {
+			s = format!("{}args: exist\n", s);
+			for node in &self.args {
+				if let Some(e) = node.as_ref() {
+					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
+				} else {
+					s = format!("{}->NULL\n", s);
+				}
+			}
+		}
 		write!(f, "{}", s)
 	}
 }
@@ -508,7 +518,6 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 					..Default::default()
 				}
 			));
-			expect(token_ptr, ")");
 
 		} else {
 			node_ptr = new_node_lvar(var_name);
@@ -539,6 +548,9 @@ mod tests {
 		if node.els.is_some() {search_tree(node.els.as_ref().unwrap());}
 		for child in &node.children {
 			if child.is_some() {search_tree(child.as_ref().unwrap());}
+		}
+		for arg in &node.args {
+			if arg.is_some() {search_tree(arg.as_ref().unwrap());}
 		}
 	}
 
@@ -681,6 +693,26 @@ mod tests {
 			call_fprint();
 			i = getOne();
 			j = getTwo();
+			return i + j;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_func2() {
+		println!("test_func2{}", "-".to_string().repeat(REP));
+		let equation = "
+			call_fprint();
+			i = get(1);
+			j = get(2, 3, 4);
+			k = get(i+j, (i=3), k);
 			return i + j;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
