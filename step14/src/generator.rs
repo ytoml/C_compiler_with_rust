@@ -431,4 +431,26 @@ mod tests {
 		println!("{}", ASM.lock().unwrap());
 
 	}
+	
+	#[test]
+	fn test_func() {
+		let equation = "
+			call_fprint();
+			i = get(1);
+			j = get(2, 3, 4);
+			k = get(i+j, (i=3), k);
+			return i + j;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
 }
