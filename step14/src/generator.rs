@@ -44,8 +44,13 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 					exit_eprintln!("現在7つ以上の引数はサポートされていません。");
 				}
 			}
+			*ASM.lock().unwrap() += "	mov rax, rsp\n";
 			*ASM.lock().unwrap() += format!("	and rsp, ~0x10\n").as_str(); // 16の倍数に align
+			*ASM.lock().unwrap() += "	sub rsp, 8\n";
+			*ASM.lock().unwrap() += "	push rax\n";
 			*ASM.lock().unwrap() += format!("	call {}\n", (**node).borrow().name.as_ref().unwrap()).as_str();
+			*ASM.lock().unwrap() += "	pop rsp\n";
+			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
 		Nodekind::AssignNd => {
