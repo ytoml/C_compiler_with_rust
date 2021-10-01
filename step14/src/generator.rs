@@ -34,20 +34,14 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			return;
 		},
 		Nodekind::FuncNd => {
-			// 単にcallを行う(戻り値はスタックに積まれるのでここでpopなど必要ないことに注意)
-			for (i, arg ) in (&(**node).borrow().args).iter().enumerate() {
-				if i < 6 {
-					gen(&(*arg).as_ref().unwrap());
-					*ASM.lock().unwrap() += format!("	pop {}\n", (*ARGS_REGISTERS.lock().unwrap())[i]).as_str();
-				} else {
-					// step14では扱わない
-					exit_eprintln!("現在7つ以上の引数はサポートされていません。");
-				}
-			}
+			// 引数をレジスタに格納する処理
+			push_args(&(**node).borrow().args);
+			
 			*ASM.lock().unwrap() += "	mov rax, rsp\n";
 			*ASM.lock().unwrap() += format!("	and rsp, ~0x10\n").as_str(); // 16の倍数に align
 			*ASM.lock().unwrap() += "	sub rsp, 8\n";
 			*ASM.lock().unwrap() += "	push rax\n";
+			// この時点で ARGS_REGISTERS に記載の6つのレジスタには引数が入っている必要がある
 			*ASM.lock().unwrap() += format!("	call {}\n", (**node).borrow().name.as_ref().unwrap()).as_str();
 			*ASM.lock().unwrap() += "	pop rsp\n";
 			*ASM.lock().unwrap() += "	push rax\n";
@@ -252,6 +246,22 @@ fn gen_lval(node: &Rc<RefCell<Node>>) {
 	*ASM.lock().unwrap() += "	mov rax, rbp\n";
 	*ASM.lock().unwrap() += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
 	*ASM.lock().unwrap() += "	push rax\n";
+}
+
+// 関数呼び出し時の引数の処理を行う関数
+fn push_args(args: &Vec<Option<Rc<RefCell<Node>>>>) {
+	let argc =  args.len();
+	if argc > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+
+	// 計算時に rdi などを使う場合があるので、引数はまずはスタックに全て push したままにしておく
+	// おそらく、逆順にしておいた方がスタックに引数を積みたくなった場合に都合が良い
+	for i in (0..argc).rev() {
+		gen(&(args[i]).as_ref().unwrap());
+	}
+
+	for i in 0..argc {
+		*ASM.lock().unwrap() += format!("	pop {}\n", (*ARGS_REGISTERS.lock().unwrap())[i]).as_str();
+	}
 }
 
 #[cfg(test)]
