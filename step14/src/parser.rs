@@ -529,6 +529,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
+#[cfg(test)]
 mod tests {
 	use super::*;
 	use crate::tokenizer::tokenize;
