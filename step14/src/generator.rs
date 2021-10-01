@@ -15,6 +15,8 @@ static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
 	|| Mutex::new(0)
 );
 
+static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]));
+
 pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
@@ -28,6 +30,26 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			gen_lval(node);
 			*ASM.lock().unwrap() += "	pop rax\n"; // gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
 			*ASM.lock().unwrap() += "	mov rax, [rax]\n";
+			*ASM.lock().unwrap() += "	push rax\n";
+			return;
+		},
+		Nodekind::FuncNd => {
+			// 単にcallを行う(戻り値はスタックに積まれるのでここでpopなど必要ないことに注意)
+			for (i, arg ) in (&(**node).borrow().args).iter().enumerate() {
+				if i < 6 {
+					gen(&(*arg).as_ref().unwrap());
+					*ASM.lock().unwrap() += format!("	pop {}\n", (*ARGS_REGISTERS.lock().unwrap())[i]).as_str();
+				} else {
+					// step14では扱わない
+					exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+				}
+			}
+			*ASM.lock().unwrap() += "	mov rax, rsp\n";
+			*ASM.lock().unwrap() += format!("	and rsp, ~0x10\n").as_str(); // 16の倍数に align
+			*ASM.lock().unwrap() += "	sub rsp, 8\n";
+			*ASM.lock().unwrap() += "	push rax\n";
+			*ASM.lock().unwrap() += format!("	call {}\n", (**node).borrow().name.as_ref().unwrap()).as_str();
+			*ASM.lock().unwrap() += "	pop rsp\n";
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
@@ -401,6 +423,28 @@ mod tests {
 			}
 			return sum;
 			return;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+	
+	#[test]
+	fn test_func() {
+		let equation = "
+			call_fprint();
+			i = get(1);
+			j = get(2, 3, 4);
+			k = get(i+j, (i=3), k);
+			return i + j;
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);

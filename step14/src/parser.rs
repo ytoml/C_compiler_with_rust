@@ -33,6 +33,7 @@ pub enum Nodekind {
 	WhileNd, // while
 	ReturnNd, // return
 	BlockNd, // {}
+	FuncNd, // func(): 現在は引数を考慮しない(現状はgccでコンパイルしたCプログラムのオブジェクトとリンクさせる)
 }
 
 pub struct Node {
@@ -56,12 +57,17 @@ pub struct Node {
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<Rc<RefCell<Node>>>>,
 
+	// func の引数を保存する
+	pub args: Vec<Option<Rc<RefCell<Node>>>>,
+	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
+	pub name: Option<String>, 
+
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![]}
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None}
 	}
 }
 
@@ -119,6 +125,16 @@ impl Display for Node {
 			}
 		}
 
+		if self.args.len() > 0 {
+			s = format!("{}args: exist\n", s);
+			for node in &self.args {
+				if let Some(e) = node.as_ref() {
+					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
+				} else {
+					s = format!("{}->NULL\n", s);
+				}
+			}
+		}
 		write!(f, "{}", s)
 	}
 }
@@ -147,7 +163,7 @@ fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 	))
 }
 
-// 左辺値(今のうちはローカル変数)に対応するノード(現在は1文字のみ)
+// 左辺値(今のうちはローカル変数)に対応するノード
 fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	let name: String = name.into();
 	let offset;
@@ -156,8 +172,8 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
 	let mut not_found: bool = false;
 	match LOCALS.lock().unwrap().get(&name) {
-		Some(_offset) => {
-			offset = *_offset;
+		Some(offset_) => {
+			offset = *offset_;
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
@@ -180,7 +196,6 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 
 	))
 }
-
 
 // 生成規則: program = stmt*
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
@@ -443,28 +458,24 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
 // 生成規則: unary = ("+" | "-")? primary
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
-	if consume(token_ptr, "+") {
-		node_ptr = primary(token_ptr);
-
-	} else if consume(token_ptr, "-") {
+	if consume(token_ptr, "-") {
 		// 単項演算のマイナスは0から引く形にする。
 		node_ptr = new_node_calc(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
 
 	} else {
+		// + はあっても意味は同じなので単純に1度consumeすることにする
+		let _ = consume(token_ptr,"+");
 		node_ptr = primary(token_ptr);
 	}
 
 	node_ptr
 }
 
-
-
-// 生成規則: primary = num | ident | "(" expr ")"
+// 生成規則: primary = num | ident ( "(" (expr ",")* expr? ")" )? | "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
@@ -474,11 +485,45 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		expect(token_ptr, ")");
 
 	} else if is_ident(token_ptr) {
-		node_ptr = new_node_lvar(expect_ident(token_ptr));
+		let var_name = expect_ident(token_ptr);
+		if consume(token_ptr, "(") {
 
+			// 引数を6つまでサポート
+			let mut args:Vec<Option<Rc<RefCell<Node>>>> = vec![];
+			if !consume(token_ptr, ")") {
+				// 引数が1つ以上あるパターン
+				let mut argc: usize = 0;
+				loop {
+					if argc >= 6 {
+						exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+					}
+					if at_eof(token_ptr) {exit_eprintln!("関数呼び出しの\'(\'にマッチする\')\'が見つかりません。");}
+					args.push(Some(expr(token_ptr)));
+					argc += 1;
+
+					// ','が読めたなら次の引数があるが、なければ引数列挙が終わらなければならない
+					if !consume(token_ptr, ",") {
+						expect(token_ptr, ")");
+						break;
+					}
+				}
+			}
+
+			// 関数に対応するノード: あくまで今は外部とリンクさせて呼び出すため、関数を置くアドレスなどは気にしなくて良い
+			node_ptr = Rc::new(RefCell::new(
+				Node {
+					kind: Nodekind::FuncNd,
+					name: Some(var_name),
+					args: args,
+					..Default::default()
+				}
+			));
+
+		} else {
+			node_ptr = new_node_lvar(var_name);
+		}
 	} else {
 		node_ptr = new_node_num(expect_number(token_ptr));
-
 	}
 
 	node_ptr
@@ -501,6 +546,12 @@ mod tests {
 		if node.routine.is_some() {search_tree(node.routine.as_ref().unwrap());}
 		if node.branch.is_some() {search_tree(node.branch.as_ref().unwrap());}
 		if node.els.is_some() {search_tree(node.els.as_ref().unwrap());}
+		for child in &node.children {
+			if child.is_some() {search_tree(child.as_ref().unwrap());}
+		}
+		for arg in &node.args {
+			if arg.is_some() {search_tree(arg.as_ref().unwrap());}
+		}
 	}
 
 
@@ -629,7 +680,46 @@ mod tests {
 		let node_heads = program(&mut token_ptr);
 		let mut count: usize = 1;
 		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_func() {
+		println!("test_func{}", "-".to_string().repeat(REP));
+		let equation = "
+			call_fprint();
+			i = getOne();
+			j = getTwo();
+			return i + j;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_func2() {
+		println!("test_func2{}", "-".to_string().repeat(REP));
+		let equation = "
+			call_fprint();
+			i = get(1);
+			j = get(2, 3, 4);
+			k = get(i+j, (i=3), k);
+			return i + j;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
 			search_tree(&node_ptr);
 			count += 1;
 		} 
