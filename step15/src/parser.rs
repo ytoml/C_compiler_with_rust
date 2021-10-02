@@ -34,6 +34,7 @@ pub enum Nodekind {
 	ReturnNd, // return
 	BlockNd, // {}
 	FuncNd, // func(): 現在は引数を考慮しない(現状はgccでコンパイルしたCプログラムのオブジェクトとリンクさせる)
+	FuncDecNd, // 関数の宣言
 }
 
 pub struct Node {
@@ -197,14 +198,46 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	))
 }
 
-// 生成規則: program = stmt*
+// 生成規則: program = ident "(" (expr ",")* expr? ")" "{" stmt* "}"
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
-	while !at_eof(token_ptr) {
-		statements.push(stmt(token_ptr));
-	}
+	let mut globals :Vec<Rc<RefCell<Node>>> = Vec::new();
 
-	statements
+	while !at_eof(token_ptr) {
+		// トップレベル(グローバルスコープ)では関数宣言のみができる
+		// let mut global = Node { kind: Nodekind::FuncDecNd, .. }
+		let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
+		expect_ident(token_ptr);
+		expect(token_ptr, "(");
+		// 引数を6つまでサポート
+		let mut args:Vec<Option<Rc<RefCell<Node>>>> = vec![];
+		if !consume(token_ptr, ")") {
+			// 引数が1つ以上あるパターン
+			let mut argc: usize = 0;
+			loop {
+				if argc >= 6 {
+					exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+				}
+				if at_eof(token_ptr) {exit_eprintln!("関数宣言の\'(\'にマッチする\')\'が見つかりません。");}
+				args.push(Some(expr(token_ptr)));
+				argc += 1;
+
+				// ','が読めたなら次の引数があるが、なければ引数列挙が終わらなければならない
+				if !consume(token_ptr, ",") {
+					expect(token_ptr, ")");
+					break;
+				}
+			}
+		}
+		expect(token_ptr, "{");
+		while !consume(token_ptr, "}") {
+			statements.push(stmt(token_ptr));
+		}
+		// もしかすると、ここでそれぞれの stmt に対応する木の根を見て ReturnNd がなければ return 0; を挿入する、とかあっていいかも: Cの仕様的には未定義の動作らしいので pend?
+		// globals.push(global)
+	}
+	
+	globals
+
 }
 
 
@@ -215,7 +248,6 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 // "while" "(" expr ")" stmt | 
 // "for" "(" expr? ";" expr? ";" expr? ")" stmt |
 // "return" expr? ";"
-// まだブロックには対応していない(一気に実装してごちゃつくのを防ぐため
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr: Rc<RefCell<Node>>;
 
