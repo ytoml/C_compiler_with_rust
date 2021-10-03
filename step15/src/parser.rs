@@ -617,7 +617,31 @@ mod tests {
 				}
 				return func(i, sum);
 			}
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, "-".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
 
+	#[test]
+	fn test_no_return() {
+		println!("test_declare{}", "-".to_string().repeat(REP));
+		let equation = "
+			func(x, y) {
+				return x + y;
+			}
+			main() {
+				i = 0;
+				sum = 0;
+				for (; i < 10; i=i+1) {
+					sum = sum + i;
+				}
+			}
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
