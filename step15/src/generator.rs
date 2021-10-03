@@ -1,5 +1,6 @@
 use crate::{exit_eprintln};
 use crate::parser::{Node, Nodekind};
+use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
 use once_cell::sync::Lazy;
@@ -29,6 +30,15 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push rbp\n";
 			*ASM.lock().unwrap() += "	mov rbp, rsp\n";
 			*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset).as_str() ;
+
+			// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
+			let args = (**node).borrow().args;
+			let argc =  args.len();
+			if argc > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+			for (ix, arg) in args.iter().enumerate() {
+				*ASM.lock().unwrap() += format!("	sub rax, {}\n", (*arg.unwrap()).borrow().offset.unwrap()).as_str();
+				*ASM.lock().unwrap() += format!("	mov [rax], {}\n", ARGS_REGISTERS.lock().unwrap()[ix]).as_str();
+			}
 
 			return;
 		},
