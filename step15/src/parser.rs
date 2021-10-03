@@ -4,9 +4,9 @@ use crate::tokenizer::{Token, Tokenkind, consume, consume_kind, expect, expect_n
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
 use std::fmt::{Formatter, Display, Result};
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
@@ -34,6 +34,7 @@ pub enum Nodekind {
 	ReturnNd, // return
 	BlockNd, // {}
 	FuncNd, // func(): 現在は引数を考慮しない(現状はgccでコンパイルしたCプログラムのオブジェクトとリンクさせる)
+	FuncDecNd, // 関数の宣言
 }
 
 pub struct Node {
@@ -57,17 +58,19 @@ pub struct Node {
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<Rc<RefCell<Node>>>>,
 
-	// func の引数を保存する
+	// func の引数を保存する: 
 	pub args: Vec<Option<Rc<RefCell<Node>>>>,
 	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
-	pub name: Option<String>, 
+	pub name: Option<String>,
+	// 関数宣言時の、中身のプログラム情報
+	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
 
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None}
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None}
 	}
 }
 
@@ -78,63 +81,35 @@ impl Display for Node {
 		let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
 		s = format!("{}Nodekind : {:?}\n", s, self.kind);
 
-		if let Some(e) = self.val.as_ref() {
-			s = format!("{}val: {}\n", s, e);
-		}
-		
-		if let Some(e) = self.offset.as_ref() {
-			s = format!("{}offset: {}\n", s, e);
-		} 
-
-		if let Some(e) = self.left.as_ref() {
-			s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);
-		} 
-
-		if let Some(e) = self.right.as_ref() {
-			s = format!("{}right: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.init.as_ref() {
-			s = format!("{}init: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.enter.as_ref() {
-			s = format!("{}enter: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.routine.as_ref() {
-			s = format!("{}routine: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.branch.as_ref() {
-			s = format!("{}branch: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.els.as_ref() {
-			s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
+		if let Some(e) = self.val.as_ref() {s = format!("{}val: {}\n", s, e);}
+		if let Some(e) = self.name.as_ref() {s = format!("{}name: {}\n", s, e);}
+		if let Some(e) = self.offset.as_ref() {s = format!("{}offset: {}\n", s, e);} 
+		if let Some(e) = self.left.as_ref() {s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);} 
+		if let Some(e) = self.right.as_ref() {s = format!("{}right: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.init.as_ref() {s = format!("{}init: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.enter.as_ref() {s = format!("{}enter: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.routine.as_ref() {s = format!("{}routine: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.branch.as_ref() {s = format!("{}branch: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.els.as_ref() {s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);}
 
 		if self.children.len() > 0 {
 			s = format!("{}children: exist\n", s);
 			for node in &self.children {
-				if let Some(e) = node.as_ref() {
-					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
-				} else {
-					s = format!("{}->NULL\n", s);
-				}
+				if let Some(e) = node.as_ref() {s = format!("{}->kind:{:?}\n", s, e.borrow().kind);}
+				else {s = format!("{}->NULL\n", s);}
 			}
 		}
 
 		if self.args.len() > 0 {
 			s = format!("{}args: exist\n", s);
 			for node in &self.args {
-				if let Some(e) = node.as_ref() {
-					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
-				} else {
-					s = format!("{}->NULL\n", s);
-				}
+				if let Some(e) = node.as_ref() {s = format!("{}->kind:{:?}\n", s, e.borrow().kind);}
+				else {s = format!("{}->NULL\n", s);}
 			}
 		}
+
+		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
+
 		write!(f, "{}", s)
 	}
 }
@@ -197,14 +172,73 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	))
 }
 
-// 生成規則: program = stmt*
+// 生成規則: program = ident "(" (expr ",")* expr? ")" "{" stmt* "}"
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
-	while !at_eof(token_ptr) {
-		statements.push(stmt(token_ptr));
-	}
+	let mut globals : Vec<Rc<RefCell<Node>>> = Vec::new();
 
-	statements
+	while !at_eof(token_ptr) {
+		// トップレベル(グローバルスコープ)では関数宣言のみができる
+		
+		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
+		let func_name = expect_ident(token_ptr);
+		expect(token_ptr, "(");
+		// 引数を6つまでサポート
+		let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
+		if !consume(token_ptr, ")") {
+			// 引数が1つ以上あるパターン
+			let mut argc: usize = 0;
+			loop {
+				if argc >= 6 {
+					exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+				}
+				if at_eof(token_ptr) {exit_eprintln!("関数宣言の\'(\'にマッチする\')\'が見つかりません。");}
+				args.push(Some(expr(token_ptr)));
+				argc += 1;
+
+				// ','が読めたなら次の引数があるが、なければ引数列挙が終わらなければならない
+				if !consume(token_ptr, ",") {
+					expect(token_ptr, ")");
+					break;
+				}
+			}
+		}
+
+		let mut has_return : bool = false;
+		expect(token_ptr, "{");
+		while !consume(token_ptr, "}") {
+			has_return |= (**token_ptr).borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+			statements.push(stmt(token_ptr));
+		}
+
+		if !has_return {
+			statements.push(
+				Rc::new(RefCell::new(
+					Node {
+						kind: Nodekind::ReturnNd,
+						left: Some(new_node_num(0)),
+						..Default::default()
+					}
+				))
+			)
+		}
+
+		let global = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::FuncDecNd,
+				name: Some(func_name),
+				args: args,
+				stmts: Some(statements),
+				..Default::default()
+			}
+		));
+		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
+		LOCALS.lock().unwrap().clear();
+		*LVAR_MAX_OFFSET.lock().unwrap() = 0;
+
+		globals.push(global);
+	}
+	
+	globals
 }
 
 
@@ -215,7 +249,6 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 // "while" "(" expr ")" stmt | 
 // "for" "(" expr? ";" expr? ";" expr? ")" stmt |
 // "return" expr? ";"
-// まだブロックには対応していない(一気に実装してごちゃつくのを防ぐため
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr: Rc<RefCell<Node>>;
 
@@ -553,6 +586,11 @@ mod tests {
 		for arg in &node.args {
 			if arg.is_some() {search_tree(arg.as_ref().unwrap());}
 		}
+		if node.stmts.is_some() {
+			for stmt_ in node.stmts.as_ref().unwrap() {
+				search_tree(stmt_);
+			}
+		}
 	}
 
 
@@ -565,164 +603,53 @@ mod tests {
 
 
 	#[test]
-	fn test_for() {
-		println!("test_for{}", "-".to_string().repeat(REP));
+	fn test_declare() {
+		println!("test_declare{}", "-".to_string().repeat(REP));
 		let equation = "
-			sum = 10;
-			sum = sum + i;
-			for (i = 1 ; i < 10; i = i + 1) sum = sum +i;
-			sum;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		}
-	}
-
-	#[test]
-	fn test_while() {
-		println!("test_while{}", "-".to_string().repeat(REP));
-		let equation = "
-			sum = 10;
-			while(sum > 0) sum = sum - 1;
-			sum;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		}
-	}
-
-	#[test]
-	fn test_if() {
-		println!("test_while{}", "-".to_string().repeat(REP));
-		let equation = "
-			i = 10;
-			if (i == 10) i = i / 5;
-			if (i == 2) i = i + 5; else i = i / 5;
-			i;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		}
-	}
-
-
-	#[test]
-	fn test_combination() {
-		println!("test_combination{}", "-".to_string().repeat(REP));
-		let equation = "
-			i = 10;
-			if (i == 10) i = i / 5;
-			if (i == 2) i = i + 5; else i = i / 5;
-			i;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
-	}
-
-	#[test]
-	fn test_block() {
-		println!("test_block{}", "-".to_string().repeat(REP));
-		let equation = "
-			for( i = 10; ; ) {i = i + 1;}
-			{}
-			{i = i + 1; 10;}
-			return 10;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
-	}
-
-	#[test]
-	fn test_block2() {
-		println!("test_block2{}", "-".to_string().repeat(REP));
-		let equation = "
-			while(i < 10) {i = i + 1; i = i * 2;}
-			x = 10;
-			if ( x == 10 ){
-				x = x + 200;
-				x = x / 20;
-			} else {
-				x = x - 20;
-				;
+			func(x, y) {
+				return x + y;
 			}
-			{{}}
-			{i = i + 1; 10;}
-			return 200;
-			return;
+			main() {
+				i = 0;
+				sum = 0;
+				for (; i < 10; i=i+1) {
+					sum = sum + i;
+				}
+				return func(i, sum);
+			}
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
 		let mut count: usize = 1;
 		for node_ptr in node_heads {
-			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			println!("declare{}{}", count, "-".to_string().repeat(REP));
 			search_tree(&node_ptr);
 			count += 1;
-		} 
+		}
 	}
 
 	#[test]
-	fn test_func() {
-		println!("test_func{}", "-".to_string().repeat(REP));
+	fn test_no_return() {
+		println!("test_declare{}", "-".to_string().repeat(REP));
 		let equation = "
-			call_fprint();
-			i = getOne();
-			j = getTwo();
-			return i + j;
+			func(x, y) {
+				return x + y;
+			}
+			main() {
+				i = 0;
+				sum = 0;
+				for (; i < 10; i=i+1) {
+					sum = sum + i;
+				}
+			}
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
 		let mut count: usize = 1;
 		for node_ptr in node_heads {
-			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			println!("declare{}{}", count, "-".to_string().repeat(REP));
 			search_tree(&node_ptr);
 			count += 1;
-		} 
-	}
-
-	#[test]
-	fn test_func2() {
-		println!("test_func2{}", "-".to_string().repeat(REP));
-		let equation = "
-			call_fprint();
-			i = get(1);
-			j = get(2, 3, 4);
-			k = get(i+j, (i=3), k);
-			return i + j;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{} {}", count, ">".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
+		}
 	}
 }
