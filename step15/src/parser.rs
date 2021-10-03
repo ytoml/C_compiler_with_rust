@@ -4,9 +4,10 @@ use crate::tokenizer::{Token, Tokenkind, consume, consume_kind, expect, expect_n
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
 use std::fmt::{Formatter, Display, Result};
+use std::sync::Mutex;
+use std::ops::Deref;
+use once_cell::sync::Lazy;
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
@@ -58,17 +59,19 @@ pub struct Node {
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<Rc<RefCell<Node>>>>,
 
-	// func の引数を保存する
+	// func の引数を保存する: 
 	pub args: Vec<Option<Rc<RefCell<Node>>>>,
 	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
-	pub name: Option<String>, 
+	pub name: Option<String>,
+	// 関数宣言時の、中身のプログラム情報
+	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
 
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None}
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None}
 	}
 }
 
@@ -204,7 +207,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 	while !at_eof(token_ptr) {
 		// トップレベル(グローバルスコープ)では関数宣言のみができる
-		// let mut global = Node { kind: Nodekind::FuncDecNd, .. }
+		
 		let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
 		expect_ident(token_ptr);
 		expect(token_ptr, "(");
@@ -232,8 +235,20 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		while !consume(token_ptr, "}") {
 			statements.push(stmt(token_ptr));
 		}
+
+		let global = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::FuncDecNd,
+				args: args,
+				stmts: Some(statements),
+				..Default::default()
+			}
+		));
+		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
+		LOCALS.lock().unwrap().clear();
+		*LVAR_MAX_OFFSET.lock().unwrap() = 0;
+		globals.push(global);
 		// もしかすると、ここでそれぞれの stmt に対応する木の根を見て ReturnNd がなければ return 0; を挿入する、とかあっていいかも: Cの仕様的には未定義の動作らしいので pend?
-		// globals.push(global)
 	}
 	
 	globals
