@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Formatter, Display, Result};
 use std::sync::Mutex;
-use std::ops::Deref;
 use once_cell::sync::Lazy;
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -175,16 +174,16 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 
 // 生成規則: program = ident "(" (expr ",")* expr? ")" "{" stmt* "}"
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-	let mut globals :Vec<Rc<RefCell<Node>>> = Vec::new();
+	let mut globals : Vec<Rc<RefCell<Node>>> = Vec::new();
 
 	while !at_eof(token_ptr) {
 		// トップレベル(グローバルスコープ)では関数宣言のみができる
 		
-		let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
+		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
 		let func_name = expect_ident(token_ptr);
 		expect(token_ptr, "(");
 		// 引数を6つまでサポート
-		let mut args:Vec<Option<Rc<RefCell<Node>>>> = vec![];
+		let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 		if !consume(token_ptr, ")") {
 			// 引数が1つ以上あるパターン
 			let mut argc: usize = 0;
@@ -203,9 +202,24 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 				}
 			}
 		}
+
+		let mut has_return : bool = false;
 		expect(token_ptr, "{");
 		while !consume(token_ptr, "}") {
+			has_return |= (**token_ptr).borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
 			statements.push(stmt(token_ptr));
+		}
+
+		if !has_return {
+			statements.push(
+				Rc::new(RefCell::new(
+					Node {
+						kind: Nodekind::ReturnNd,
+						left: Some(new_node_num(0)),
+						..Default::default()
+					}
+				))
+			)
 		}
 
 		let global = Rc::new(RefCell::new(
@@ -220,12 +234,11 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
 		LOCALS.lock().unwrap().clear();
 		*LVAR_MAX_OFFSET.lock().unwrap() = 0;
+
 		globals.push(global);
-		// もしかすると、ここでそれぞれの stmt に対応する木の根を見て ReturnNd がなければ return 0; を挿入する、とかあっていいかも: Cの仕様的には未定義の動作らしいので pend?
 	}
 	
 	globals
-
 }
 
 
