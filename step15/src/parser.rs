@@ -85,7 +85,11 @@ impl Display for Node {
 		if let Some(e) = self.val.as_ref() {
 			s = format!("{}val: {}\n", s, e);
 		}
-		
+
+		if let Some(e) = self.name.as_ref() {
+			s = format!("{}name: {}\n", s, e);
+		}
+
 		if let Some(e) = self.offset.as_ref() {
 			s = format!("{}offset: {}\n", s, e);
 		} 
@@ -209,7 +213,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// トップレベル(グローバルスコープ)では関数宣言のみができる
 		
 		let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
-		expect_ident(token_ptr);
+		let func_name = expect_ident(token_ptr);
 		expect(token_ptr, "(");
 		// 引数を6つまでサポート
 		let mut args:Vec<Option<Rc<RefCell<Node>>>> = vec![];
@@ -239,6 +243,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		let global = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::FuncDecNd,
+				name: Some(func_name),
 				args: args,
 				stmts: Some(statements),
 				..Default::default()
@@ -600,6 +605,11 @@ mod tests {
 		for arg in &node.args {
 			if arg.is_some() {search_tree(arg.as_ref().unwrap());}
 		}
+		if node.stmts.is_some() {
+			for stmt_ in node.stmts.as_ref().unwrap() {
+				search_tree(stmt_);
+			}
+		}
 	}
 
 
@@ -612,164 +622,29 @@ mod tests {
 
 
 	#[test]
-	fn test_for() {
-		println!("test_for{}", "-".to_string().repeat(REP));
+	fn test_declare() {
+		println!("test_declare{}", "-".to_string().repeat(REP));
 		let equation = "
-			sum = 10;
-			sum = sum + i;
-			for (i = 1 ; i < 10; i = i + 1) sum = sum +i;
-			sum;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		}
-	}
-
-	#[test]
-	fn test_while() {
-		println!("test_while{}", "-".to_string().repeat(REP));
-		let equation = "
-			sum = 10;
-			while(sum > 0) sum = sum - 1;
-			sum;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		}
-	}
-
-	#[test]
-	fn test_if() {
-		println!("test_while{}", "-".to_string().repeat(REP));
-		let equation = "
-			i = 10;
-			if (i == 10) i = i / 5;
-			if (i == 2) i = i + 5; else i = i / 5;
-			i;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		}
-	}
-
-
-	#[test]
-	fn test_combination() {
-		println!("test_combination{}", "-".to_string().repeat(REP));
-		let equation = "
-			i = 10;
-			if (i == 10) i = i / 5;
-			if (i == 2) i = i + 5; else i = i / 5;
-			i;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
-	}
-
-	#[test]
-	fn test_block() {
-		println!("test_block{}", "-".to_string().repeat(REP));
-		let equation = "
-			for( i = 10; ; ) {i = i + 1;}
-			{}
-			{i = i + 1; 10;}
-			return 10;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{}{}", count, "-".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
-	}
-
-	#[test]
-	fn test_block2() {
-		println!("test_block2{}", "-".to_string().repeat(REP));
-		let equation = "
-			while(i < 10) {i = i + 1; i = i * 2;}
-			x = 10;
-			if ( x == 10 ){
-				x = x + 200;
-				x = x / 20;
-			} else {
-				x = x - 20;
-				;
+			func(x, y) {
+				return x + y;
 			}
-			{{}}
-			{i = i + 1; 10;}
-			return 200;
-			return;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{} {}", count, ">".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
-	}
+			main() {
+				i = 0;
+				sum = 0;
+				for (; i < 10; i=i+1) {
+					sum = sum + i;
+				}
+				return func(i, sum);
+			}
 
-	#[test]
-	fn test_func() {
-		println!("test_func{}", "-".to_string().repeat(REP));
-		let equation = "
-			call_fprint();
-			i = getOne();
-			j = getTwo();
-			return i + j;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = program(&mut token_ptr);
 		let mut count: usize = 1;
 		for node_ptr in node_heads {
-			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			println!("declare{}{}", count, "-".to_string().repeat(REP));
 			search_tree(&node_ptr);
 			count += 1;
-		} 
-	}
-
-	#[test]
-	fn test_func2() {
-		println!("test_func2{}", "-".to_string().repeat(REP));
-		let equation = "
-			call_fprint();
-			i = get(1);
-			j = get(2, 3, 4);
-			k = get(i+j, (i=3), k);
-			return i + j;
-		".to_string();
-		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
-		let mut count: usize = 1;
-		for node_ptr in node_heads {
-			println!("stmt{} {}", count, ">".to_string().repeat(REP));
-			search_tree(&node_ptr);
-			count += 1;
-		} 
+		}
 	}
 }
