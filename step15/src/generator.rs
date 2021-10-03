@@ -20,6 +20,18 @@ static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rd
 pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
+		Nodekind::FuncDecNd => {
+			// TODO: FuncDecNd に最大 offset を持たせないとプロローグが書けない
+
+			*ASM.lock().unwrap() += format!("{}:\n", (**node).borrow().name.as_ref().unwrap()).as_str();
+		
+			// プロローグ(変数の格納領域の確保)
+			*ASM.lock().unwrap() += "	push rbp\n";
+			*ASM.lock().unwrap() += "	mov rbp, rsp\n";
+			*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset).as_str() ;
+
+			return;
+		},
 		Nodekind::NumNd => {
 			// NumNdの時点でunwrapできる
 			*ASM.lock().unwrap() += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
