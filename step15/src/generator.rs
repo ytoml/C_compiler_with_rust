@@ -1,6 +1,5 @@
 use crate::{exit_eprintln};
 use crate::parser::{Node, Nodekind};
-use std::borrow::Borrow;
 use std::rc::Rc;
 use std::cell::RefCell;
 use once_cell::sync::Lazy;
@@ -22,21 +21,20 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
 		Nodekind::FuncDecNd => {
-			// TODO: FuncDecNd に最大 offset を持たせないとプロローグが書けない
-
 			*ASM.lock().unwrap() += format!("{}:\n", (**node).borrow().name.as_ref().unwrap()).as_str();
 		
 			// プロローグ(変数の格納領域の確保)
 			*ASM.lock().unwrap() += "	push rbp\n";
 			*ASM.lock().unwrap() += "	mov rbp, rsp\n";
-			*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset).as_str() ;
+			*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset.unwrap()).as_str() ;
 
 			// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-			let args = (**node).borrow().args;
+			let args: &Vec<Option<Rc<RefCell<Node>>>> = &(**node).borrow().args;
 			let argc =  args.len();
 			if argc > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
 			for (ix, arg) in args.iter().enumerate() {
-				*ASM.lock().unwrap() += format!("	sub rax, {}\n", (*arg.unwrap()).borrow().offset.unwrap()).as_str();
+				*ASM.lock().unwrap() += "	mov rax, rbp\n";
+				*ASM.lock().unwrap() += format!("	sub rax, {}\n", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap()).as_str();
 				*ASM.lock().unwrap() += format!("	mov [rax], {}\n", ARGS_REGISTERS.lock().unwrap()[ix]).as_str();
 			}
 
