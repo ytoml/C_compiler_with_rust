@@ -82,67 +82,35 @@ impl Display for Node {
 		let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
 		s = format!("{}Nodekind : {:?}\n", s, self.kind);
 
-		if let Some(e) = self.val.as_ref() {
-			s = format!("{}val: {}\n", s, e);
-		}
-
-		if let Some(e) = self.name.as_ref() {
-			s = format!("{}name: {}\n", s, e);
-		}
-
-		if let Some(e) = self.offset.as_ref() {
-			s = format!("{}offset: {}\n", s, e);
-		} 
-
-		if let Some(e) = self.left.as_ref() {
-			s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);
-		} 
-
-		if let Some(e) = self.right.as_ref() {
-			s = format!("{}right: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.init.as_ref() {
-			s = format!("{}init: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.enter.as_ref() {
-			s = format!("{}enter: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.routine.as_ref() {
-			s = format!("{}routine: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.branch.as_ref() {
-			s = format!("{}branch: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
-
-		if let Some(e) = self.els.as_ref() {
-			s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);
-		}
+		if let Some(e) = self.val.as_ref() {s = format!("{}val: {}\n", s, e);}
+		if let Some(e) = self.name.as_ref() {s = format!("{}name: {}\n", s, e);}
+		if let Some(e) = self.offset.as_ref() {s = format!("{}offset: {}\n", s, e);} 
+		if let Some(e) = self.left.as_ref() {s = format!("{}left: exist(kind:{:?})\n", s, e.borrow().kind);} 
+		if let Some(e) = self.right.as_ref() {s = format!("{}right: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.init.as_ref() {s = format!("{}init: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.enter.as_ref() {s = format!("{}enter: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.routine.as_ref() {s = format!("{}routine: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.branch.as_ref() {s = format!("{}branch: exist(kind:{:?})\n", s, e.borrow().kind);}
+		if let Some(e) = self.els.as_ref() {s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);}
 
 		if self.children.len() > 0 {
 			s = format!("{}children: exist\n", s);
 			for node in &self.children {
-				if let Some(e) = node.as_ref() {
-					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
-				} else {
-					s = format!("{}->NULL\n", s);
-				}
+				if let Some(e) = node.as_ref() {s = format!("{}->kind:{:?}\n", s, e.borrow().kind);}
+				else {s = format!("{}->NULL\n", s);}
 			}
 		}
 
 		if self.args.len() > 0 {
 			s = format!("{}args: exist\n", s);
 			for node in &self.args {
-				if let Some(e) = node.as_ref() {
-					s = format!("{}->kind:{:?}\n", s, e.borrow().kind);
-				} else {
-					s = format!("{}->NULL\n", s);
-				}
+				if let Some(e) = node.as_ref() {s = format!("{}->kind:{:?}\n", s, e.borrow().kind);}
+				else {s = format!("{}->NULL\n", s);}
 			}
 		}
+
+		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
+
 		write!(f, "{}", s)
 	}
 }
