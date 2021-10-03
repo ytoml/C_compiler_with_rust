@@ -110,7 +110,7 @@ impl Display for Node {
 		}
 
 		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
-		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {})\n", s, e);}
+		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
 
 		write!(f, "{}", s)
 	}
