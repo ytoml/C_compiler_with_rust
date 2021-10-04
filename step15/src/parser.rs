@@ -594,11 +594,182 @@ mod tests {
 	}
 
 
+	fn parse_stmts(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
+	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
+	while !at_eof(token_ptr) {
+		statements.push(stmt(token_ptr));
+	}
+
+	statements
+}
+
 	#[test]
 	fn test_display() {
 		println!("test_display{}", "-".to_string().repeat(REP));
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
+	}
+
+	#[test]
+	fn test_for() {
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let equation = "
+			sum = 10;
+			sum = sum + i;
+			for (i = 1 ; i < 10; i = i + 1) sum = sum +i;
+			sum;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn test_while() {
+		println!("test_while{}", "-".to_string().repeat(REP));
+		let equation = "
+			sum = 10;
+			while(sum > 0) sum = sum - 1;
+			sum;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn test_if() {
+		println!("test_while{}", "-".to_string().repeat(REP));
+		let equation = "
+			i = 10;
+			if (i == 10) i = i / 5;
+			if (i == 2) i = i + 5; else i = i / 5;
+			i;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+
+	#[test]
+	fn test_combination() {
+		println!("test_combination{}", "-".to_string().repeat(REP));
+		let equation = "
+			i = 10;
+			if (i == 10) i = i / 5;
+			if (i == 2) i = i + 5; else i = i / 5;
+			i;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_block() {
+		println!("test_block{}", "-".to_string().repeat(REP));
+		let equation = "
+			for( i = 10; ; ) {i = i + 1;}
+			{}
+			{i = i + 1; 10;}
+			return 10;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_block2() {
+		println!("test_block2{}", "-".to_string().repeat(REP));
+		let equation = "
+			while(i < 10) {i = i + 1; i = i * 2;}
+			x = 10;
+			if ( x == 10 ){
+				x = x + 200;
+				x = x / 20;
+			} else {
+				x = x - 20;
+				;
+			}
+			{{}}
+			{i = i + 1; 10;}
+			return 200;
+			return;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_func() {
+		println!("test_func{}", "-".to_string().repeat(REP));
+		let equation = "
+			call_fprint();
+			i = getOne();
+			j = getTwo();
+			return i + j;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_func2() {
+		println!("test_func2{}", "-".to_string().repeat(REP));
+		let equation = "
+			call_fprint();
+			i = get(1);
+			j = get(2, 3, 4);
+			k = get(i+j, (i=3), k);
+			return i + j;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
 	}
 
 
@@ -622,7 +793,7 @@ mod tests {
 		let node_heads = program(&mut token_ptr);
 		let mut count: usize = 1;
 		for node_ptr in node_heads {
-			println!("declare{}{}", count, "-".to_string().repeat(REP));
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
 			search_tree(&node_ptr);
 			count += 1;
 		}
@@ -647,7 +818,7 @@ mod tests {
 		let node_heads = program(&mut token_ptr);
 		let mut count: usize = 1;
 		for node_ptr in node_heads {
-			println!("declare{}{}", count, "-".to_string().repeat(REP));
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
 			search_tree(&node_ptr);
 			count += 1;
 		}
