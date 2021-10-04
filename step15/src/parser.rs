@@ -28,12 +28,11 @@ pub enum Nodekind {
 	LThanNd, // '<'
 	LEqNd, // "<="
 	IfNd, // if
-	// ElseNd, // else
 	ForNd, // for
 	WhileNd, // while
 	ReturnNd, // return
 	BlockNd, // {}
-	FuncNd, // func(): 現在は引数を考慮しない(現状はgccでコンパイルしたCプログラムのオブジェクトとリンクさせる)
+	FuncNd, // func()
 	FuncDecNd, // 関数の宣言
 }
 
@@ -561,7 +560,6 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else {
 		node_ptr = new_node_num(expect_number(token_ptr));
 	}
-
 	node_ptr
 }
 
@@ -604,7 +602,7 @@ mod tests {
 	}
 
 	statements
-}
+	}
 
 	#[test]
 	fn test_display() {
