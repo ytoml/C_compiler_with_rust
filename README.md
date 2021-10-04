@@ -12,48 +12,42 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事のstep14まで実装しており、基本的な計算と型を考慮しない変数の使用、for, while, ifの3種類の制御構文がサポートされています。
-また、引数6つまでの関数呼び出しにも対応しています。ただし、関数の宣言には対応していないため、別の C ソースで関数の中身を定義して gcc 等で x86_64 向けにコンパイルした実行オブジェクトとリンクさせて呼び出す必要があります。
+現在、上記記事のstep15まで実装しており、基本的な計算と型を考慮しない変数の使用、for, while, ifの3種類の制御構文がサポートされています。
+また、引数6つまでの関数宣言・呼び出しにも対応しています。ただし、型の宣言や変数宣言のみの文には対応していません。
+`printf` などを使いたい場合も、別の C ソースで関数の中身を定義して gcc 等で x86_64 向けにコンパイルした実行オブジェクトとリンクさせて呼び出す必要があります。(以下の `print_helper`, `print_something`)
 
 ```
-sum = 55;
-k = 1;
-for (i = 0; i < 11; i = i + 1) {
-	sum = sum + 1;
-	if ( k > 0 ) sum = sum + 1;
-	k = k * (-1);
+fib(N) {
+	if (N <= 2) return 1;
+	return fib(N-1) + fib(N-2);
 }
 
-if (sum != 72) {
-	sum = 0;
-	sum = sum + k;
-	return sum;
+calc (a, b, c, d, e, f) {
+	return a*b + c - d + e/f;
 }
 
-i = 21;
-k = 0;
-
-if ((sum + 1) == 72) {
-	i = 100;
-} else {
-	i = 1000;
-}
-
-while ( i > -1 ) {
-	k = k + 1;
-	{
-		{}
-		i =  i + k / 2;
+main () {
+	x = 100;
+	y = 20;
+	
+	for (i = 0; i < 20; i = i+2) {
+		print_helper(x = x-i);
 	}
-	i = i-k;
-}
-if (i >= 0) {
-	return i;
-}
 
-10;
+	if (x < 0) return x;
+	else {
+		x = (x + y) / 2;
+	}
 
-return 100;
-return i;
-return -1;
+	print_something();
+	
+	while (i > 0) {
+		print_helper(i = i - 1);
+	}
+
+	print_something();
+
+	print_helper(z = fib(x));
+	print_helper(z + calc(1, 2, 3, 4, 5, 6));
+}
 ```
