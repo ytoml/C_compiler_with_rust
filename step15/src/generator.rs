@@ -26,7 +26,10 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			// プロローグ(変数の格納領域の確保)
 			*ASM.lock().unwrap() += "	push rbp\n";
 			*ASM.lock().unwrap() += "	mov rbp, rsp\n";
-			*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset.unwrap()).as_str() ;
+			let pull = (**node).borrow().max_offset.unwrap();
+			if pull > 0 {
+				*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset.unwrap()).as_str() ;
+			}
 
 			// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
 			if (*node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
@@ -37,9 +40,10 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			}
 			
 			// 関数内の文の処理
-			for stmt_ in (*node).borrow().stmts.as_ref().unwrap() {
+			let s = (*node).borrow().stmts.as_ref().unwrap().len();
+			for (ix, stmt_) in (*node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
 				gen(stmt_);
-				*ASM.lock().unwrap() += "	pop rax\n";
+				if ix != s - 1 {*ASM.lock().unwrap() += "	pop rax\n";}
 			}
 
 			// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
@@ -498,7 +502,10 @@ mod tests {
 	fn test_funcdec() {
 		let equation = "
 			func(x, y) {
-				return x + y;
+				return x * (y + 1);
+			}
+			sum(i, j) {
+				return i + j;
 			}
 			main() {
 				i = 0;
@@ -518,5 +525,25 @@ mod tests {
 
 		println!("{}", ASM.lock().unwrap());
 
+	}
+
+	#[test]
+	fn test_recurrent() {
+		let equation = "
+			fib(n) {
+				return fib(n-1)+fib(n-2);
+			}
+			main() {
+				return fib(10);
+			}
+		".to_string();
+		println!("test_recurrent{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+		}
+
+		println!("{}", ASM.lock().unwrap());
 	}
 }
