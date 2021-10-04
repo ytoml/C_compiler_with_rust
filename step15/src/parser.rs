@@ -564,7 +564,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
 	use super::*;
 	use crate::tokenizer::tokenize;
 
@@ -595,7 +595,7 @@ mod tests {
 	}
 
 
-	fn parse_stmts(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
+	pub fn parse_stmts(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
 	while !at_eof(token_ptr) {
 		statements.push(stmt(token_ptr));

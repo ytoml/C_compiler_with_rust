@@ -11,7 +11,7 @@ mod options;
 mod generator;
 use options::Opts;
 use tokenizer::{Token, tokenize};
-use parser::{program, LVAR_MAX_OFFSET};
+use parser::{program};
 use generator::{gen, ASM};
 
 
@@ -29,20 +29,9 @@ fn main() {
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
 		let node_heads = program(&mut token_ptr); // ここでLVAR_MAX_OFFSETがセットされる
 
-		// ASMにアセンブリを文字列として追加していく
-		*ASM.lock().unwrap() += "main:\n";
-		
-		// プロローグ(変数の格納領域の確保)
-		*ASM.lock().unwrap() += "	push rbp\n";
-		*ASM.lock().unwrap() += "	mov rbp, rsp\n";
-		*ASM.lock().unwrap() += format!("	sub rsp, {}\n", LVAR_MAX_OFFSET.lock().unwrap()).as_str();
-		
-		// 構文木が複数(stmtの数)生成されているはずなのでそれぞれについて回す
+		// 構文木が複数(関数の数)生成されているはずなのでそれぞれについて回す
 		for node_ptr in node_heads {
-			// 構文木からコードを生成(*ASM.lock().unwrap()に追加)
 			gen(&node_ptr);
-
-			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		// 最後に一気に書き込み
@@ -75,11 +64,12 @@ mod tests {
 	use std::rc::Rc;
 	use std::cell::RefCell;
 	use crate::tokenizer::{Token, tokenize};
-	use crate::parser::{program};
+	use crate::parser::program;
+	use crate::parser::tests::parse_stmts;
 
 	#[test]
 	fn code_concat_test() {
-		let path = "./src.txt";
+		let path = "./csrc/src.txt";
 		let f: File = File::open(path).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
 		let code: String = code_concat(reader);
@@ -88,7 +78,22 @@ mod tests {
 
 	#[test]
 	fn tree_test() {
-		let path = "./3stmt.txt";
+		let path = "./csrc/3stmt.txt";
+		let f: File = File::open(path).unwrap();
+        let reader: BufReader<File> = BufReader::new(f);
+		let code: String = code_concat(reader);
+		println!("{}", code);
+
+		// トークナイズしてトークンリストを生成したのち、構文木を生成
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
+		let node_heads = parse_stmts(&mut token_ptr);
+		println!("trees: {}", node_heads.len());
+		assert_eq!(node_heads.len(), 3);
+	}
+
+	#[test]
+	fn func_dec_test() {
+		let path = "./csrc/func_dec.txt";
 		let f: File = File::open(path).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
 		let code: String = code_concat(reader);
@@ -98,9 +103,6 @@ mod tests {
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
 		let node_heads = program(&mut token_ptr);
 		println!("trees: {}", node_heads.len());
-		assert_eq!(node_heads.len(), 3);
-
-
+		assert_eq!(node_heads.len(), 2);
 	}
-
 }
