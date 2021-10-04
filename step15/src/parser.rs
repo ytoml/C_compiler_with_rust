@@ -62,15 +62,16 @@ pub struct Node {
 	pub args: Vec<Option<Rc<RefCell<Node>>>>,
 	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
 	pub name: Option<String>,
-	// 関数宣言時の、中身のプログラム情報
-	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
+	// 関数宣言時に使用
+	pub stmts: Option<Vec<Rc<RefCell<Node>>>>, // プログラム情報
+	pub max_offset: Option<usize>
 
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None}
+		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
 	}
 }
 
@@ -109,6 +110,7 @@ impl Display for Node {
 		}
 
 		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
+		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
 
 		write!(f, "{}", s)
 	}
@@ -228,6 +230,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 				name: Some(func_name),
 				args: args,
 				stmts: Some(statements),
+				max_offset: Some(*LVAR_MAX_OFFSET.lock().unwrap()),
 				..Default::default()
 			}
 		));

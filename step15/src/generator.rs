@@ -20,6 +20,35 @@ static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rd
 pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
+		Nodekind::FuncDecNd => {
+			*ASM.lock().unwrap() += format!("{}:\n", (**node).borrow().name.as_ref().unwrap()).as_str();
+		
+			// プロローグ(変数の格納領域の確保)
+			*ASM.lock().unwrap() += "	push rbp\n";
+			*ASM.lock().unwrap() += "	mov rbp, rsp\n";
+			let pull = (**node).borrow().max_offset.unwrap();
+			if pull > 0 {
+				*ASM.lock().unwrap() += format!("	sub rsp, {}\n", (**node).borrow().max_offset.unwrap()).as_str() ;
+			}
+
+			// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
+			if (*node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+			for (ix, arg) in (&(*node).borrow().args).iter().enumerate() {
+				*ASM.lock().unwrap() += "	mov rax, rbp\n";
+				*ASM.lock().unwrap() += format!("	sub rax, {}\n", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap()).as_str();
+				*ASM.lock().unwrap() += format!("	mov [rax], {}\n", ARGS_REGISTERS.lock().unwrap()[ix]).as_str();
+			}
+			
+			// 関数内の文の処理
+			let s = (*node).borrow().stmts.as_ref().unwrap().len();
+			for (ix, stmt_) in (*node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
+				gen(stmt_);
+				if ix != s - 1 {*ASM.lock().unwrap() += "	pop rax\n";}
+			}
+
+			// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
+			return;
+		},
 		Nodekind::NumNd => {
 			// NumNdの時点でunwrapできる
 			*ASM.lock().unwrap() += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
@@ -467,5 +496,54 @@ mod tests {
 
 		println!("{}", ASM.lock().unwrap());
 
+	}
+
+	#[test]
+	fn test_funcdec() {
+		let equation = "
+			func(x, y) {
+				return x * (y + 1);
+			}
+			sum(i, j) {
+				return i + j;
+			}
+			main() {
+				i = 0;
+				sum = 0;
+				for (; i < 10; i=i+1) {
+					sum = sum + i;
+				}
+				return func(i, sum);
+			}
+		".to_string();
+		println!("test_funcdec{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn test_recurrent() {
+		let equation = "
+			fib(n) {
+				return fib(n-1)+fib(n-2);
+			}
+			main() {
+				return fib(10);
+			}
+		".to_string();
+		println!("test_recurrent{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+		}
+
+		println!("{}", ASM.lock().unwrap());
 	}
 }
