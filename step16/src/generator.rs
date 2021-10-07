@@ -62,16 +62,17 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
-		Nodekind::AddrNd => {
-			// gen_lval内で *var の var のアドレスをスタックにプッシュしたことになる
-			gen_lval((**node).borrow().left.as_ref().unwrap());
+		Nodekind::DerefNd => {
+			// gen内で *var の var のアドレスをスタックにプッシュしたことになる
+			gen((**node).borrow().left.as_ref().unwrap());
 			*ASM.lock().unwrap() += "	pop rax\n"; 
 			*ASM.lock().unwrap() += "	mov rax, [rax]\n";
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
-		Nodekind::DerefNd => {
+		Nodekind::AddrNd => {
 			// gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、そのままでOK
+			// 生成規則上は Deref も Addr と同様に複数つけられる(&&var)ことになっているが、本当はそんなことないので、ここで gen_lval を使うことで担保する
 			gen_lval((**node).borrow().left.as_ref().unwrap());
 			return;
 		},
@@ -280,14 +281,20 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 
 // 正しく左辺値を識別して不正な代入("(a+1)=2;"のような)を防ぐためのジェネレータ関数
 fn gen_lval(node: &Rc<RefCell<Node>>) {
-	if (**node).borrow().kind != Nodekind::LvarNd {
-		exit_eprintln!("代入の左辺値が変数ではありません");
+	match (**node).borrow().kind {
+		Nodekind::LvarNd => {
+			// 変数に対応するアドレスをスタックにプッシュする
+			*ASM.lock().unwrap() += "	mov rax, rbp\n";
+			*ASM.lock().unwrap() += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
+			*ASM.lock().unwrap() += "	push rax\n";
+		},
+		Nodekind::DerefNd => {
+			// gen と同じ処理をやるだけなので戻す
+			gen(node);
+			// TODO: 外した参照をちゃんとスタックに push する処理を書く
+		},
+		_ => {exit_eprintln!("左辺値が変数ではありません。");}
 	}
-
-	// 変数に対応するアドレスをスタックにプッシュする
-	*ASM.lock().unwrap() += "	mov rax, rbp\n";
-	*ASM.lock().unwrap() += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
-	*ASM.lock().unwrap() += "	push rax\n";
 }
 
 // 関数呼び出し時の引数の処理を行う関数
@@ -521,7 +528,7 @@ mod tests {
 			z = &y + 8;
 			return *z;;
 		".to_string();
-		println!("test_for{}", "-".to_string().repeat(REP));
+		println!("test_addr_deref{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
@@ -538,9 +545,11 @@ mod tests {
 	fn test_addr_deref2() {
 		let equation = "
 			x = 3;
-			return &&**x;
+			y = &x;
+			z = &y;
+			return *&**z;
 		".to_string();
-		println!("test_for{}", "-".to_string().repeat(REP));
+		println!("test_addr_deref2{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
