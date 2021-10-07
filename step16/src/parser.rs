@@ -21,6 +21,8 @@ pub enum Nodekind {
 	AssignNd, // '='
 	LvarNd, // 左辺値
 	NumNd, // 数値
+	AddrNd, // アドレス参照(&)
+	DerefNd, // アドレスの値を読む(*)
 	EqNd, // "=="
 	NEqNd, // "!="
 	GThanNd, // '>'
@@ -493,11 +495,27 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: unary = ("+" | "-")? primary
+// 生成規則: unary = ("+" | "-")? primary | ("*" | "&") unary
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
+	if consume(token_ptr, "*") {
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::DerefNd,
+				left: Some(unary(token_ptr)),
+				..Default::default()}
+		));
 
-	if consume(token_ptr, "-") {
+	} else if consume(token_ptr, "&") {
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::AddrNd,
+				left: Some(unary(token_ptr)),
+				..Default::default()
+			}
+		));
+
+	} else if consume(token_ptr, "-") {
 		// 単項演算のマイナスは0から引く形にする。
 		node_ptr = new_node_calc(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
 
@@ -773,6 +791,41 @@ pub mod tests {
 		} 
 	}
 
+	#[test]
+	fn test_addr_deref() {
+		println!("test_addr_deref{}", "-".to_string().repeat(REP));
+		let equation = "
+			x = 3;
+			y = 5;
+			z = &y + 8;
+			return *z;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn test_addr_deref2() {
+		println!("test_addr_deref2{}", "-".to_string().repeat(REP));
+		let equation = "
+			x = 3;
+			return &&**x;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
 
 	#[test]
 	fn test_declare() {
