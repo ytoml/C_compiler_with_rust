@@ -62,6 +62,19 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
 		},
+		Nodekind::AddrNd => {
+			// gen_lval内で *var の var のアドレスをスタックにプッシュしたことになる
+			gen_lval((**node).borrow().left.as_ref().unwrap());
+			*ASM.lock().unwrap() += "	pop rax\n"; 
+			*ASM.lock().unwrap() += "	mov rax, [rax]\n";
+			*ASM.lock().unwrap() += "	push rax\n";
+			return;
+		},
+		Nodekind::DerefNd => {
+			// gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、そのままでOK
+			gen_lval((**node).borrow().left.as_ref().unwrap());
+			return;
+		},
 		Nodekind::FuncNd => {
 			// 引数をレジスタに格納する処理
 			push_args(&(**node).borrow().args);
@@ -295,9 +308,11 @@ fn push_args(args: &Vec<Option<Rc<RefCell<Node>>>>) {
 
 #[cfg(test)]
 mod tests {
+
 	use super::*;
 	use crate::tokenizer::*;
 	use crate::parser::*;
+	use crate::parser::tests::parse_stmts;
 
 	static REP:usize = 80;
 
@@ -365,7 +380,7 @@ mod tests {
 		let equation = "a = 1; a + 1;".to_string();
 		println!("test_assign{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -380,7 +395,7 @@ mod tests {
 		let equation = "local = 1; local_value = local + 1; local_value99 = local_value + 3;".to_string();
 		println!("test_assign{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -400,7 +415,7 @@ mod tests {
 		".to_string();
 		println!("test_if{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -420,7 +435,7 @@ mod tests {
 		".to_string();
 		println!("test_while{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -440,7 +455,7 @@ mod tests {
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -465,7 +480,7 @@ mod tests {
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -487,7 +502,7 @@ mod tests {
 		".to_string();
 		println!("test_for{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
-		let node_heads = program(&mut token_ptr);
+		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 
@@ -496,6 +511,45 @@ mod tests {
 
 		println!("{}", ASM.lock().unwrap());
 
+	}
+
+	#[test]
+	fn test_addr_deref() {
+		let equation = "
+			x = 3;
+			y = 5;
+			z = &y + 8;
+			return *z;;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn test_addr_deref2() {
+		let equation = "
+			x = 3;
+			return &&**x;
+		".to_string();
+		println!("test_for{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
