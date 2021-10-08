@@ -12,7 +12,7 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事のstep15まで実装しており、基本的な計算と型を考慮しない変数の使用、for, while, ifの3種類の制御構文がサポートされています。
+現在、上記記事のstep16まで実装しており、基本的な計算と型を考慮しない変数とその参照(ポインタの演算などはサポートしていません)、for, while, ifの3種類の制御構文がサポートされています。
 また、引数6つまでの関数宣言・呼び出しにも対応しています。ただし、型の宣言や変数宣言のみの文には対応していません。
 `printf` などを使いたい場合も、別の C ソースで関数の中身を定義して gcc 等で x86_64 向けにコンパイルした実行オブジェクトとリンクさせて呼び出す必要があります。(以下の `print_helper`, `print_something`)
 
@@ -28,10 +28,11 @@ calc (a, b, c, d, e, f) {
 
 main () {
 	x = 100;
+	p = &x;
 	y = 20;
 	
 	for (i = 0; i < 20; i = i+2) {
-		print_helper(x = x-i);
+		print_helper(*p = *p-i);
 	}
 
 	if (x < 0) return x;
@@ -45,9 +46,11 @@ main () {
 		print_helper(i = i - 1);
 	}
 
+	pp = &p;
+
 	print_something();
 
-	print_helper(z = fib(x));
+	print_helper(z = fib(*&(**pp)));
 	print_helper(z + calc(1, 2, 3, 4, 5, 6));
 }
 ```
