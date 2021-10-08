@@ -289,9 +289,8 @@ fn gen_lval(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push rax\n";
 		},
 		Nodekind::DerefNd => {
-			// gen と同じ処理をやるだけなので戻す
-			gen(node);
-			// TODO: 外した参照をちゃんとスタックに push する処理を書く
+			// &* は単に打ち消せば良く、node を無視して gen(node->left) する
+			gen((**node).borrow().left.as_ref().unwrap());
 		},
 		_ => {exit_eprintln!("左辺値が変数ではありません。");}
 	}

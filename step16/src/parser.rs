@@ -815,7 +815,9 @@ pub mod tests {
 		println!("test_addr_deref2{}", "-".to_string().repeat(REP));
 		let equation = "
 			x = 3;
-			return &&**x;
+			y = &x;
+			z = &y;
+			return *&**z;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
