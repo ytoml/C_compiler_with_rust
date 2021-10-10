@@ -413,10 +413,10 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	assign(token_ptr)
 }
 
-// 生成規則: assign = equality ("=" assign)?
+// 生成規則: assign = bitor ("=" assign)?
 fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
-	let mut node_ptr = equality(token_ptr);
+	let mut node_ptr = bitor(token_ptr);
 	if consume(token_ptr, "=") {
 		node_ptr = new_node_calc(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
 	}
@@ -445,7 +445,6 @@ fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// TODO: これ怪しいので確認
 // 生成規則: bitand = equality ("&" equality)?
 fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = equality(token_ptr);
@@ -669,6 +668,25 @@ pub mod tests {
 		println!("test_display{}", "-".to_string().repeat(REP));
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
+	}
+
+	#[test]
+	fn test_equations() {
+		println!("test_equations{}", "-".to_string().repeat(REP));
+		let equation = "
+			2 + (3 + 5) * 6;
+			1 ^ 2 | 2 != 3 / 2;
+			1 + -1 ^ 2;
+			3 ^ 2 & 1 | 2 & 9;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
 	}
 
 	#[test]
