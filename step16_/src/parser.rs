@@ -13,29 +13,37 @@ pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
-	DefaultNd, // defalut
-	AddNd, // '+'
-	SubNd, // '-'
-	MulNd, // '*'
-	DivNd, // '/'
-	AssignNd, // '='
-	LvarNd, // 左辺値
-	NumNd, // 数値
-	AddrNd, // アドレス参照(&)
-	DerefNd, // アドレスの値を読む(*)
-	EqNd, // "=="
-	NEqNd, // "!="
-	GThanNd, // '>'
-	GEqNd, // ">="
-	LThanNd, // '<'
-	LEqNd, // "<="
-	IfNd, // if
-	ForNd, // for
-	WhileNd, // while
-	ReturnNd, // return
-	BlockNd, // {}
-	FuncNd, // func()
-	FuncDecNd, // 関数の宣言
+	DefaultNd,	// defalut
+	AddNd,		// '+'
+	SubNd,		// '-'
+	MulNd,		// '*'
+	DivNd,		// '/'
+	ModNd,		// '%'
+	BitAndNd,	// '&'
+	BitOrNd,	// '|'
+	BitXorNd,	// '^'
+	BitNotNd,	// '~'
+	NotNd,		// '!'
+	AssignNd,	// '='
+	LvarNd,		// 左辺値
+	NumNd,		// 数値
+	AddrNd,		// アドレス参照(&)
+	DerefNd,	// アドレスの値を読む(*)
+	EqNd,		// "=="
+	NEqNd,		// "!="
+	GThanNd,	// '>'
+	GEqNd,		// ">="
+	LThanNd,	// '<'
+	LEqNd,		// "<="
+	LogicAndNd,	// "&&"
+	LogicOrNd,	// "||"
+	IfNd,		// if
+	ForNd,		// for
+	WhileNd,	// while
+	ReturnNd,	// return
+	BlockNd,	// {}
+	FuncNd,		// func()
+	FuncDecNd,	// 関数の宣言
 }
 
 pub struct Node {
@@ -416,6 +424,39 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
+// 生成規則: bitor = bitxor ("|" bitxor)?
+fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+
+	let mut node_ptr = bitxor(token_ptr);
+	if consume(token_ptr, "|") {
+		node_ptr = new_node_calc(Nodekind::BitOrNd, node_ptr, bitxor(token_ptr));
+	}
+
+	node_ptr
+}
+
+// 生成規則: bitxor = bitand ("^" bitand)?
+fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let mut node_ptr = bitand(token_ptr);
+	if consume(token_ptr, "^") {
+		node_ptr = new_node_calc(Nodekind::BitXorNd, node_ptr, bitand(token_ptr));
+	}
+
+	node_ptr
+}
+
+// TODO: これ怪しいので確認
+// 生成規則: bitand = equality ("&" equality)?
+fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let mut node_ptr = equality(token_ptr);
+	if consume(token_ptr, "^") {
+		node_ptr = new_node_calc(Nodekind::BitAndNd, node_ptr, equality(token_ptr));
+	}
+
+	node_ptr
+}
+
+
 // 生成規則: equality = relational ("==" relational | "!=" relational)?
 pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
@@ -495,6 +536,7 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
+// TODO: &+x; &-y; みたいな構文を禁止しなくてはならない
 // 生成規則: unary = ("+" | "-")? primary | ("*" | "&") unary
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
