@@ -448,7 +448,7 @@ fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 // 生成規則: bitand = equality ("&" equality)?
 fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = equality(token_ptr);
-	if consume(token_ptr, "^") {
+	if consume(token_ptr, "&") {
 		node_ptr = new_node_calc(Nodekind::BitAndNd, node_ptr, equality(token_ptr));
 	}
 
@@ -563,7 +563,7 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else if consume(token_ptr, "+") {
 		// 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
 		node_ptr = new_node_calc(Nodekind::AddNd, new_node_num(0), primary(token_ptr));
-		
+
 	} else {
 		node_ptr = primary(token_ptr);
 	}
@@ -673,13 +673,16 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_equations() {
-		println!("test_equations{}", "-".to_string().repeat(REP));
+	fn test_bitops() {
+		println!("test_bitops{}", "-".to_string().repeat(REP));
 		let equation = "
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
 			1 + -1 ^ 2;
 			3 ^ 2 & 1 | 2 & 9;
+			x = 10;
+			y = &x;
+			3 ^ 2 & *y | 2 & &x;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
