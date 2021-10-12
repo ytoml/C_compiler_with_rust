@@ -239,6 +239,15 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	cqo\n";
 			*ASM.lock().unwrap() += "	idiv rdi\n";
 		},
+		Nodekind::BitAndNd => {
+			*ASM.lock().unwrap() += "	and rax, rdi\n";
+		},
+		Nodekind::BitOrNd => {
+			*ASM.lock().unwrap() += "	or rax, rdi\n";
+		},
+		Nodekind::BitXorNd => {
+			*ASM.lock().unwrap() += "	xor rax, rdi\n";
+		},
 		Nodekind::EqNd => {
 			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
 			*ASM.lock().unwrap() += "	sete al\n";
@@ -400,6 +409,30 @@ mod tests {
 	fn test_assign_2() {
 		let equation = "local = 1; local_value = local + 1; local_value99 = local_value + 3;".to_string();
 		println!("test_assign{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn test_bitsop() {
+		let equation = "
+			2 + (3 + 5) * 6;
+			1 ^ 2 | 2 != 3 / 2;
+			1 + -1 ^ 2;
+			3 ^ 2 & 1 | 2 & 9;
+			x = 10;
+			y = &x;
+			3 ^ 2 & *y | 2 & &x;
+		".to_string();
+		println!("test_bitops{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
