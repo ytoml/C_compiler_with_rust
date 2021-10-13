@@ -35,8 +35,8 @@ pub enum Nodekind {
 	GEqNd,		// ">="
 	LThanNd,	// '<'
 	LEqNd,		// "<="
-	LogicAndNd,	// "&&"
-	LogicOrNd,	// "||"
+	LogAndNd,	// "&&"
+	LogOrNd,	// "||"
 	IfNd,		// if
 	ForNd,		// for
 	WhileNd,	// while
@@ -413,10 +413,12 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	assign(token_ptr)
 }
 
-// 生成規則: assign = bitor ("=" assign)?
+
+// 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
+// 生成規則: assign = logor ("=" assign)?
 fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
-	let mut node_ptr = bitor(token_ptr);
+	let mut node_ptr = logor(token_ptr);
 	if consume(token_ptr, "=") {
 		node_ptr = new_node_calc(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
 	}
@@ -424,31 +426,53 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: bitor = bitxor ("|" bitxor)?
+// 生成規則: logor = logand ("||" logand)*
+fn logor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+
+	let mut node_ptr = logand(token_ptr);
+	while consume(token_ptr, "||") {
+		node_ptr = new_node_calc(Nodekind::LogOrNd, node_ptr, logand(token_ptr));
+	}
+
+	node_ptr
+}
+
+// 生成規則: logand = bitor ("&&" bitor)*
+fn logand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+
+	let mut node_ptr = bitor(token_ptr);
+	while consume(token_ptr, "&&") {
+		node_ptr = new_node_calc(Nodekind::LogAndNd, node_ptr, bitor(token_ptr));
+	}
+
+	node_ptr
+}
+
+// 生成規則: bitor = bitxor ("|" bitxor)*
 fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = bitxor(token_ptr);
-	if consume(token_ptr, "|") {
+	while consume(token_ptr, "|") {
 		node_ptr = new_node_calc(Nodekind::BitOrNd, node_ptr, bitxor(token_ptr));
 	}
 
 	node_ptr
 }
 
-// 生成規則: bitxor = bitand ("^" bitand)?
+// 生成規則: bitxor = bitand ("^" bitand)*
 fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = bitand(token_ptr);
-	if consume(token_ptr, "^") {
+	while consume(token_ptr, "^") {
 		node_ptr = new_node_calc(Nodekind::BitXorNd, node_ptr, bitand(token_ptr));
 	}
 
 	node_ptr
 }
 
-// 生成規則: bitand = equality ("&" equality)?
+// 生成規則: bitand = equality ("&" equality)*
 fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = equality(token_ptr);
-	if consume(token_ptr, "&") {
+	while consume(token_ptr, "&") {
 		node_ptr = new_node_calc(Nodekind::BitAndNd, node_ptr, equality(token_ptr));
 	}
 
@@ -666,15 +690,15 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_display() {
-		println!("test_display{}", "-".to_string().repeat(REP));
+	fn display() {
+		println!("display{}", "-".to_string().repeat(REP));
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
 	}
 
 	#[test]
-	fn test_bitops() {
-		println!("test_bitops{}", "-".to_string().repeat(REP));
+	fn bitops() {
+		println!("bitops{}", "-".to_string().repeat(REP));
 		let equation = "
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
@@ -694,9 +718,27 @@ pub mod tests {
 		}
 	}
 
+
 	#[test]
-	fn test_for() {
-		println!("test_for{}", "-".to_string().repeat(REP));
+	fn logops() {
+		println!("logops{}", "-".to_string().repeat(REP));
+		let equation = "
+			1 && 2 || 3 && 4;
+			1 && 2 ^ 3 || 4 && 5 || 6;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn for_() {
+		println!("for_{}", "-".to_string().repeat(REP));
 		let equation = "
 			sum = 10;
 			sum = sum + i;
@@ -714,8 +756,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_while() {
-		println!("test_while{}", "-".to_string().repeat(REP));
+	fn while_() {
+		println!("while_{}", "-".to_string().repeat(REP));
 		let equation = "
 			sum = 10;
 			while(sum > 0) sum = sum - 1;
@@ -732,8 +774,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_if() {
-		println!("test_while{}", "-".to_string().repeat(REP));
+	fn if_() {
+		println!("if_{}", "-".to_string().repeat(REP));
 		let equation = "
 			i = 10;
 			if (i == 10) i = i / 5;
@@ -752,8 +794,8 @@ pub mod tests {
 
 
 	#[test]
-	fn test_combination() {
-		println!("test_combination{}", "-".to_string().repeat(REP));
+	fn combination() {
+		println!("combination{}", "-".to_string().repeat(REP));
 		let equation = "
 			i = 10;
 			if (i == 10) i = i / 5;
@@ -771,8 +813,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_block() {
-		println!("test_block{}", "-".to_string().repeat(REP));
+	fn block() {
+		println!("block{}", "-".to_string().repeat(REP));
 		let equation = "
 			for( i = 10; ; ) {i = i + 1;}
 			{}
@@ -790,8 +832,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_block2() {
-		println!("test_block2{}", "-".to_string().repeat(REP));
+	fn block2() {
+		println!("block2{}", "-".to_string().repeat(REP));
 		let equation = "
 			while(i < 10) {i = i + 1; i = i * 2;}
 			x = 10;
@@ -818,8 +860,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_func() {
-		println!("test_func{}", "-".to_string().repeat(REP));
+	fn func() {
+		println!("func{}", "-".to_string().repeat(REP));
 		let equation = "
 			call_fprint();
 			i = getOne();
@@ -837,8 +879,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_func2() {
-		println!("test_func2{}", "-".to_string().repeat(REP));
+	fn func2() {
+		println!("func2{}", "-".to_string().repeat(REP));
 		let equation = "
 			call_fprint();
 			i = get(1);
@@ -857,8 +899,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_addr_deref() {
-		println!("test_addr_deref{}", "-".to_string().repeat(REP));
+	fn addr_deref() {
+		println!("addr_deref{}", "-".to_string().repeat(REP));
 		let equation = "
 			x = 3;
 			y = 5;
@@ -876,8 +918,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_addr_deref2() {
-		println!("test_addr_deref2{}", "-".to_string().repeat(REP));
+	fn addr_deref2() {
+		println!("addr_deref2{}", "-".to_string().repeat(REP));
 		let equation = "
 			x = 3;
 			y = &x;
@@ -895,8 +937,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_declare() {
-		println!("test_declare{}", "-".to_string().repeat(REP));
+	fn declare() {
+		println!("declare{}", "-".to_string().repeat(REP));
 		let equation = "
 			func(x, y) {
 				return x + y;
@@ -921,8 +963,8 @@ pub mod tests {
 	}
 
 	#[test]
-	fn test_no_return() {
-		println!("test_declare{}", "-".to_string().repeat(REP));
+	fn no_return() {
+		println!("declare{}", "-".to_string().repeat(REP));
 		let equation = "
 			func(x, y) {
 				return x + y;
