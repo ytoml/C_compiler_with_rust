@@ -17,6 +17,13 @@ static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
 
 static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]));
 
+// CTR_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
+fn get_count() -> u32 {
+	*CTR_COUNT.lock().unwrap() += 1;
+	*CTR_COUNT.lock().unwrap()
+}
+
+
 pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
@@ -113,8 +120,8 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 		},
 		Nodekind::IfNd => {
 			// PENDING
-			*CTR_COUNT.lock().unwrap() += 1;
-			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
+			let c: u32 = get_count();
+			let end: String = format!(".LEnd{}", c);
 
 			// 条件文の処理
 			gen((**node).borrow().enter.as_ref().unwrap());
@@ -123,7 +130,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 
 			// elseがある場合は微妙にjmp命令の位置が異なることに注意
 			if let Some(ptr) = (**node).borrow().els.as_ref() {
-				let els: String = format!(".LElse{}", *CTR_COUNT.lock().unwrap());
+				let els: String = format!(".LElse{}", c);
 
 				// falseは0なので、cmp rax, 0が真ならelseに飛ぶ
 				*ASM.lock().unwrap() += format!("je {}\n", els).as_str();
@@ -150,9 +157,9 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			return;
 		},
 		Nodekind::WhileNd => {
-			*CTR_COUNT.lock().unwrap() += 1;
-			let begin: String = format!(".LBegin{}", *CTR_COUNT.lock().unwrap());
-			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
+			let c: u32 = get_count();
+			let begin: String = format!(".LBegin{}", c);
+			let end: String = format!(".LEnd{}", c);
 
 			*ASM.lock().unwrap() += format!("{}:\n", begin).as_str();
 			gen((**node).borrow().enter.as_ref().unwrap());
@@ -172,9 +179,9 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			return;
 		},
 		Nodekind::ForNd => {
-			*CTR_COUNT.lock().unwrap() += 1;
-			let begin: String = format!(".LBegin{}", *CTR_COUNT.lock().unwrap());
-			let end: String = format!(".LEnd{}", *CTR_COUNT.lock().unwrap());
+			let c: u32 = get_count();
+			let begin: String = format!(".LBegin{}", c);
+			let end: String = format!(".LEnd{}", c);
 
 			if let Some(ptr) = (**node).borrow().init.as_ref() {
 				gen(ptr);
