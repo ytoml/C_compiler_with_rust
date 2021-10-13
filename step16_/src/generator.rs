@@ -61,6 +61,23 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
 			return;
 		},
+		Nodekind::LogAndNd => {
+			let c = get_count();
+			let mut _asm = ASM.lock().unwrap();
+			let anchor: String = format!(".LLogic{}", c);
+			// short circuit ゆえ ここでは left のみ見る
+			// gen((**node).borrow().left.as_ref().unwrap());
+			// _*asm += format!("jne {}\n", anchor);
+
+
+			// TODO
+			return;
+		},
+		Nodekind::LogOrNd => {
+
+			// TODO
+			return;
+		},
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			gen_lval(node);
