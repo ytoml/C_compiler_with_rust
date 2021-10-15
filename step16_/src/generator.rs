@@ -91,7 +91,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 
 			*_asm += format!("{}:\n", e_anchor).as_str();
 			// *_asm += "	cdqe\n"; // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
-			*_asm += "";
+			*_asm += "	push rax\n";
 
 			return;
 		},
@@ -125,7 +125,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 
 			*_asm += format!("{}:\n", e_anchor).as_str();
 			// *_asm += "	cdqe\n"; // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
-			*_asm += "";
+			*_asm += "	push rax\n";
 
 			return;
 		},
