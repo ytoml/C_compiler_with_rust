@@ -19,6 +19,8 @@ pub enum Nodekind {
 	MulNd,		// '*'
 	DivNd,		// '/'
 	ModNd,		// '%'
+	LShiftNd,	// "<<"
+	RShiftNd,	// ">>"
 	BitAndNd,	// '&'
 	BitOrNd,	// '|'
 	BitXorNd,	// '^'
@@ -494,31 +496,50 @@ pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+// 生成規則: relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr = add(token_ptr);
+	let mut node_ptr = shift(token_ptr);
 
 	loop {
 		if consume(token_ptr, "<") {
-			node_ptr = new_node_calc(Nodekind::LThanNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::LThanNd, node_ptr, shift(token_ptr));
 
 		} else if consume(token_ptr, "<=") {
-			node_ptr = new_node_calc(Nodekind::LEqNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::LEqNd, node_ptr, shift(token_ptr));
 
 		} else if consume(token_ptr, ">") {
-			node_ptr = new_node_calc(Nodekind::GThanNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::GThanNd, node_ptr, shift(token_ptr));
 
 		} else if consume(token_ptr, ">=") {
-			node_ptr = new_node_calc(Nodekind::GEqNd, node_ptr, add(token_ptr));
+			node_ptr = new_node_calc(Nodekind::GEqNd, node_ptr, shift(token_ptr));
 
 		} else{
 			break;
 		}
 	}
 
-
 	node_ptr
 
+}
+
+
+// 生成規則: shift = add ("<<" add | ">>" add)*
+pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let mut node_ptr = add(token_ptr);
+
+	loop {
+		if consume(token_ptr, "<<") {
+			node_ptr = new_node_calc(Nodekind::LShiftNd, node_ptr, add(token_ptr));
+
+		} else if consume(token_ptr, ">>") {
+			node_ptr = new_node_calc(Nodekind::RShiftNd, node_ptr, add(token_ptr));
+
+		} else {
+			break;
+		}
+	}
+
+	node_ptr
 }
 
 // 生成規則: add = mul ("+" mul | "-" mul)*
@@ -540,7 +561,7 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: mul = unary ("*" unary | "/" unary)*
+// 生成規則: mul = unary ("*" unary | "/" unary | "%" unary)*
 fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = unary(token_ptr);
 
@@ -551,6 +572,9 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		} else if consume(token_ptr, "/") {
 			node_ptr = new_node_calc(Nodekind::DivNd, node_ptr, unary(token_ptr));
 
+		} else if consume(token_ptr, "%") {
+			node_ptr = new_node_calc(Nodekind::ModNd, node_ptr, unary(token_ptr));
+
 		} else {
 			break;
 		}
@@ -559,7 +583,7 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// TODO: &+x; &-y; みたいな構文を禁止しなくてはならない
+// TODO: *+x; *-y; みたいな構文を禁止したい
 // 生成規則: unary = ("+" | "-")? primary | ("*" | "&") unary
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
@@ -694,6 +718,40 @@ pub mod tests {
 		println!("display{}", "-".to_string().repeat(REP));
 		let node = new_node_num(0);
 		println!("{}", (*node).borrow());
+	}
+
+	#[test]
+	fn basic_calc() {
+		println!("basic_calc{}", "-".to_string().repeat(REP));
+		let equation = "
+			x = 1 + 2 / 1;
+			y = 200 % (3 + 1);
+			z = 30 % 3 + 2 * 4;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn shift() {
+		println!("shift{}", "-".to_string().repeat(REP));
+		let equation = "
+			x = 10 << 2 + 3 % 2 >> 3;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
 	}
 
 	#[test]
