@@ -782,6 +782,7 @@ pub mod tests {
 			x = 10;
 			y = &x;
 			3 ^ 2 & *y | 2 & &x;
+			z = ~x;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -800,6 +801,7 @@ pub mod tests {
 		let equation = "
 			1 && 2 || 3 && 4;
 			1 && 2 ^ 3 || 4 && 5 || 6;
+			!2;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);

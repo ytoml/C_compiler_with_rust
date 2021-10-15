@@ -129,6 +129,38 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 
 			return;
 		}
+		Nodekind::LogNotNd => {
+			let c = get_count();
+			let f_anchor: String = format!(".LLogic.False{}", c);
+			let e_anchor: String = format!(".LLogic.End{}", c);
+
+			gen((**node).borrow().left.as_ref().unwrap());
+			let mut _asm = ASM.lock().unwrap();
+			*_asm += "	pop rax\n";
+			// TODO: 論理 not の実装
+			// おそらく rax が 0 なら 1, そうでないなら 0 にすれば良い
+			*_asm += "	cmp rax, 0\n";
+			*_asm += format!("	je {}\n", f_anchor).as_str();
+			*_asm += "	mov rax, 0\n";
+			*_asm += format!("	jmp {}\n", e_anchor).as_str();
+
+			*_asm += format!("{}:\n", f_anchor).as_str();
+			*_asm += "	mov rax, 1\n";
+
+			*_asm += format!("{}:\n", e_anchor).as_str();
+			*_asm += "	push rax\n";
+
+			return;
+		}
+		Nodekind::BitNotNd => {
+			gen((**node).borrow().left.as_ref().unwrap());
+			let mut _asm = ASM.lock().unwrap();
+			*_asm += "	pop rax\n";
+			*_asm += "	neg rax\n";
+			*_asm += "	push rax\n";
+
+			return;
+		}
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			gen_lval(node);
@@ -296,79 +328,79 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 	gen((**node).borrow().left.as_ref().unwrap());
 	gen((**node).borrow().right.as_ref().unwrap());
 
-	let mut asm_ = ASM.lock().unwrap();
+	let mut _asm = ASM.lock().unwrap();
 	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&(**node).borrow().kind) {
-		*asm_ += "	pop rcx\n";
+		*_asm += "	pop rcx\n";
 	} else {
-		*asm_ += "	pop rdi\n";
+		*_asm += "	pop rdi\n";
 	}
-	*asm_ += "	pop rax\n";
+	*_asm += "	pop rax\n";
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
 	match (**node).borrow().kind {
 		Nodekind::AddNd => {
-			*asm_ += "	add rax, rdi\n";
+			*_asm += "	add rax, rdi\n";
 		}
 		Nodekind::SubNd => {
-			*asm_ += "	sub rax, rdi\n";
+			*_asm += "	sub rax, rdi\n";
 		}
 		Nodekind::MulNd => {
-			*asm_ += "	imul rax, rdi\n";
+			*_asm += "	imul rax, rdi\n";
 		}
 		Nodekind::DivNd  => {
-			*asm_ += "	cqo\n"; // rax -> rdx:rax に拡張(ただの 0 fill)
-			*asm_ += "	idiv rdi\n"; // rdi で割る: rax が商で rdx が剰余になる
+			*_asm += "	cqo\n"; // rax -> rdx:rax に拡張(ただの 0 fill)
+			*_asm += "	idiv rdi\n"; // rdi で割る: rax が商で rdx が剰余になる
 		}
 		Nodekind::ModNd  => {
-			*asm_ += "	cqo\n";
-			*asm_ += "	idiv rdi\n";
-			*asm_ += "	push rdx\n";
+			*_asm += "	cqo\n";
+			*_asm += "	idiv rdi\n";
+			*_asm += "	push rdx\n";
 			return;
 		}
 		Nodekind::LShiftNd => {
-			*asm_ += "	sal rax, cl\n";
+			*_asm += "	sal rax, cl\n";
 		}
 		Nodekind::RShiftNd => {
-			*asm_ += "	sar rax, cl\n";
+			*_asm += "	sar rax, cl\n";
 		}
 		Nodekind::BitAndNd => {
-			*asm_ += "	and rax, rdi\n";
+			*_asm += "	and rax, rdi\n";
 		}
 		Nodekind::BitOrNd => {
-			*asm_ += "	or rax, rdi\n";
+			*_asm += "	or rax, rdi\n";
 		}
 		Nodekind::BitXorNd => {
-			*asm_ += "	xor rax, rdi\n";
+			*_asm += "	xor rax, rdi\n";
 		}
 		Nodekind::EqNd => {
-			*asm_ += "	cmp rax, rdi\n";
-			*asm_ += "	sete al\n";
-			*asm_ += "	movzb rax, al\n";
+			*_asm += "	cmp rax, rdi\n";
+			*_asm += "	sete al\n";
+			*_asm += "	movzb rax, al\n";
 		}
 		Nodekind::NEqNd => {
-			*asm_ += "	cmp rax, rdi\n";
-			*asm_ += "	setne al\n";
-			*asm_ += "	movzb rax, al\n";
+			*_asm += "	cmp rax, rdi\n";
+			*_asm += "	setne al\n";
+			*_asm += "	movzb rax, al\n";
 		}
 		Nodekind::LThanNd => {
-			*asm_ += "	cmp rax, rdi\n";
-			*asm_ += "	setl al\n";
-			*asm_ += "	movzb rax, al\n";
+			*_asm += "	cmp rax, rdi\n";
+			*_asm += "	setl al\n";
+			*_asm += "	movzb rax, al\n";
 		}
 		Nodekind::LEqNd => {
-			*asm_ += "	cmp rax, rdi\n";
-			*asm_ += "	setle al\n";
-			*asm_ += "	movzb rax, al\n";
+			*_asm += "	cmp rax, rdi\n";
+			*_asm += "	setle al\n";
+			*_asm += "	movzb rax, al\n";
 		}
 		Nodekind::GThanNd => {
-			*asm_ += "	cmp rdi, rax\n";
-			*asm_ += "	setl al\n";
-			*asm_ += "	movzb rax, al\n";
+			*_asm += "	cmp rdi, rax\n";
+			*_asm += "	setl al\n";
+			*_asm += "	movzb rax, al\n";
 		}
 		Nodekind::GEqNd => {
-			*asm_ += "	cmp rdi, rax\n";
-			*asm_ += "	setle al\n";
-			*asm_ += "	movzb rax, al\n";
+			*_asm += "	cmp rdi, rax\n";
+			*_asm += "	setle al\n";
+			*_asm += "	movzb rax, al\n";
 		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
@@ -376,7 +408,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 		}
 	}
 
-	*asm_ += "	push rax\n";
+	*_asm += "	push rax\n";
 
 }
 
@@ -537,6 +569,7 @@ mod tests {
 			x = 10;
 			y = &x;
 			3 ^ 2 & *y | 2 & &x;
+			~x ^ ~*y | 2;
 		".to_string();
 		println!("bitops{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
@@ -557,7 +590,7 @@ mod tests {
 			x = 10;
 			y = 20;
 			z = 20;
-			q = x && y - z || 0;
+			q = !x && !!y - z || 0;
 		".to_string();
 		println!("logops{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
