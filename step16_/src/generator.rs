@@ -55,12 +55,12 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 
 			// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
 			return;
-		},
+		}
 		Nodekind::NumNd => {
 			// NumNdの時点でunwrapできる
 			*ASM.lock().unwrap() += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
 			return;
-		},
+		}
 		Nodekind::LogAndNd => {
 			let c = get_count();
 			let f_anchor: String = format!(".LLogic.False{}", c);
@@ -94,7 +94,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*_asm += "	push rax\n";
 
 			return;
-		},
+		}
 		Nodekind::LogOrNd => {
 			let c = get_count();
 			let t_anchor: String = format!(".LLogic.False{}", c);
@@ -128,7 +128,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*_asm += "	push rax\n";
 
 			return;
-		},
+		}
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			gen_lval(node);
@@ -136,7 +136,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	mov rax, [rax]\n";
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
-		},
+		}
 		Nodekind::DerefNd => {
 			// gen内で *var の var のアドレスをスタックにプッシュしたことになる
 			gen((**node).borrow().left.as_ref().unwrap());
@@ -144,13 +144,13 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	mov rax, [rax]\n";
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
-		},
+		}
 		Nodekind::AddrNd => {
 			// gen_lval内で対応する変数のアドレスをスタックにプッシュしているので、そのままでOK
 			// 生成規則上は Deref も Addr と同様に複数つけられる(&&var)ことになっているが、本当はそんなことないので、ここで gen_lval を使うことで担保する
 			gen_lval((**node).borrow().left.as_ref().unwrap());
 			return;
-		},
+		}
 		Nodekind::FuncNd => {
 			// 引数をレジスタに格納する処理
 			push_args(&(**node).borrow().args);
@@ -164,7 +164,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	pop rsp\n";
 			*ASM.lock().unwrap() += "	push rax\n";
 			return;
-		},
+		}
 		Nodekind::AssignNd => {
 			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_lval内でエラー)
 			gen_lval((**node).borrow().left.as_ref().unwrap());
@@ -176,7 +176,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	mov [rax], rdi\n";
 			*ASM.lock().unwrap() += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
 			return;
-		},
+		}
 		Nodekind::ReturnNd => {
 			// リターンならleftの値を評価してretする。
 			gen((**node).borrow().left.as_ref().unwrap());
@@ -185,7 +185,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	pop rbp\n";
 			*ASM.lock().unwrap() += "	ret\n";
 			return;
-		},
+		}
 		Nodekind::IfNd => {
 			// PENDING
 			let c: u32 = get_count();
@@ -223,7 +223,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push 0\n"; 
 
 			return;
-		},
+		}
 		Nodekind::WhileNd => {
 			let c: u32 = get_count();
 			let begin: String = format!(".LBegin{}", c);
@@ -245,7 +245,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push 0\n"; 
 
 			return;
-		},
+		}
 		Nodekind::ForNd => {
 			let c: u32 = get_count();
 			let begin: String = format!(".LBegin{}", c);
@@ -275,7 +275,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push 0\n"; 
 
 			return;
-		}, 
+		} 
 		Nodekind::BlockNd => {
 
 			for child in &(**node).borrow().children {
@@ -296,70 +296,87 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 	gen((**node).borrow().left.as_ref().unwrap());
 	gen((**node).borrow().right.as_ref().unwrap());
 
-	*ASM.lock().unwrap() += "	pop rdi\n";
-	*ASM.lock().unwrap() += "	pop rax\n";
+	let mut asm_ = ASM.lock().unwrap();
+	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&(**node).borrow().kind) {
+		*asm_ += "	pop rcx\n";
+	} else {
+		*asm_ += "	pop rdi\n";
+	}
+	*asm_ += "	pop rax\n";
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
 	match (**node).borrow().kind {
 		Nodekind::AddNd => {
-			*ASM.lock().unwrap() += "	add rax, rdi\n";
-		},
+			*asm_ += "	add rax, rdi\n";
+		}
 		Nodekind::SubNd => {
-			*ASM.lock().unwrap() += "	sub rax, rdi\n";
-		},
+			*asm_ += "	sub rax, rdi\n";
+		}
 		Nodekind::MulNd => {
-			*ASM.lock().unwrap() += "	imul rax, rdi\n";
-		},
+			*asm_ += "	imul rax, rdi\n";
+		}
 		Nodekind::DivNd  => {
-			*ASM.lock().unwrap() += "	cqo\n";
-			*ASM.lock().unwrap() += "	idiv rdi\n";
-		},
+			*asm_ += "	cqo\n"; // rax -> rdx:rax に拡張(ただの 0 fill)
+			*asm_ += "	idiv rdi\n"; // rdi で割る: rax が商で rdx が剰余になる
+		}
+		Nodekind::ModNd  => {
+			*asm_ += "	cqo\n";
+			*asm_ += "	idiv rdi\n";
+			*asm_ += "	push rdx\n";
+			return;
+		}
+		Nodekind::LShiftNd => {
+			*asm_ += "	sal rax, cl\n";
+		}
+		Nodekind::RShiftNd => {
+			*asm_ += "	sar rax, cl\n";
+		}
 		Nodekind::BitAndNd => {
-			*ASM.lock().unwrap() += "	and rax, rdi\n";
-		},
+			*asm_ += "	and rax, rdi\n";
+		}
 		Nodekind::BitOrNd => {
-			*ASM.lock().unwrap() += "	or rax, rdi\n";
-		},
+			*asm_ += "	or rax, rdi\n";
+		}
 		Nodekind::BitXorNd => {
-			*ASM.lock().unwrap() += "	xor rax, rdi\n";
-		},
+			*asm_ += "	xor rax, rdi\n";
+		}
 		Nodekind::EqNd => {
-			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
-			*ASM.lock().unwrap() += "	sete al\n";
-			*ASM.lock().unwrap() += "	movzb rax, al\n";
-		},
+			*asm_ += "	cmp rax, rdi\n";
+			*asm_ += "	sete al\n";
+			*asm_ += "	movzb rax, al\n";
+		}
 		Nodekind::NEqNd => {
-			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
-			*ASM.lock().unwrap() += "	setne al\n";
-			*ASM.lock().unwrap() += "	movzb rax, al\n";
-		},
+			*asm_ += "	cmp rax, rdi\n";
+			*asm_ += "	setne al\n";
+			*asm_ += "	movzb rax, al\n";
+		}
 		Nodekind::LThanNd => {
-			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
-			*ASM.lock().unwrap() += "	setl al\n";
-			*ASM.lock().unwrap() += "	movzb rax, al\n";
-		},
+			*asm_ += "	cmp rax, rdi\n";
+			*asm_ += "	setl al\n";
+			*asm_ += "	movzb rax, al\n";
+		}
 		Nodekind::LEqNd => {
-			*ASM.lock().unwrap() += "	cmp rax, rdi\n";
-			*ASM.lock().unwrap() += "	setle al\n";
-			*ASM.lock().unwrap() += "	movzb rax, al\n";
-		},
+			*asm_ += "	cmp rax, rdi\n";
+			*asm_ += "	setle al\n";
+			*asm_ += "	movzb rax, al\n";
+		}
 		Nodekind::GThanNd => {
-			*ASM.lock().unwrap() += "	cmp rdi, rax\n";
-			*ASM.lock().unwrap() += "	setl al\n";
-			*ASM.lock().unwrap() += "	movzb rax, al\n";
-		},
+			*asm_ += "	cmp rdi, rax\n";
+			*asm_ += "	setl al\n";
+			*asm_ += "	movzb rax, al\n";
+		}
 		Nodekind::GEqNd => {
-			*ASM.lock().unwrap() += "	cmp rdi, rax\n";
-			*ASM.lock().unwrap() += "	setle al\n";
-			*ASM.lock().unwrap() += "	movzb rax, al\n";
-		},
+			*asm_ += "	cmp rdi, rax\n";
+			*asm_ += "	setle al\n";
+			*asm_ += "	movzb rax, al\n";
+		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
 			exit_eprintln!("不正なNodekindです");
-		},
+		}
 	}
 
-	*ASM.lock().unwrap() += "	push rax\n";
+	*asm_ += "	push rax\n";
 
 }
 
@@ -371,11 +388,11 @@ fn gen_lval(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	mov rax, rbp\n";
 			*ASM.lock().unwrap() += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
 			*ASM.lock().unwrap() += "	push rax\n";
-		},
+		}
 		Nodekind::DerefNd => {
 			// &* は単に打ち消せば良く、node を無視して gen(node->left) する
 			gen((**node).borrow().left.as_ref().unwrap());
-		},
+		}
 		_ => {exit_eprintln!("左辺値が変数ではありません。");}
 	}
 }
@@ -421,7 +438,7 @@ mod tests {
 	#[test]
 	fn muldiv() {
 		println!("muldiv{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("1+2*3-4/2".to_string());
+		let mut token_ptr = tokenize("1+2*3-4/2+3%2".to_string());
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 
@@ -444,6 +461,20 @@ mod tests {
 	#[test]
 	fn unary() {
 		let equation = "(-1+2)*(-1)+(+3)/(+1)".to_string();
+		println!("unary{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_ptr = expr(&mut token_ptr);
+		gen(&node_ptr);
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn shift() {
+		let equation = "
+			200 % 3 << 4 + 8 >> 8
+		".to_string();
 		println!("unary{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_ptr = expr(&mut token_ptr);
