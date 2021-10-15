@@ -25,7 +25,9 @@ pub enum Nodekind {
 	BitOrNd,	// '|'
 	BitXorNd,	// '^'
 	BitNotNd,	// '~'
-	NotNd,		// '!'
+	LogAndNd,	// "&&"
+	LogOrNd,	// "||"
+	LogNotNd,	// '!'
 	AssignNd,	// '='
 	LvarNd,		// 左辺値
 	NumNd,		// 数値
@@ -37,8 +39,6 @@ pub enum Nodekind {
 	GEqNd,		// ">="
 	LThanNd,	// '<'
 	LEqNd,		// "<="
-	LogAndNd,	// "&&"
-	LogOrNd,	// "||"
 	IfNd,		// if
 	ForNd,		// for
 	WhileNd,	// while
@@ -584,10 +584,27 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 // TODO: *+x; *-y; みたいな構文を禁止したい
-// 生成規則: unary = ("+" | "-")? primary | ("*" | "&") unary
+// !+x; や ~-y; は valid
+// 生成規則: unary = ("+" | "-")? primary | ("!" | "~") unary |("*" | "&") unary 
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
-	if consume(token_ptr, "*") {
+	if consume(token_ptr, "~") {
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::BitNotNd,
+				left: Some(unary(token_ptr)),
+				..Default::default()}
+		));
+
+	} else if consume(token_ptr, "!") {
+		node_ptr = Rc::new(RefCell::new(
+			Node {
+				kind: Nodekind::LogNotNd,
+				left: Some(unary(token_ptr)),
+				..Default::default()}
+		));
+	
+	} else if consume(token_ptr, "*") {
 		node_ptr = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::DerefNd,
