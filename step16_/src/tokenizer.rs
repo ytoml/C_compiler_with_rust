@@ -227,9 +227,27 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
 
-static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["==", "!=", ">=", "<=", "&&", "||", "<<", ">>", "++", "--"]));
-static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![';', ',', '(', ')', '{', '}', '+', '-', '*', '/', '%', '!', '~', '&', '|', '^', '=', '<', '>']));
-static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![' ', '\t', '\n']));
+static TRI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+		"<<=", ">>=",
+]));
+
+static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+	"==", "!=", "<=", ">=", "&&", "||",
+	"<<", ">>",
+	"++", "--",
+	"+=", "-=", "*=", "/=", "%=", "&=", "^=", "|=",
+]));
+static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
+	';', ',',
+	'(', ')', '{', '}',
+	'+', '-', '*', '/', '%', '&', '|', '^',
+	'!', '~', 
+	'=',
+	'<', '>',
+]));
+static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
+	' ', '\t', '\n'
+]));
 
 
 // 空白を飛ばして読み進める
@@ -323,7 +341,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	let lim = *index + 3;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
-		if slice == "for" && can_follow_reserved(string, lim) {
+		if TRI_OPS.lock().unwrap().contains(&slice.as_str()) || slice == "for" && can_follow_reserved(string, lim) {
 			*index = lim;
 			return Some(slice);
 		}
@@ -873,7 +891,7 @@ mod tests {
 	}
 
 	#[test]
-	fn testk_operands(){
+	fn test_ops(){
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
 			x = 1;
 			y = 0;
@@ -886,7 +904,7 @@ mod tests {
 		);
 
 		{
-			println!("\ntest_operands{}", "-".to_string().repeat(40));
+			println!("\ntest_ops{}", "-".to_string().repeat(40));
 			while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 				println!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
 				token_ptr_exceed(&mut token_ptr);
@@ -898,7 +916,7 @@ mod tests {
 	}
 
 	#[test]
-	fn testk_operands2(){
+	fn test_ops2(){
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
 			x = 1;
 			y = 0;
@@ -911,7 +929,36 @@ mod tests {
 		);
 
 		{
-			println!("\ntest_operands2{}", "-".to_string().repeat(40));
+			println!("\ntest_ops2{}", "-".to_string().repeat(40));
+			while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
+				println!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
+				token_ptr_exceed(&mut token_ptr);
+			}
+
+			assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
+			eprintln!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
+		}
+	}
+
+	#[test]
+	fn test_ops3(){
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize("
+			x = 1;
+			x += 1;
+			x -= 1;
+			x *= 1;
+			x /= 1;
+			x %= 1;
+			x &= 1;
+			x ^= 1;
+			x |= 1;
+			x <<= 1;
+			x >>= 1;
+			".to_string()
+		);
+
+		{
+			println!("\ntest_ops3{}", "-".to_string().repeat(40));
 			while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 				println!("{}: {}", (*token_ptr).borrow().kind, (*token_ptr).borrow().body.as_ref().unwrap());
 				token_ptr_exceed(&mut token_ptr);
