@@ -227,7 +227,7 @@ pub fn tokenize(string: String) -> Rc<RefCell<Token>> {
 
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
 
-static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["==", "!=", ">=", "<=", "&&", "||", "<<", ">>"]));
+static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["==", "!=", ">=", "<=", "&&", "||", "<<", ">>", "++", "--"]));
 static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![';', ',', '(', ')', '{', '}', '+', '-', '*', '/', '%', '!', '~', '&', '|', '^', '=', '<', '>']));
 static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![' ', '\t', '\n']));
 
