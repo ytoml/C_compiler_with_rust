@@ -421,13 +421,26 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
 // 生成規則:
-// assign = logor ("=" assign)?
+// assign = logor (assign-op assign)?
+// assign-op = "="
+//			| "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
+//			| "<<=" | ">>="
 fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = logor(token_ptr);
 	if consume(token_ptr, "=") {
 		node_ptr = new_node_calc(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
-	}
+	} else if consume(token_ptr, "+=") {
+	} else if consume(token_ptr, "-=") {
+	} else if consume(token_ptr, "*=") {
+	} else if consume(token_ptr, "/=") {
+	} else if consume(token_ptr, "%=") {
+	} else if consume(token_ptr, "&=") {
+	} else if consume(token_ptr, "^=") {
+	} else if consume(token_ptr, "|=") {
+	} else if consume(token_ptr, "<<=") {
+	} else if consume(token_ptr, ">>=") {
+	} 
 	
 	node_ptr
 }
