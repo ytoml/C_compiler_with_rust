@@ -130,24 +130,14 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			return;
 		}
 		Nodekind::LogNotNd => {
-			let c = get_count();
-			let f_anchor: String = format!(".LLogic.False{}", c);
-			let e_anchor: String = format!(".LLogic.End{}", c);
-
 			gen((**node).borrow().left.as_ref().unwrap());
 			let mut _asm = ASM.lock().unwrap();
 			*_asm += "	pop rax\n";
-			// TODO: 論理 not の実装
-			// おそらく rax が 0 なら 1, そうでないなら 0 にすれば良い
+
+			// rax が 0 なら 1, そうでないなら 0 にすれば良い
 			*_asm += "	cmp rax, 0\n";
-			*_asm += format!("	je {}\n", f_anchor).as_str();
-			*_asm += "	mov rax, 0\n";
-			*_asm += format!("	jmp {}\n", e_anchor).as_str();
-
-			*_asm += format!("{}:\n", f_anchor).as_str();
-			*_asm += "	mov rax, 1\n";
-
-			*_asm += format!("{}:\n", e_anchor).as_str();
+			*_asm += "	sete al\n";
+			*_asm += "	movzb rax, al\n";
 			*_asm += "	push rax\n";
 
 			return;
@@ -156,7 +146,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			gen((**node).borrow().left.as_ref().unwrap());
 			let mut _asm = ASM.lock().unwrap();
 			*_asm += "	pop rax\n";
-			*_asm += "	neg rax\n";
+			*_asm += "	not rax\n";
 			*_asm += "	push rax\n";
 
 			return;
