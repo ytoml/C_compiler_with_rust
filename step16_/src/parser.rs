@@ -185,7 +185,8 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	))
 }
 
-// 生成規則: program = ident "(" (expr ",")* expr? ")" "{" stmt* "}"
+// 生成規則: 
+// program = ident "(" (expr ",")* expr? ")" "{" stmt* "}"
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 	let mut globals : Vec<Rc<RefCell<Node>>> = Vec::new();
 
@@ -256,13 +257,14 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 }
 
 
-// 生成規則: stmt = 
-// expr? ";" | 
-// "{" stmt* "}" | 
-// "if" "(" expr ")" stmt ("else" stmt)? | ...(今はelse ifは実装しない)
-// "while" "(" expr ")" stmt | 
-// "for" "(" expr? ";" expr? ";" expr? ")" stmt |
-// "return" expr? ";"
+// 生成規則:
+// stmt = expr? ";"
+//		| "{" stmt* "}" 
+//		| "if" "(" expr ")" stmt ("else" stmt)?
+//		| ...(今はelse ifは実装しない)
+//		| "while" "(" expr ")" stmt
+//		| "for" "(" expr? ";" expr? ";" expr? ")" stmt
+//		| "return" expr? ";"
 fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr: Rc<RefCell<Node>>;
 
@@ -410,14 +412,16 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: expr = assign
+// 生成規則:
+// expr = assign
 pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	assign(token_ptr)
 }
 
 
 // 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
-// 生成規則: assign = logor ("=" assign)?
+// 生成規則:
+// assign = logor ("=" assign)?
 fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = logor(token_ptr);
@@ -428,7 +432,8 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: logor = logand ("||" logand)*
+// 生成規則:
+// logor = logand ("||" logand)*
 fn logor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = logand(token_ptr);
@@ -439,7 +444,8 @@ fn logor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: logand = bitor ("&&" bitor)*
+// 生成規則:
+// logand = bitor ("&&" bitor)*
 fn logand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = bitor(token_ptr);
@@ -450,7 +456,8 @@ fn logand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: bitor = bitxor ("|" bitxor)*
+// 生成規則:
+// bitor = bitxor ("|" bitxor)*
 fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = bitxor(token_ptr);
@@ -461,7 +468,8 @@ fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: bitxor = bitand ("^" bitand)*
+// 生成規則:
+// bitxor = bitand ("^" bitand)*
 fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = bitand(token_ptr);
 	while consume(token_ptr, "^") {
@@ -471,7 +479,8 @@ fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: bitand = equality ("&" equality)*
+// 生成規則:
+// bitand = equality ("&" equality)*
 fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = equality(token_ptr);
 	while consume(token_ptr, "&") {
@@ -482,7 +491,8 @@ fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 
-// 生成規則: equality = relational ("==" relational | "!=" relational)?
+// 生成規則:
+// equality = relational ("==" relational | "!=" relational)?
 pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = relational(token_ptr);
@@ -496,7 +506,8 @@ pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
+// 生成規則:
+// relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = shift(token_ptr);
 
@@ -523,7 +534,8 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 
-// 生成規則: shift = add ("<<" add | ">>" add)*
+// 生成規則:
+// shift = add ("<<" add | ">>" add)*
 pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = add(token_ptr);
 
@@ -542,7 +554,8 @@ pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: add = mul ("+" mul | "-" mul)*
+// 生成規則:
+// add = mul ("+" mul | "-" mul)*
 pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = mul(token_ptr);
 
@@ -561,7 +574,8 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: mul = unary ("*" unary | "/" unary | "%" unary)*
+// 生成規則:
+// mul = unary ("*" unary | "/" unary | "%" unary)*
 fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = unary(token_ptr);
 
@@ -585,7 +599,11 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
-// 生成規則: unary = ("+" | "-")? primary | ("!" | "~") unary |("*" | "&") unary 
+
+// unary = ("+" | "-")? primary
+//		| ("!" | "~")? unary
+//		| ("*" | "&")? unary 
+//		| ("++" | "--")? unary 
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 	if consume(token_ptr, "~") {
@@ -636,7 +654,10 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// 生成規則: primary = num | ident ( "(" (expr ",")* expr? ")" )? | "(" expr ")"
+// 生成規則: 
+// primary = num
+//			| ident ( "(" (expr ",")* expr? ")" )?
+//			| "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 
