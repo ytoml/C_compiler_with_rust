@@ -431,6 +431,8 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	if consume(token_ptr, "=") {
 		node_ptr = new_node_calc(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
 	} else if consume(token_ptr, "+=") {
+		node_ptr = assign_op(Nodekind::AddNd, node_ptr, assign(token_ptr));
+
 	} else if consume(token_ptr, "-=") {
 	} else if consume(token_ptr, "*=") {
 	} else if consume(token_ptr, "/=") {
@@ -443,6 +445,11 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} 
 	
 	node_ptr
+}
+
+// a += b; -->  tmp = &a; *tmp = *tmp + &a;
+fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
+	// TOTO: ここの2文を持つための Vec を Node に持たせる必要があるかも
 }
 
 // 生成規則:
