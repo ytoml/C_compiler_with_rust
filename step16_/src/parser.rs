@@ -39,11 +39,12 @@ pub enum Nodekind {
 	GEqNd,		// ">="
 	LThanNd,	// '<'
 	LEqNd,		// "<="
-	IfNd,		// if
-	ForNd,		// for
-	WhileNd,	// while
-	ReturnNd,	// return
+	IfNd,		// "if"
+	ForNd,		// "for"
+	WhileNd,	// "while"
+	ReturnNd,	// "return"
 	BlockNd,	// {}
+	CommaNd,	// ','
 	FuncNd,		// func()
 	FuncDecNd,	// 関数の宣言
 }
@@ -129,7 +130,7 @@ impl Display for Node {
 
 
 // ノードの作成
-fn new_node_calc(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
+fn new_binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
 		Node {
 			kind: kind,
@@ -413,9 +414,15 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 }
 
 // 生成規則:
-// expr = assign
+// expr = assign ("," expr)? 
 pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	assign(token_ptr)
+	let mut node_ptr = assign(token_ptr);
+
+	if consume(token_ptr, ",") {
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, expr(token_ptr));
+	}
+
+	node_ptr
 }
 
 
@@ -429,27 +436,37 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = logor(token_ptr);
 	if consume(token_ptr, "=") {
-		node_ptr = new_node_calc(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
+		node_ptr = new_binary(Nodekind::AssignNd, node_ptr,  assign(token_ptr));
 	} else if consume(token_ptr, "+=") {
 		node_ptr = assign_op(Nodekind::AddNd, node_ptr, assign(token_ptr));
-
 	} else if consume(token_ptr, "-=") {
+		node_ptr = assign_op(Nodekind::SubNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "*=") {
+		node_ptr = assign_op(Nodekind::MulNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "/=") {
+		node_ptr = assign_op(Nodekind::DivNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "%=") {
+		node_ptr = assign_op(Nodekind::ModNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "&=") {
+		node_ptr = assign_op(Nodekind::BitAndNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "^=") {
+		node_ptr = assign_op(Nodekind::BitXorNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "|=") {
+		node_ptr = assign_op(Nodekind::BitOrNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, "<<=") {
+		node_ptr = assign_op(Nodekind::LShiftNd, node_ptr, assign(token_ptr));
 	} else if consume(token_ptr, ">>=") {
+		node_ptr = assign_op(Nodekind::RShiftNd, node_ptr, assign(token_ptr));
 	} 
 	
 	node_ptr
 }
 
-// a += b; -->  tmp = &a; *tmp = *tmp + &a;
+// a += b; -->  tmp = &a, *tmp = *tmp + &a;
+// AssignAddNd 的な Nodekind を導入して generator で add [a], b となるように直接処理する手もある
 fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
-	// TOTO: ここの2文を持つための Vec を Node に持たせる必要があるかも
+	let mut node_ptr: Rc<RefCell<Node>>;
+	node_ptr
 }
 
 // 生成規則:
@@ -458,7 +475,7 @@ fn logor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = logand(token_ptr);
 	while consume(token_ptr, "||") {
-		node_ptr = new_node_calc(Nodekind::LogOrNd, node_ptr, logand(token_ptr));
+		node_ptr = new_binary(Nodekind::LogOrNd, node_ptr, logand(token_ptr));
 	}
 
 	node_ptr
@@ -470,7 +487,7 @@ fn logand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = bitor(token_ptr);
 	while consume(token_ptr, "&&") {
-		node_ptr = new_node_calc(Nodekind::LogAndNd, node_ptr, bitor(token_ptr));
+		node_ptr = new_binary(Nodekind::LogAndNd, node_ptr, bitor(token_ptr));
 	}
 
 	node_ptr
@@ -482,7 +499,7 @@ fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = bitxor(token_ptr);
 	while consume(token_ptr, "|") {
-		node_ptr = new_node_calc(Nodekind::BitOrNd, node_ptr, bitxor(token_ptr));
+		node_ptr = new_binary(Nodekind::BitOrNd, node_ptr, bitxor(token_ptr));
 	}
 
 	node_ptr
@@ -493,7 +510,7 @@ fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = bitand(token_ptr);
 	while consume(token_ptr, "^") {
-		node_ptr = new_node_calc(Nodekind::BitXorNd, node_ptr, bitand(token_ptr));
+		node_ptr = new_binary(Nodekind::BitXorNd, node_ptr, bitand(token_ptr));
 	}
 
 	node_ptr
@@ -504,7 +521,7 @@ fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr = equality(token_ptr);
 	while consume(token_ptr, "&") {
-		node_ptr = new_node_calc(Nodekind::BitAndNd, node_ptr, equality(token_ptr));
+		node_ptr = new_binary(Nodekind::BitAndNd, node_ptr, equality(token_ptr));
 	}
 
 	node_ptr
@@ -517,10 +534,10 @@ pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	let mut node_ptr = relational(token_ptr);
 	if consume(token_ptr, "==") {
-		node_ptr = new_node_calc(Nodekind::EqNd, node_ptr, relational(token_ptr));
+		node_ptr = new_binary(Nodekind::EqNd, node_ptr, relational(token_ptr));
 
 	} else if consume(token_ptr, "!=") {
-		node_ptr = new_node_calc(Nodekind::NEqNd, node_ptr, relational(token_ptr));
+		node_ptr = new_binary(Nodekind::NEqNd, node_ptr, relational(token_ptr));
 	}
 
 	node_ptr
@@ -533,16 +550,16 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "<") {
-			node_ptr = new_node_calc(Nodekind::LThanNd, node_ptr, shift(token_ptr));
+			node_ptr = new_binary(Nodekind::LThanNd, node_ptr, shift(token_ptr));
 
 		} else if consume(token_ptr, "<=") {
-			node_ptr = new_node_calc(Nodekind::LEqNd, node_ptr, shift(token_ptr));
+			node_ptr = new_binary(Nodekind::LEqNd, node_ptr, shift(token_ptr));
 
 		} else if consume(token_ptr, ">") {
-			node_ptr = new_node_calc(Nodekind::GThanNd, node_ptr, shift(token_ptr));
+			node_ptr = new_binary(Nodekind::GThanNd, node_ptr, shift(token_ptr));
 
 		} else if consume(token_ptr, ">=") {
-			node_ptr = new_node_calc(Nodekind::GEqNd, node_ptr, shift(token_ptr));
+			node_ptr = new_binary(Nodekind::GEqNd, node_ptr, shift(token_ptr));
 
 		} else{
 			break;
@@ -561,10 +578,10 @@ pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "<<") {
-			node_ptr = new_node_calc(Nodekind::LShiftNd, node_ptr, add(token_ptr));
+			node_ptr = new_binary(Nodekind::LShiftNd, node_ptr, add(token_ptr));
 
 		} else if consume(token_ptr, ">>") {
-			node_ptr = new_node_calc(Nodekind::RShiftNd, node_ptr, add(token_ptr));
+			node_ptr = new_binary(Nodekind::RShiftNd, node_ptr, add(token_ptr));
 
 		} else {
 			break;
@@ -581,10 +598,10 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "+") {
-			node_ptr = new_node_calc(Nodekind::AddNd, node_ptr, mul(token_ptr));
+			node_ptr = new_binary(Nodekind::AddNd, node_ptr, mul(token_ptr));
 
 		} else if consume(token_ptr, "-") {
-			node_ptr = new_node_calc(Nodekind::SubNd, node_ptr, mul(token_ptr));
+			node_ptr = new_binary(Nodekind::SubNd, node_ptr, mul(token_ptr));
 
 		} else {
 			break;
@@ -601,13 +618,13 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	loop {
 		if consume(token_ptr, "*") {
-			node_ptr = new_node_calc(Nodekind::MulNd, node_ptr, unary(token_ptr));
+			node_ptr = new_binary(Nodekind::MulNd, node_ptr, unary(token_ptr));
 
 		} else if consume(token_ptr, "/") {
-			node_ptr = new_node_calc(Nodekind::DivNd, node_ptr, unary(token_ptr));
+			node_ptr = new_binary(Nodekind::DivNd, node_ptr, unary(token_ptr));
 
 		} else if consume(token_ptr, "%") {
-			node_ptr = new_node_calc(Nodekind::ModNd, node_ptr, unary(token_ptr));
+			node_ptr = new_binary(Nodekind::ModNd, node_ptr, unary(token_ptr));
 
 		} else {
 			break;
@@ -661,11 +678,11 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	} else if consume(token_ptr, "-") {
 		// 単項演算のマイナスは0から引く形にする。
-		node_ptr = new_node_calc(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
+		node_ptr = new_binary(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
 
 	} else if consume(token_ptr, "+") {
 		// 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
-		node_ptr = new_node_calc(Nodekind::AddNd, new_node_num(0), primary(token_ptr));
+		node_ptr = new_binary(Nodekind::AddNd, new_node_num(0), primary(token_ptr));
 
 	} else {
 		node_ptr = primary(token_ptr);
