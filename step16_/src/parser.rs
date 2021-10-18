@@ -484,9 +484,9 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) 
 	);
 
 	let expr_right = new_binary(
-		kind,
+		Nodekind::AssignNd,
 		new_unary(Nodekind::DerefNd, new_node_lvar("")),
-		right
+		new_binary(kind, new_unary(Nodekind::DerefNd, new_node_lvar("")), right)
 	);
 
 	new_binary(Nodekind::CommaNd, expr_left, expr_right)
