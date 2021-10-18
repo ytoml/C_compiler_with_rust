@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug, PartialEq)]
@@ -196,8 +197,33 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	))
 }
 
+
+// 生成規則:
+// func-args = ident ("," ident)* | null
+fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
+	let mut args = vec![];
+	let mut argc: usize = 0;
+	if is_ident(token_ptr) {
+		let var_name = expect_ident(token_ptr);
+		args.push(Some(new_node_lvar(var_name)));
+		argc += 1;
+
+		loop {
+			if !consume(token_ptr, ",") {break;}
+			if argc >= 6 {
+				exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+			}
+
+			let var_name = expect_ident(token_ptr);
+			args.push(Some(new_node_lvar(var_name)));
+			argc += 1;
+		}
+	}
+	args
+}
+
 // 生成規則: 
-// program = ident "(" (expr ",")* expr? ")" "{" stmt* "}"
+// program = ident "(" func-args ")" "{" stmt* "}"
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 	let mut globals : Vec<Rc<RefCell<Node>>> = Vec::new();
 
@@ -205,28 +231,19 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// トップレベル(グローバルスコープ)では関数宣言のみができる
 		
 		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
+
 		let func_name = expect_ident(token_ptr);
+		if ARGS_COUNTS.lock().unwrap().contains_key(&func_name) {
+			exit_eprintln!("{}: 重複した関数宣言です。", func_name);
+		}
 		expect(token_ptr, "(");
 		// 引数を6つまでサポート
-		let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
-		if !consume(token_ptr, ")") {
-			// 引数が1つ以上あるパターン
-			let mut argc: usize = 0;
-			loop {
-				if argc >= 6 {
-					exit_eprintln!("現在7つ以上の引数はサポートされていません。");
-				}
-				if at_eof(token_ptr) {exit_eprintln!("関数宣言の\'(\'にマッチする\')\'が見つかりません。");}
-				args.push(Some(expr(token_ptr)));
-				argc += 1;
+		let args: Vec<Option<Rc<RefCell<Node>>>> = func_args(token_ptr);
 
-				// ','が読めたなら次の引数があるが、なければ引数列挙が終わらなければならない
-				if !consume(token_ptr, ",") {
-					expect(token_ptr, ")");
-					break;
-				}
-			}
-		}
+		// 引数の数をチェックするためにマップに保存
+		ARGS_COUNTS.lock().unwrap().insert(func_name.clone(), args.len());
+		expect(token_ptr, ")");
+		
 
 		let mut has_return : bool = false;
 		expect(token_ptr, "{");
@@ -731,9 +748,31 @@ fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool) -> Rc<RefCell
 	}
 }
 
+
+// 生成規則:
+// params = assign ("," assign)* | null
+fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
+	let mut args = vec![];
+	if !consume(token_ptr, ")") {
+		args.push(Some(assign(token_ptr)));
+
+		loop {
+			if !consume(token_ptr, ",") {
+				expect(token_ptr,")");
+				break;
+			}
+
+			args.push(Some(assign(token_ptr)));
+			
+			if at_eof(token_ptr) {exit_eprintln!("関数呼び出しの\'(\'にマッチする\')\'が見つかりません。");}
+		}
+	}
+	args
+}
+
 // 生成規則: 
 // primary = num
-//			| ident ( "(" (expr ",")* expr? ")" )?
+//			| ident ( "(" (assign ",")* assign? ")" )?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
@@ -747,25 +786,11 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		let var_name = expect_ident(token_ptr);
 		if consume(token_ptr, "(") {
 
-			// 引数を6つまでサポート
-			let mut args:Vec<Option<Rc<RefCell<Node>>>> = vec![];
-			if !consume(token_ptr, ")") {
-				// 引数が1つ以上あるパターン
-				let mut argc: usize = 0;
-				loop {
-					if argc >= 6 {
-						exit_eprintln!("現在7つ以上の引数はサポートされていません。");
-					}
-					if at_eof(token_ptr) {exit_eprintln!("関数呼び出しの\'(\'にマッチする\')\'が見つかりません。");}
-					args.push(Some(expr(token_ptr)));
-					argc += 1;
-
-					// ','が読めたなら次の引数があるが、なければ引数列挙が終わらなければならない
-					if !consume(token_ptr, ",") {
-						expect(token_ptr, ")");
-						break;
-					}
-				}
+			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
+			
+			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
+			if ARGS_COUNTS.lock().unwrap().contains_key(&var_name) && args.len() != *ARGS_COUNTS.lock().unwrap().get(&var_name).unwrap() {
+				exit_eprintln!("引数の数が一致しません。");
 			}
 
 			// 関数に対応するノード: あくまで今は外部とリンクさせて呼び出すため、関数を置くアドレスなどは気にしなくて良い
@@ -786,6 +811,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	}
 	node_ptr
 }
+
 
 #[cfg(test)]
 pub mod tests {
@@ -1173,6 +1199,9 @@ pub mod tests {
 			func(x, y) {
 				return x + y;
 			}
+			calc(a, b, c, d, e, f) {
+				return a*b + c - d + e/f;
+			}
 			main() {
 				i = 0;
 				sum = 0;
@@ -1205,6 +1234,7 @@ pub mod tests {
 				for (; i < 10; i=i+1) {
 					sum = sum + i;
 				}
+				func(x=1, (y=1, z=1));
 			}
 		".to_string();
 		let mut token_ptr = tokenize(equation);
