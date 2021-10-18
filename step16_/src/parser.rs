@@ -659,9 +659,8 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
-
 // unary = primary
-//		| ("+" | "-")? primary
+//		| ("+" | "-")? unary
 //		| ("!" | "~")? unary
 //		| ("*" | "&")? unary 
 //		| ("++" | "--")? unary 
@@ -679,13 +678,19 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else if consume(token_ptr, "&") {
 		node_ptr =  new_unary(Nodekind::AddrNd, unary(token_ptr));
 
-	} else if consume(token_ptr, "-") {
-		// 単項演算のマイナスは0から引く形にする。
-		node_ptr = new_binary(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
-
 	} else if consume(token_ptr, "+") {
 		// 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
 		node_ptr = new_binary(Nodekind::AddNd, new_node_num(0), primary(token_ptr));
+
+	} else if consume(token_ptr, "-") {
+		// 単項演算のマイナスは0から引く形にする。
+		node_ptr = new_binary(Nodekind::SubNd, new_node_num(0), primary(token_ptr));
+	
+	} else if consume(token_ptr, "++") {
+		node_ptr = assign_op(Nodekind::AddNd, unary(token_ptr), new_node_num(1));
+	
+	} else if consume(token_ptr, "--") {
+		node_ptr = assign_op(Nodekind::SubNd, unary(token_ptr), new_node_num(1));
 
 	} else {
 		node_ptr = primary(token_ptr);
@@ -873,6 +878,25 @@ pub mod tests {
 			count += 1;
 		}
 	}
+
+	#[test]
+	fn inc_dec() {
+		println!("inc_dec{}", "-".to_string().repeat(REP));
+		let equation = "
+			i = 0;
+			++i;
+			--i;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
 
 	#[test]
 	fn for_() {
