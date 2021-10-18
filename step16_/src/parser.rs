@@ -141,6 +141,16 @@ fn new_binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>)
 	))
 }
 
+fn new_unary(kind: Nodekind, left: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
+	Rc::new(RefCell::new(
+		Node {
+			kind: kind,
+			left: Some(left), 
+			.. Default::default()
+		}
+	))
+}
+
 // 数字に対応するノード
 fn new_node_num(val: i32) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
@@ -462,11 +472,24 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-// a += b; -->  tmp = &a, *tmp = *tmp + &a;
+// a += b; -->  tmp = &a, *tmp = *tmp + b;
 // AssignAddNd 的な Nodekind を導入して generator で add [a], b となるように直接処理する手もある
 fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>>;
-	node_ptr
+	// tmp として通常は認められない無名の変数を使うことで重複を避ける
+
+	let expr_left = new_binary(
+		Nodekind::AssignNd,
+		new_node_lvar(""),
+		new_unary(Nodekind::AddrNd, left)
+	);
+
+	let expr_right = new_binary(
+		kind,
+		new_unary(Nodekind::DerefNd, new_node_lvar("")),
+		right
+	);
+
+	new_binary(Nodekind::CommaNd, expr_left, expr_right)
 }
 
 // 生成規則:
@@ -637,44 +660,24 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
 
-// unary = ("+" | "-")? primary
+// unary = primary
+//		| ("+" | "-")? primary
 //		| ("!" | "~")? unary
 //		| ("*" | "&")? unary 
 //		| ("++" | "--")? unary 
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 	if consume(token_ptr, "~") {
-		node_ptr = Rc::new(RefCell::new(
-			Node {
-				kind: Nodekind::BitNotNd,
-				left: Some(unary(token_ptr)),
-				..Default::default()}
-		));
+		node_ptr =  new_unary(Nodekind::BitNotNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "!") {
-		node_ptr = Rc::new(RefCell::new(
-			Node {
-				kind: Nodekind::LogNotNd,
-				left: Some(unary(token_ptr)),
-				..Default::default()}
-		));
-	
+		node_ptr =  new_unary(Nodekind::LogNotNd, unary(token_ptr));
+
 	} else if consume(token_ptr, "*") {
-		node_ptr = Rc::new(RefCell::new(
-			Node {
-				kind: Nodekind::DerefNd,
-				left: Some(unary(token_ptr)),
-				..Default::default()}
-		));
+		node_ptr =  new_unary(Nodekind::DerefNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "&") {
-		node_ptr = Rc::new(RefCell::new(
-			Node {
-				kind: Nodekind::AddrNd,
-				left: Some(unary(token_ptr)),
-				..Default::default()
-			}
-		));
+		node_ptr =  new_unary(Nodekind::AddrNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "-") {
 		// 単項演算のマイナスは0から引く形にする。
@@ -1060,6 +1063,40 @@ pub mod tests {
 			y = &x;
 			z = &y;
 			return *&**z;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn comma() {
+		println!("comma{}", "-".to_string().repeat(REP));
+		let equation = "
+			x = 3, y = 4, z = 10;
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn assign_op() {
+		println!("assign_op{}", "-".to_string().repeat(REP));
+		let equation = "
+			x = 10;
+			x += 1;
+			x <<= 1;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
