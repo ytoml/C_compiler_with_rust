@@ -659,7 +659,7 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
-// unary = primary
+// unary = tailed 
 //		| ("+" | "-")? unary
 //		| ("!" | "~")? unary
 //		| ("*" | "&")? unary 
@@ -667,16 +667,16 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr;
 	if consume(token_ptr, "~") {
-		node_ptr =  new_unary(Nodekind::BitNotNd, unary(token_ptr));
+		node_ptr = new_unary(Nodekind::BitNotNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "!") {
-		node_ptr =  new_unary(Nodekind::LogNotNd, unary(token_ptr));
+		node_ptr = new_unary(Nodekind::LogNotNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "*") {
-		node_ptr =  new_unary(Nodekind::DerefNd, unary(token_ptr));
+		node_ptr = new_unary(Nodekind::DerefNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "&") {
-		node_ptr =  new_unary(Nodekind::AddrNd, unary(token_ptr));
+		node_ptr = new_unary(Nodekind::AddrNd, unary(token_ptr));
 
 	} else if consume(token_ptr, "+") {
 		// 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
@@ -693,10 +693,42 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		node_ptr = assign_op(Nodekind::SubNd, unary(token_ptr), new_node_num(1));
 
 	} else {
-		node_ptr = primary(token_ptr);
+		node_ptr = tailed(token_ptr);
 	}
 
 	node_ptr
+}
+
+
+// 生成規則:
+// tailed = primary (primary-tail)?
+// primary-tail = "++" | "--"
+fn tailed(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let node_ptr = primary(token_ptr);
+	if consume(token_ptr, "++") {
+		inc_dec(node_ptr, true, false)
+
+	} else if consume(token_ptr, "--") {
+		inc_dec(node_ptr, false, false)
+
+	} else {
+		node_ptr
+	}
+}
+
+
+fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool) -> Rc<RefCell<Node>> {
+	let kind = if is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
+	if is_prefix {
+		// ++i は (i+=1) として読み替えると良い
+		assign_op(kind, left, new_node_num(1))
+
+	} else {
+		// i++ は (i+=1)-1 として読み替えると良い
+		let opposite_kind = if !is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
+		new_binary(opposite_kind, assign_op(kind, left, new_node_num(1)), new_node_num(1))
+		
+	}
 }
 
 // 生成規則: 
@@ -886,6 +918,8 @@ pub mod tests {
 			i = 0;
 			++i;
 			--i;
+			i++;
+			i--;
 		".to_string();
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
