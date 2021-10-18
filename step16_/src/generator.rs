@@ -199,6 +199,17 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			*ASM.lock().unwrap() += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
 			return;
 		}
+		Nodekind::CommaNd => {
+			// 式の評価値として1つ目の結果は捨てる
+			gen((**node).borrow().left.as_ref().unwrap());
+			{
+				let mut _asm = ASM.lock().unwrap();
+				*_asm += "	pop rax\n"; 
+			}
+			// 2つ目の式の評価値はそのまま使うので、popなしでOK
+			gen((**node).borrow().right.as_ref().unwrap());
+			return;
+		}
 		Nodekind::ReturnNd => {
 			// リターンならleftの値を評価してretする。
 			gen((**node).borrow().left.as_ref().unwrap());
@@ -583,6 +594,24 @@ mod tests {
 			q = !x && !!y - z || 0;
 		".to_string();
 		println!("logops{}", "-".to_string().repeat(REP));
+		let mut token_ptr = tokenize(equation);
+		let node_heads = parse_stmts(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen(&node_ptr);
+
+			*ASM.lock().unwrap() += "	pop rax\n";
+		}
+
+		println!("{}", ASM.lock().unwrap());
+
+	}
+
+	#[test]
+	fn comma() {
+		let equation = "
+			x = 10, y = 10, z = 10;
+		".to_string();
+		println!("comma{}", "-".to_string().repeat(REP));
 		let mut token_ptr = tokenize(equation);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
