@@ -790,8 +790,8 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&var_name);
-			let argc_is_same: bool = args.len() == *ARGS_COUNTS.lock().unwrap().get(&var_name).unwrap();
-			if declared && !argc_is_same  {
+			// let argc_is_same: bool = args.len() ==;
+			if declared && args.len() != *ARGS_COUNTS.lock().unwrap().get(&var_name).unwrap() {
 				exit_eprintln!("引数の数が一致しません。");
 			}
 
@@ -1237,6 +1237,44 @@ pub mod tests {
 					sum = sum + i;
 				}
 				func(x=1, (y=1, z=1));
+			}
+		".to_string();
+		let mut token_ptr = tokenize(equation);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする
+	#[test]
+	fn wip() {
+		println!("wip{}", "-".to_string().repeat(REP));
+		let equation = "
+			func(x, y) {
+				print_helper(x+y);
+				return x + y;
+			}
+			main() {
+				i = 0;
+				j = 0;
+				k = 1;
+				sum = 0;
+				for (; i < 10; i+=i+1, j++) {
+					sum++;
+				}
+				while (j) {
+					j /= 2;
+					k <<= 1;
+				}
+				if (k) k--;
+				else k = 0;
+
+				func(x=1, (y=1, z=1));
+				return k;
 			}
 		".to_string();
 		let mut token_ptr = tokenize(equation);
