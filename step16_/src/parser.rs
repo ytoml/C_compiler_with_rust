@@ -789,7 +789,9 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
 			
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
-			if ARGS_COUNTS.lock().unwrap().contains_key(&var_name) && args.len() != *ARGS_COUNTS.lock().unwrap().get(&var_name).unwrap() {
+			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&var_name);
+			let argc_is_same: bool = args.len() == *ARGS_COUNTS.lock().unwrap().get(&var_name).unwrap();
+			if declared && !argc_is_same  {
 				exit_eprintln!("引数の数が一致しません。");
 			}
 
