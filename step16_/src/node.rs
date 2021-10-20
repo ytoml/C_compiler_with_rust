@@ -61,20 +61,21 @@ pub struct Node {
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<Rc<RefCell<Node>>>>,
 
-	// func の引数を保存する: 
+	// func の引数を保存する 
 	pub args: Vec<Option<Rc<RefCell<Node>>>>,
+
 	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
 	pub name: Option<String>,
-	// 関数宣言時に使用
-	pub stmts: Option<Vec<Rc<RefCell<Node>>>>, // プログラム情報
-	pub max_offset: Option<usize>
 
+	// 関数宣言時に使用
+	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
+	pub max_offset: Option<usize>
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node { kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
+		Node {kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
 	}
 }
 

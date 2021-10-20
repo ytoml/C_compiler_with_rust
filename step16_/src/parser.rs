@@ -17,9 +17,6 @@ static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(Has
 static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
-
-
-
 // ノードの作成
 fn new_binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(
@@ -382,8 +379,8 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 // a += b; -->  tmp = &a, *tmp = *tmp + b;
 // AssignAddNd 的な Nodekind を導入して generator で add [a], b となるように直接処理する手もある
 fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>) -> Rc<RefCell<Node>> {
-	// tmp として通常は認められない無名の変数を使うことで重複を避ける
 
+	// tmp として通常は認められない無名の変数を使うことで重複を避ける
 	let expr_left = new_binary(
 		Nodekind::AssignNd,
 		new_node_lvar(""),
@@ -736,14 +733,12 @@ pub mod tests {
 		}
 	}
 
-
 	pub fn parse_stmts(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-	let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
-	while !at_eof(token_ptr) {
-		statements.push(stmt(token_ptr));
-	}
-
-	statements
+		let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
+		while !at_eof(token_ptr) {
+			statements.push(stmt(token_ptr));
+		}
+		statements
 	}
 
 	#[test]
