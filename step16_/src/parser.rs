@@ -1,6 +1,9 @@
-use crate::exit_eprintln;
 // 再帰下降構文のパーサ
-use crate::tokenizer::{Token, Tokenkind, consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof};
+use crate::{
+	token::{Token, Tokenkind},
+	tokenizer::{consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof},
+	exit_eprintln,
+};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;

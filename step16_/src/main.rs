@@ -4,13 +4,16 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 
+mod options;
+mod token;
 mod tokenizer;
+mod node;
 mod parser;
 mod utils;
-mod options;
 mod generator;
 use options::Opts;
-use tokenizer::{Token, tokenize};
+use token::Token;
+use tokenizer::tokenize;
 use parser::{program};
 use generator::{gen, ASM};
 
@@ -63,9 +66,14 @@ mod tests {
 	use std::fs::File;
 	use std::rc::Rc;
 	use std::cell::RefCell;
-	use crate::tokenizer::{Token, tokenize};
-	use crate::parser::program;
-	use crate::parser::tests::parse_stmts;
+	use crate::{
+		token::Token,
+		tokenizer::tokenize,
+		parser::{
+			program,
+			tests::parse_stmts,
+		}
+	};
 
 	#[test]
 	fn code_concat_test() {
