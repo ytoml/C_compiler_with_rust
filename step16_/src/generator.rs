@@ -1,9 +1,12 @@
-use crate::{exit_eprintln};
-use crate::parser::{Node, Nodekind};
-use std::rc::Rc;
+use crate::{
+	node::{Node, Nodekind},
+	exit_eprintln,
+};
 use std::cell::RefCell;
-use once_cell::sync::Lazy;
+use std::rc::Rc;
 use std::sync::Mutex;
+
+use once_cell::sync::Lazy;
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
 	|| Mutex::new(
