@@ -6,13 +6,13 @@ use std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {
-	DefaultTk, // Default用のkind
-	HeadTk, // 先頭にのみ使用するkind
-	IdentTk, // 識別子
-	ReservedTk, // 記号
-	NumTk, // 整数トークン
-	ReturnTk, // リターン
-	EOFTk, // 入力終わり
+	DefaultTk,	// Default用のkind
+	HeadTk,		// 先頭にのみ使用するkind
+	IdentTk,	// 識別子
+	ReservedTk,	// 記号
+	NumTk,		// 整数トークン
+	ReturnTk,	// リターン
+	EOFTk,		// 入力終わり
 }
 
 impl Display for Tokenkind {
@@ -27,33 +27,30 @@ impl Display for Tokenkind {
 			Tokenkind::ReturnTk => {s = "Return Token";}
 			Tokenkind::EOFTk => {s = "EOF Token";}
 		}
-
 		write!(f, "{}", s)
 	}
 }
-
 
 // Rc<RefCell<T>>により共有可能な参照(ポインタ風)を持たせる
 pub struct Token {
 	pub kind: Tokenkind,
 	pub val: Option<i32>,  
 	pub body: Option<String>,
-	pub len: usize, // 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
-	pub next: Option<Rc<RefCell<Token>>>, // Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
+	pub len: usize,							// 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
+	pub next: Option<Rc<RefCell<Token>>>,	// Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 }
 
 impl Default for Token {
 	fn default() -> Token {
 		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None}
 	}
-
 }
 
-// 構造体にStringをうまく持たせるためのnewメソッド
+// 構造体に String をうまく持たせるような new メソッド
 impl Token {
 	pub fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
 		let body: String = body.into();
-		let len = body.chars().count(); // len()を使うとバイト数になってややこしくなるので注意
+		let len = body.chars().count();
 		match kind {
 			Tokenkind::HeadTk => {
 				Token {kind: kind, .. Default::default()}
@@ -67,7 +64,7 @@ impl Token {
 				}
 			},
 			Tokenkind::NumTk => {
-				// NumTkと共に数字以外の値が渡されることはないものとして、unwrapで処理
+				// NumTk と共に数字以外の値が渡されることはないものとして、 unwrap で処理
 				let val = body.parse::<i32>().unwrap();
 				Token {
 					kind: kind,
@@ -128,7 +125,6 @@ impl Display for Token {
 		} else {
 			s = format!("{}next: not exist\n", s);
 		}
-
 		writeln!(f, "{}", s)
 	}
 }
@@ -139,7 +135,7 @@ impl Display for Token {
 pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 	let tmp_ptr;
 
-	// nextがNoneならパニック
+	// next が None なら exit
 	match (**token_ptr).borrow().next.as_ref() {
 		Some(ptr) => {
 			tmp_ptr = ptr.clone();

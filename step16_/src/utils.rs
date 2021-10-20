@@ -20,7 +20,6 @@ pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 		}
 		c = string[*index];
 	} 
-
 	val
 }
 
@@ -43,7 +42,6 @@ macro_rules! exit_eprint {
 		eprint!($fmt, $($arg)*);
 		std::process::exit(1);
 	};
-
 }
 
 // eprintln!のラッパ
@@ -65,7 +63,6 @@ macro_rules! exit_eprintln {
 		eprint!(concat!($fmt, "\n"),$($arg)*);
 		std::process::exit(1);
 	);
-
 }
 
 // エラー位置を報告するバージョンを作りたかったが、今の実装でやるのが難しそうなので保留
