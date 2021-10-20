@@ -17,7 +17,6 @@ use tokenizer::tokenize;
 use parser::{program};
 use generator::{gen, ASM};
 
-
 fn main() {
     // 引数の処理
     let opts = Opts::parse();
@@ -47,7 +46,6 @@ fn main() {
 
 }
 
-
 // 改行含め、コード全体を1つの文字列としてトークナイザに入れたい
 fn code_concat(reader: BufReader<File>) -> String {
 	let mut code = "".to_string();
@@ -57,7 +55,6 @@ fn code_concat(reader: BufReader<File>) -> String {
 
 	code
 }
-
 
 #[cfg(test)]
 mod tests {

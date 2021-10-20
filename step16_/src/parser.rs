@@ -84,7 +84,6 @@ fn new_node_lvar(name: impl Into<String>) -> Rc<RefCell<Node>> {
 	))
 }
 
-
 // 生成規則:
 // func-args = ident ("," ident)* | null
 fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
@@ -170,7 +169,6 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 	
 	globals
 }
-
 
 // 生成規則:
 // stmt = expr? ";"
@@ -339,7 +337,6 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
 // 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
 // 生成規則:
 // assign = logor (assign-op assign)?
@@ -454,7 +451,6 @@ fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
 // 生成規則:
 // equality = relational ("==" relational | "!=" relational)?
 pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
@@ -496,7 +492,6 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 
 }
-
 
 // 生成規則:
 // shift = add ("<<" add | ">>" add)*
@@ -603,7 +598,6 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-
 // 生成規則:
 // tailed = primary (primary-tail)?
 // primary-tail = "++" | "--"
@@ -620,7 +614,6 @@ fn tailed(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	}
 }
 
-
 fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool) -> Rc<RefCell<Node>> {
 	let kind = if is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
 	if is_prefix {
@@ -634,7 +627,6 @@ fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool) -> Rc<RefCell
 		
 	}
 }
-
 
 // 生成規則:
 // params = assign ("," assign)* | null
@@ -804,7 +796,6 @@ pub mod tests {
 			count += 1;
 		}
 	}
-
 
 	#[test]
 	fn logops() {

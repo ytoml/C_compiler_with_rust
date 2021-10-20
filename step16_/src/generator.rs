@@ -26,7 +26,6 @@ fn get_count() -> u32 {
 	*CTR_COUNT.lock().unwrap()
 }
 
-
 pub fn gen(node: &Rc<RefCell<Node>>) {
 	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
@@ -468,7 +467,6 @@ mod tests {
 		gen(&node_ptr);
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -479,7 +477,6 @@ mod tests {
 		gen(&node_ptr);
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -491,7 +488,6 @@ mod tests {
 		gen(&node_ptr);
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -503,7 +499,6 @@ mod tests {
 		gen(&node_ptr);
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -517,7 +512,6 @@ mod tests {
 		gen(&node_ptr);
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 	
 	#[test]
@@ -529,7 +523,6 @@ mod tests {
 		gen(&node_ptr);
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -545,8 +538,8 @@ mod tests {
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
+
 	#[test]
 	fn assign2() {
 		let equation = "local = 1; local_value = local + 1; local_value99 = local_value + 3;".to_string();
@@ -560,7 +553,6 @@ mod tests {
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -585,7 +577,6 @@ mod tests {
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -601,12 +592,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -619,12 +608,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -639,12 +626,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -659,12 +644,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -679,12 +662,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 	
 	#[test]
@@ -704,12 +685,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 	
 	#[test]
@@ -726,12 +705,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -747,12 +724,10 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
@@ -768,7 +743,6 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
 
@@ -801,7 +775,6 @@ mod tests {
 		}
 
 		println!("{}", ASM.lock().unwrap());
-
 	}
 
 	#[test]
