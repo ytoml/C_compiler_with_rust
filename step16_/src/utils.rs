@@ -1,4 +1,29 @@
-// Errorの報告をする関数(ほぼeprint!のラッパ)
+// 数字かどうかを判別する
+pub fn is_digit(c: &char) -> bool{
+	*c >= '0' && *c <= '9'
+}
+
+// 数字を読みつつindexを進める
+pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
+	let mut c = string[*index];
+	let mut val = 0;
+	let limit = string.len();
+
+	// 数字を読む限りu32として加える
+	while is_digit(&c) {
+		val = val * 10 + (c.to_digit(10).unwrap() - '0'.to_digit(10).unwrap());
+		*index += 1;
+
+		// 最後に到達した場合は処理を終える
+		if *index >= limit {
+			return val;
+		}
+		c = string[*index];
+	} 
+	val
+}
+
+// Errorの報告をするマクロ(ほぼeprint!のラッパ)
 // これを使う際は使う側でuseが必要なことに注意
 #[macro_export]
 macro_rules! exit_eprint {
@@ -17,7 +42,6 @@ macro_rules! exit_eprint {
 		eprint!($fmt, $($arg)*);
 		std::process::exit(1);
 	};
-
 }
 
 // eprintln!のラッパ
@@ -39,7 +63,6 @@ macro_rules! exit_eprintln {
 		eprint!(concat!($fmt, "\n"),$($arg)*);
 		std::process::exit(1);
 	);
-
 }
 
 // エラー位置を報告するバージョンを作りたかったが、今の実装でやるのが難しそうなので保留
