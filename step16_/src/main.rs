@@ -49,9 +49,10 @@ fn main() {
 // ファイルの情報を、グローバル変数の CODES と FILE_NAME に渡す
 fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 	FILE_NAMES.lock().unwrap().push(file_name.into());
-	let mut code = vec![];
+	let mut code = vec!["".to_string()]; // コードの行の index を1始まりにするため空文字を入れておく
 	for line in reader.lines() {
-		code.push(line.unwrap());
+		// tokenizer の便利のため、各行の "\n" を復活させておく
+		code.push(line.unwrap()+"\n");
 	}
 	CODES.lock().unwrap().push(code);
 }

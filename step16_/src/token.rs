@@ -1,4 +1,7 @@
-use crate::{exit_eprintln};
+use crate::{
+	exit_eprintln,
+	utils::error_at,
+};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
@@ -149,8 +152,6 @@ impl Display for Token {
 	}
 }
 
-
-
 // トークンのポインタを読み進める
 pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 	let tmp_ptr;
@@ -165,6 +166,20 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 		}
 	}
 	*token_ptr = tmp_ptr;
+}
+
+// $tok は &Token を渡す
+#[macro_export]
+macro_rules! error_with_token {
+	($fmt: expr, $tok: expr, $($arg: tt)*) => (
+		use crate::token::error_tok;
+		error_tok(format!($fmt, $($arg)*).as_str(), $tok);
+	);
+}
+
+pub fn error_tok(msg: &str, token: &Token) -> ! {
+	// token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
+	error_at(msg, token.file_num, token.line_num, token.line_offset-token.len);
 }
 
 #[cfg(test)]
