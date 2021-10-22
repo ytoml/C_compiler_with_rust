@@ -11,11 +11,12 @@ mod node;
 mod parser;
 mod utils;
 mod generator;
-use options::Opts;
-use token::Token;
-use tokenizer::{tokenize, CODE};
-use parser::{program};
 use generator::{gen, ASM};
+use options::Opts;
+use parser::program;
+use token::Token;
+use tokenizer::tokenize;
+use utils::CODE;
 
 fn main() {
     // 引数の処理
@@ -56,7 +57,7 @@ fn code_load(reader: BufReader<File>) {
 #[cfg(test)]
 mod tests {
 	use super::code_load;
-	use crate::tokenizer::CODE;
+	use crate::utils::CODE;
 	use std::io::BufReader;
 	use std::fs::File;
 

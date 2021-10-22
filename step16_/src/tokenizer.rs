@@ -1,6 +1,6 @@
 use crate::{
 	token::{Token, Tokenkind, token_ptr_exceed},
-	utils::{strtol, is_digit},
+	utils::{strtol, is_digit, CODE},
 	exit_eprintln,
 };
 use once_cell::sync::Lazy;
@@ -8,8 +8,6 @@ use std::sync::Mutex;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::iter::FromIterator;
-
-pub static CODE: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec!["".to_string()]));
 
 // 入力文字列のトークナイズ
 pub fn tokenize() -> Rc<RefCell<Token>> {

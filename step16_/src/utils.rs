@@ -1,3 +1,8 @@
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+pub static CODE: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec!["".to_string()]));
+
 // 数字かどうかを判別する
 pub fn is_digit(c: &char) -> bool{
 	*c >= '0' && *c <= '9'

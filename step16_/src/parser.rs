@@ -583,7 +583,8 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 #[cfg(test)]
 pub mod tests {
 	use super::*;
-	use crate::tokenizer::{tokenize, CODE};
+	use crate::tokenizer::tokenize;
+	use crate::utils::CODE;
 	
 	static REP: usize = 40;
 
