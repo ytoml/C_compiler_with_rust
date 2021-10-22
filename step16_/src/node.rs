@@ -119,3 +119,22 @@ impl Display for Node {
 		write!(f, "{}", s)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn display() {
+		println!("{}", Node::default());
+		let node: Node = Node {
+			kind: Nodekind::FuncDecNd,
+			stmts: Some(vec![
+				Rc::new(RefCell::new(Node::default())),
+				Rc::new(RefCell::new(Node {kind: Nodekind::AddNd, ..Default::default()})),
+			]),
+			..Default::default()
+		};
+		println!("{}", node);
+	}
+}

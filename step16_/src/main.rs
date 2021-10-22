@@ -25,11 +25,8 @@ fn main() {
     if let Some(path) = opts.input_file {
         let f: File = File::open(path).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
-		let mut code = CODE.lock().unwrap();
-		for line in reader.lines() {
-			code.push(line.unwrap());
-		}
-
+		code_load(reader);
+		
 		// トークナイズしてトークンリストを生成したのち、構文木を生成
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize();
 		let node_heads = program(&mut token_ptr); // ここでLVAR_MAX_OFFSETがセットされる
@@ -50,67 +47,26 @@ fn main() {
 }
 
 // 改行含め、コード全体を1つの文字列としてトークナイザに入れたい
-fn code_concat(reader: BufReader<File>) -> String {
-	let mut code = "".to_string();
+fn code_load(reader: BufReader<File>) {
+	let mut code = CODE.lock().unwrap();
 	for line in reader.lines() {
-		code += format!("\n{}", line.unwrap()).as_str();
+		code.push(line.unwrap());
 	}
-
-	code
 }
 
-// #[cfg(test)]
-// mod tests {
-// 	use super::code_concat;
-// 	use std::io::BufReader;
-// 	use std::fs::File;
-// 	use std::rc::Rc;
-// 	use std::cell::RefCell;
-// 	use crate::{
-// 		token::Token,
-// 		tokenizer::tokenize,
-// 		parser::{
-// 			program,
-// 			tests::parse_stmts,
-// 		}
-// 	};
+#[cfg(test)]
+mod tests {
+	use super::code_load;
+	use crate::tokenizer::CODE;
+	use std::io::BufReader;
+	use std::fs::File;
 
-// 	#[test]
-// 	fn code_concat_test() {
-// 		let path = "./csrc/src.txt";
-// 		let f: File = File::open(path).unwrap();
-//         let reader: BufReader<File> = BufReader::new(f);
-// 		let code: String = code_concat(reader);
-// 		println!("{}", code);
-// 	}
-
-// 	#[test]
-// 	fn tree_test() {
-// 		let path = "./csrc/3stmt.txt";
-// 		let f: File = File::open(path).unwrap();
-//         let reader: BufReader<File> = BufReader::new(f);
-// 		let code: String = code_concat(reader);
-// 		println!("{}", code);
-
-// 		// トークナイズしてトークンリストを生成したのち、構文木を生成
-// 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
-// 		let node_heads = parse_stmts(&mut token_ptr);
-// 		println!("trees: {}", node_heads.len());
-// 		assert_eq!(node_heads.len(), 3);
-// 	}
-
-// 	#[test]
-// 	fn func_dec_test() {
-// 		let path = "./csrc/func_dec.txt";
-// 		let f: File = File::open(path).unwrap();
-//         let reader: BufReader<File> = BufReader::new(f);
-// 		let code: String = code_concat(reader);
-// 		println!("{}", code);
-
-// 		// トークナイズしてトークンリストを生成したのち、構文木を生成
-// 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(code);
-// 		let node_heads = program(&mut token_ptr);
-// 		println!("trees: {}", node_heads.len());
-// 		assert_eq!(node_heads.len(), 2);
-// 	}
-// }
+	#[test]
+	fn code_concat_test() {
+		let path = "./csrc/src.txt";
+		let f: File = File::open(path).unwrap();
+        let reader: BufReader<File> = BufReader::new(f);
+		code_load(reader);
+		println!("{:#?}", CODE.lock().unwrap());
+	}
+}

@@ -288,31 +288,9 @@ pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use function_name::named;
-	static REP: usize = 40;
-	
-	#[test]
-	#[named]
-	fn display_token() {
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
-		let src: Vec<String> = "1+1-1".split("\n").map(|s| s.into()).collect();
-		{
-			let mut code = CODE.lock().unwrap();
-			for line in src { code.push(line); }
-		}
-
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize();
-		while !at_eof(&token_ptr) {
-			println!("{}", (*token_ptr).borrow());
-			token_ptr_exceed(&mut token_ptr);
-		}
-		println!("{}", (*token_ptr).borrow());
-	}
 
 	#[test]
-	#[named]
 	fn lvar(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			local = -1;
 			local_ = 2;
@@ -337,7 +315,6 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn return_(){
 		let src: Vec<String> = "
 			a = 1;
@@ -361,9 +338,7 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn ctrl(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			for( i = 10; ;  ) i = i + 1;
 			x = 20;
@@ -388,9 +363,7 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn block(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			for( i = 10; ;  ) {i = i + 1;}
 			{}
@@ -412,9 +385,7 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn addr_deref(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			x = 4;
 			y = &x;
@@ -436,9 +407,7 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn ops(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			x = 1;
 			y = 0;
@@ -463,9 +432,7 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn ops2(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			x = 1;
 			y = 0;
@@ -490,9 +457,7 @@ mod tests {
 	}
 
 	#[test]
-	#[named]
 	fn ops3(){
-		println!("{}\n{}", function_name!(),"-".to_string().repeat(REP));
 		let src: Vec<String> ="
 			x = 1;
 			x += 1;

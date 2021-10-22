@@ -146,3 +146,13 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 	}
 	*token_ptr = tmp_ptr;
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn display() {
+		println!("{}", Token::new(Tokenkind::IdentTk, "test"));
+	}
+}
