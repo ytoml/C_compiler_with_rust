@@ -171,6 +171,11 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 // $tok は &Token を渡す
 #[macro_export]
 macro_rules! error_with_token {
+	($fmt: expr, $tok: expr) => (
+		use crate::token::error_tok;
+		error_tok($fmt, $tok);
+	);
+
 	($fmt: expr, $tok: expr, $($arg: tt)*) => (
 		use crate::token::error_tok;
 		error_tok(format!($fmt, $($arg)*).as_str(), $tok);

@@ -224,7 +224,7 @@ fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
 // 次のトークンが数字であることを期待して次のトークンを読む関数
 pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 	if (**token_ptr).borrow().kind != Tokenkind::NumTk {
-		error_with_token!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", &*(**token_ptr).borrow(),(**token_ptr).borrow().body.as_ref().unwrap());
+		error_with_token!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", &*token_ptr.borrow(),(**token_ptr).borrow().body.as_ref().unwrap());
 	}
 	let val = (**token_ptr).borrow().val.unwrap();
 	token_ptr_exceed(token_ptr);
@@ -235,7 +235,7 @@ pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 // 次のトークンが識別子(変数など)であることを期待して次のトークンを読む関数
 pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 	if (**token_ptr).borrow().kind != Tokenkind::IdentTk {
-		error_with_token!("識別子を期待した位置で\"{}\"が発見されました。", &*(**token_ptr).borrow(), (**token_ptr).borrow().body.as_ref().unwrap());
+		error_with_token!("識別子を期待した位置で\"{}\"が発見されました。", &*token_ptr.borrow(), (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 	let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
 	token_ptr_exceed(token_ptr);
@@ -246,7 +246,7 @@ pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 //  予約済みトークンを期待し、(文字列で)指定して読む関数(失敗するとexitする)
 pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
-		error_with_token!("\"{}\"を期待した位置で予約されていないトークン\"{}\"が発見されました。", &*(**token_ptr).borrow(), op, (**token_ptr).borrow().body.as_ref().unwrap());
+		error_with_token!("\"{}\"を期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), op, (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 	token_ptr_exceed(token_ptr);
 }

@@ -3,7 +3,7 @@ use crate::{
 	token::{Token, Tokenkind},
 	tokenizer::{consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof},
 	node::{Node, Nodekind},
-	exit_eprintln,
+	exit_eprintln, error_with_token
 };
 
 use std::cell::RefCell;
@@ -113,9 +113,12 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
 		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
 
+
+
+		let token_ptr_for_err =  token_ptr.clone();
 		let func_name = expect_ident(token_ptr);
 		if ARGS_COUNTS.lock().unwrap().contains_key(&func_name) {
-			exit_eprintln!("{}: 重複した関数宣言です。", func_name);
+			error_with_token!("{}: 重複した関数宣言です。", &*token_ptr_for_err.borrow(), func_name);
 		}
 		expect(token_ptr, "(");
 		// 引数を6つまでサポート
@@ -536,17 +539,16 @@ fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool) -> Rc<RefCell
 // 生成規則:
 // params = assign ("," assign)* | null
 fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
-	let mut args: Vec<Option<Rc<RefCell<Node>>>>= vec![];
+	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	if !consume(token_ptr, ")") {
 		args.push(Some(assign(token_ptr)));
 
 		loop {
 			if !consume(token_ptr, ",") {
-				expect(token_ptr,")");
+				expect(token_ptr,")"); // 括弧が閉じないような書き方になっているとここで止まるため、if at_eof ~ のようなチェックは不要
 				break;
 			}
 			args.push(Some(assign(token_ptr)));
-			if at_eof(token_ptr) {exit_eprintln!("関数呼び出しの\'(\'にマッチする\')\'が見つかりません。");}
 		}
 	}
 	args
