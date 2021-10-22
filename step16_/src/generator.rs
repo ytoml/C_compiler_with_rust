@@ -482,8 +482,6 @@ mod tests {
 	use crate::parser::*;
 	use crate::parser::tests::parse_stmts;
 
-	static REP:usize = 80;
-
 	#[test]
 	fn addsub() {
 		let src: Vec<String> = "

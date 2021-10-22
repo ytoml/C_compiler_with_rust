@@ -10,9 +10,6 @@ use std::cell::RefCell;
 use std::iter::FromIterator;
 
 pub static CODE: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec![]));
-static mut LINE_NUM: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(1));
-static mut CHARS_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
-
 
 // 入力文字列のトークナイズ
 pub fn tokenize() -> Rc<RefCell<Token>> {
