@@ -1,7 +1,8 @@
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-pub static CODE: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec!["".to_string()]));
+pub static CODES: Lazy<Mutex<Vec<Vec<String>>>> = Lazy::new(|| Mutex::new(vec![]));
+pub static FILE_NAMES: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec![]));
 
 // 数字かどうかを判別する
 pub fn is_digit(c: &char) -> bool{

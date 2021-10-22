@@ -40,19 +40,20 @@ pub struct Token {
 	pub next: Option<Rc<RefCell<Token>>>,	// Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 
 	// エラーメッセージ用
+	pub file_num: usize,					// ファイルの番号
 	pub line_num: usize,					// コード内の行数
 	pub line_offset: usize,					// 行内のオフセット
 }
 
 impl Default for Token {
 	fn default() -> Token {
-		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None, line_num:0, line_offset:0}
+		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None, file_num: 0, line_num:0, line_offset:0}
 	}
 }
 
 // 構造体に String をうまく持たせるような new メソッド
 impl Token {
-	pub fn new(kind: Tokenkind, body: impl Into<String>, line_num: usize, line_offset: usize) -> Token {
+	pub fn new(kind: Tokenkind, body: impl Into<String>, file_num: usize, line_num: usize, line_offset: usize) -> Token {
 		let body: String = body.into();
 		let len = body.chars().count();
 		match kind {
@@ -64,6 +65,7 @@ impl Token {
 					kind: kind, 
 					body: Some(body),
 					len: len,
+					file_num: file_num,
 					line_num: line_num,
 					line_offset: line_offset,
 					.. Default::default()
@@ -78,6 +80,7 @@ impl Token {
 					body: Some(body),
 					len: len,
 					next: None,
+					file_num: file_num,
 					line_num: line_num,
 					line_offset: line_offset,
 				}
@@ -87,6 +90,7 @@ impl Token {
 					kind: kind,
 					body: Some(body),
 					len: len,
+					file_num: file_num,
 					line_num: line_num,
 					line_offset: line_offset,
 					.. Default::default()
@@ -97,6 +101,7 @@ impl Token {
 					kind: kind, 
 					body: Some("This is return Token.".to_string()),
 					len: 6,
+					file_num: file_num,
 					line_num: line_num,
 					line_offset: line_offset,
 					.. Default::default()
@@ -168,6 +173,6 @@ mod tests {
 
 	#[test]
 	fn display() {
-		println!("{}", Token::new(Tokenkind::IdentTk, "test", 0, 0));
+		println!("{}", Token::new(Tokenkind::IdentTk, "test", 0, 0, 0));
 	}
 }

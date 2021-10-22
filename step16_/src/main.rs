@@ -16,7 +16,7 @@ use options::Opts;
 use parser::program;
 use token::Token;
 use tokenizer::tokenize;
-use utils::CODE;
+use utils::{CODES, FILE_NAMES};
 
 fn main() {
     // 引数の処理
@@ -24,13 +24,13 @@ fn main() {
     
     // 入力ファイルが指定されているかどうかで分岐
     if let Some(path) = opts.input_file {
-        let f: File = File::open(path).unwrap();
+        let f: File = File::open(path.as_str()).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
-		code_load(reader);
+		code_load(reader, path);
 		
 		// トークナイズしてトークンリストを生成したのち、構文木を生成
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize();
-		let node_heads = program(&mut token_ptr); // ここでLVAR_MAX_OFFSETがセットされる
+		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let node_heads = program(&mut token_ptr);
 
 		// 構文木が複数(関数の数)生成されているはずなのでそれぞれについて回す
 		for node_ptr in node_heads {
@@ -46,18 +46,20 @@ fn main() {
     }
 }
 
-// 改行含め、コード全体を1つの文字列としてトークナイザに入れたい
-fn code_load(reader: BufReader<File>) {
-	let mut code = CODE.lock().unwrap();
+// ファイルの情報を、グローバル変数の CODES と FILE_NAME に渡す
+fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
+	FILE_NAMES.lock().unwrap().push(file_name.into());
+	let mut code = vec![];
 	for line in reader.lines() {
 		code.push(line.unwrap());
 	}
+	CODES.lock().unwrap().push(code);
 }
 
 #[cfg(test)]
 mod tests {
 	use super::code_load;
-	use crate::utils::CODE;
+	use crate::utils::{CODES, FILE_NAMES};
 	use std::io::BufReader;
 	use std::fs::File;
 
@@ -66,7 +68,8 @@ mod tests {
 		let path = "./csrc/src.txt";
 		let f: File = File::open(path).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
-		code_load(reader);
-		println!("{:#?}", CODE.lock().unwrap());
+		code_load(reader,path);
+		println!("{:#?}", CODES.lock().unwrap());
+		println!("{:#?}", FILE_NAMES.lock().unwrap());
 	}
 }

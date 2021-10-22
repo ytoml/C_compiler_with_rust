@@ -483,7 +483,7 @@ mod tests {
 		tests::parse_stmts,
 	};
 	use crate::tokenizer::tokenize;
-	use crate::utils::CODE;
+	use crate::utils::CODES;
 
 	#[test]
 	fn addsub() {
@@ -491,11 +491,11 @@ mod tests {
 			1+2+3-1
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 		println!("{}", ASM.lock().unwrap());
@@ -507,11 +507,11 @@ mod tests {
 			1+2*3-4/2+3%2
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 		println!("{}", ASM.lock().unwrap());
@@ -523,11 +523,11 @@ mod tests {
 			(1+2)/3-1*20
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 		println!("{}", ASM.lock().unwrap());
@@ -539,11 +539,11 @@ mod tests {
 			(-1+2)*(-1)+(+3)/(+1)
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 		println!("{}", ASM.lock().unwrap());
@@ -555,11 +555,11 @@ mod tests {
 			200 % 3 << 4 + 8 >> 8
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 		
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 		println!("{}", ASM.lock().unwrap());
@@ -571,11 +571,11 @@ mod tests {
 			(-1+2)*(-1)+(+3)/(+1) == 30 + 1
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
 		println!("{}", ASM.lock().unwrap());
@@ -587,11 +587,11 @@ mod tests {
 			a = 1; a + 1;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -606,11 +606,11 @@ mod tests {
 			local = 1; local_value = local + 1; local_value99 = local_value + 3;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -632,11 +632,11 @@ mod tests {
 			~x ^ ~*y | 2;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -654,11 +654,11 @@ mod tests {
 			q = !x && !!y - z || 0;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -673,11 +673,11 @@ mod tests {
 			x = 10, y = 10, z = 10;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 		
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -694,11 +694,11 @@ mod tests {
 			x = i + 10;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 		
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -715,11 +715,11 @@ mod tests {
 			i;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 		
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -736,11 +736,11 @@ mod tests {
 			return sum;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -762,11 +762,11 @@ mod tests {
 			return;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -785,11 +785,11 @@ mod tests {
 			return i + j;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -807,11 +807,11 @@ mod tests {
 			return *z;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -829,11 +829,11 @@ mod tests {
 			return *&**z;
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -861,11 +861,11 @@ mod tests {
 			}
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
@@ -884,11 +884,11 @@ mod tests {
 			}
 		".split("\n").map(|s| s.into()).collect();
 		{
-			let mut code = CODE.lock().unwrap();
+			let code = &mut CODES.lock().unwrap()[0];
 			for line in src { code.push(line); }
 		}
 
-		let mut token_ptr = tokenize();
+		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
