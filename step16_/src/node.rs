@@ -2,6 +2,10 @@ use std::cell::RefCell;
 use std::fmt::{Formatter, Display, Result};
 use std::rc::Rc;
 
+use crate::{
+	token::{Token, error_tok},
+};
+
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
 	DefaultNd,	// defalut
@@ -42,6 +46,7 @@ pub enum Nodekind {
 
 pub struct Node {
 	pub kind: Nodekind, // Nodeの種類
+	pub token: Option<Rc<RefCell<Token>>>,
 
 	// プロパティとなる数値
 	pub val: Option<i32>,
@@ -75,7 +80,7 @@ pub struct Node {
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
+		Node {kind: Nodekind::DefaultNd, token: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
 	}
 }
 
@@ -117,5 +122,44 @@ impl Display for Node {
 		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
 
 		write!(f, "{}", s)
+	}
+}
+
+// $tok は &Token を渡す
+#[macro_export]
+macro_rules! error_with_node {
+	($fmt: expr, $tok: expr) => (
+		use crate::node::error_nod;
+		error_nod($fmt, $tok);
+	);
+
+	($fmt: expr, $tok: expr, $($arg: tt)*) => (
+		use crate::node::error_nod;
+		error_nod(format!($fmt, $($arg)*).as_str(), $tok);
+	);
+}
+
+pub fn error_nod(msg: &str, node: &Node) -> ! {
+	// token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
+	error_tok(msg, &*node.token.as_ref().unwrap().borrow());
+}
+
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn display() {
+		println!("{}", Node::default());
+		let node: Node = Node {
+			kind: Nodekind::FuncDecNd,
+			stmts: Some(vec![
+				Rc::new(RefCell::new(Node::default())),
+				Rc::new(RefCell::new(Node {kind: Nodekind::AddNd, ..Default::default()})),
+			]),
+			..Default::default()
+		};
+		println!("{}", node);
 	}
 }

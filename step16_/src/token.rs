@@ -1,8 +1,12 @@
-use crate::{exit_eprintln};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
 use std::fmt;
+
+use crate::{
+	exit_eprintln,
+	utils::error_at,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {
@@ -38,17 +42,22 @@ pub struct Token {
 	pub body: Option<String>,
 	pub len: usize,							// 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
 	pub next: Option<Rc<RefCell<Token>>>,	// Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
+
+	// エラーメッセージ用
+	pub file_num: usize,					// ファイルの番号
+	pub line_num: usize,					// コード内の行数
+	pub line_offset: usize,					// 行内のオフセット
 }
 
 impl Default for Token {
 	fn default() -> Token {
-		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None}
+		Token {kind: Tokenkind::DefaultTk, val: None, body: None, len: 0, next: None, file_num: 0, line_num:0, line_offset:0}
 	}
 }
 
 // 構造体に String をうまく持たせるような new メソッド
 impl Token {
-	pub fn new(kind: Tokenkind, body: impl Into<String>) -> Token {
+	pub fn new(kind: Tokenkind, body: impl Into<String>, file_num: usize, line_num: usize, line_offset: usize) -> Token {
 		let body: String = body.into();
 		let len = body.chars().count();
 		match kind {
@@ -60,6 +69,9 @@ impl Token {
 					kind: kind, 
 					body: Some(body),
 					len: len,
+					file_num: file_num,
+					line_num: line_num,
+					line_offset: line_offset,
 					.. Default::default()
 				}
 			},
@@ -71,7 +83,10 @@ impl Token {
 					val: Some(val),
 					body: Some(body),
 					len: len,
-					next: None
+					next: None,
+					file_num: file_num,
+					line_num: line_num,
+					line_offset: line_offset,
 				}
 			},
 			Tokenkind::ReservedTk => {
@@ -79,6 +94,9 @@ impl Token {
 					kind: kind,
 					body: Some(body),
 					len: len,
+					file_num: file_num,
+					line_num: line_num,
+					line_offset: line_offset,
 					.. Default::default()
 				}
 			},
@@ -87,6 +105,9 @@ impl Token {
 					kind: kind, 
 					body: Some("This is return Token.".to_string()),
 					len: 6,
+					file_num: file_num,
+					line_num: line_num,
+					line_offset: line_offset,
 					.. Default::default()
 				}
 			}
@@ -106,7 +127,9 @@ impl Token {
 impl Display for Token {
 	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
 		let mut s = format!("{}\n", "-".to_string().repeat(40));
-		s = format!("{}Tokenkind : {:?}\n", s, self.kind);
+		s = format!("{}Tokenkind: {:?}\n", s, self.kind);
+		s = format!("{}line_num: {:?}\n", s, self.line_num);
+		s = format!("{}line_offset: {:?}\n", s, self.line_offset);
 
 		if let Some(e) = self.body.as_ref() {
 			s = format!("{}body: {}\n", s, e);
@@ -125,11 +148,10 @@ impl Display for Token {
 		} else {
 			s = format!("{}next: not exist\n", s);
 		}
+
 		writeln!(f, "{}", s)
 	}
 }
-
-
 
 // トークンのポインタを読み進める
 pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
@@ -145,4 +167,33 @@ pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
 		}
 	}
 	*token_ptr = tmp_ptr;
+}
+
+// $tok は &Token を渡す
+#[macro_export]
+macro_rules! error_with_token {
+	($fmt: expr, $tok: expr) => (
+		use crate::token::error_tok;
+		error_tok($fmt, $tok);
+	);
+
+	($fmt: expr, $tok: expr, $($arg: tt)*) => (
+		use crate::token::error_tok;
+		error_tok(format!($fmt, $($arg)*).as_str(), $tok);
+	);
+}
+
+pub fn error_tok(msg: &str, token: &Token) -> ! {
+	// token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
+	error_at(msg, token.file_num, token.line_num, token.line_offset-token.len);
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn display() {
+		println!("{}", Token::new(Tokenkind::IdentTk, "test", 0, 0, 0));
+	}
 }

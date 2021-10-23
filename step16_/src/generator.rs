@@ -1,12 +1,14 @@
-use crate::{
-	node::{Node, Nodekind},
-	exit_eprintln,
-};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
+
+use crate::{
+	error_with_node,
+	exit_eprintln,
+	node::{Node, Nodekind}
+};
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
 	|| Mutex::new(
@@ -43,8 +45,8 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 				}
 
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-				if (*node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
-				for (ix, arg) in (&(*node).borrow().args).iter().enumerate() {
+				if (**node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+				for (ix, arg) in (&(**node).borrow().args).iter().enumerate() {
 					*_asm += "	mov rax, rbp\n";
 					*_asm += format!("	sub rax, {}\n", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap()).as_str();
 					*_asm += format!("	mov [rax], {}\n", ARGS_REGISTERS.lock().unwrap()[ix]).as_str();
@@ -52,8 +54,8 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			}
 			
 			// 関数内の文の処理
-			let s = (*node).borrow().stmts.as_ref().unwrap().len();
-			for (ix, stmt_) in (*node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
+			let s = (**node).borrow().stmts.as_ref().unwrap().len();
+			for (ix, stmt_) in (**node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
 				gen(stmt_);
 				if ix != s - 1 {*ASM.lock().unwrap() += "	pop rax\n";}
 			}
@@ -433,7 +435,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
-			exit_eprintln!("不正なNodekindです");
+			error_with_node!("不正な Nodekind です。", &*(**node).borrow());
 		}
 	}
 
@@ -454,7 +456,9 @@ fn gen_lval(node: &Rc<RefCell<Node>>) {
 			// &* は単に打ち消せば良く、node を無視して gen(node->left) する
 			gen((**node).borrow().left.as_ref().unwrap());
 		}
-		_ => {exit_eprintln!("左辺値が変数ではありません。");}
+		_ => {
+			error_with_node!("左辺値が変数ではありません。", &*(**node).borrow());
+		}
 	}
 }
 
@@ -476,113 +480,134 @@ fn push_args(args: &Vec<Option<Rc<RefCell<Node>>>>) {
 
 #[cfg(test)]
 mod tests {
-
+	use crate::parser::{
+		expr, program,
+		tests::parse_stmts,
+	};
+	use crate::tokenizer::tokenize;
+	use crate::globals::{CODES, FILE_NAMES};
 	use super::*;
-	use crate::tokenizer::*;
-	use crate::parser::*;
-	use crate::parser::tests::parse_stmts;
 
-	static REP:usize = 80;
+	fn test_init(src:&mut Vec<String>) {
+		FILE_NAMES.lock().unwrap().push("test".to_string());
+		let mut code = vec!["".to_string()];
+		code.append(src);
+		CODES.lock().unwrap().push(code);
+	}
 
 	#[test]
 	fn addsub() {
-		println!("addsub{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("1+2+3-1".to_string());
+		let mut src: Vec<String> = "
+			1+2+3-1
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn muldiv() {
-		println!("muldiv{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize("1+2*3-4/2+3%2".to_string());
+		let mut src: Vec<String> = "
+			1+2*3-4/2+3%2
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn brackets() {
-		let equation = "(1+2)/3-1*20".to_string();
-		println!("brackets{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		let mut src: Vec<String> = "
+			(1+2)/3-1*20
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn unary() {
-		let equation = "(-1+2)*(-1)+(+3)/(+1)".to_string();
-		println!("unary{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		let mut src: Vec<String> = "
+			(-1+2)*(-1)+(+3)/(+1)
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn shift() {
-		let equation = "
+		let mut src: Vec<String> = "
 			200 % 3 << 4 + 8 >> 8
-		".to_string();
-		println!("unary{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+		
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
-
 		println!("{}", ASM.lock().unwrap());
 	}
 	
 	#[test]
 	fn eq() {
-		let equation = "(-1+2)*(-1)+(+3)/(+1) == 30 + 1".to_string();
-		println!("eq{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		let mut src: Vec<String> = "
+			(-1+2)*(-1)+(+3)/(+1) == 30 + 1
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen(&node_ptr);
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn assign1() {
-		let equation = "a = 1; a + 1;".to_string();
-		println!("assign1{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		let mut src: Vec<String> = "
+			a = 1; a + 1;
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn assign2() {
-		let equation = "local = 1; local_value = local + 1; local_value99 = local_value + 3;".to_string();
-		println!("assign2{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		let mut src: Vec<String> = "
+			local = 1; local_value = local + 1; local_value99 = local_value + 3;
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn bitops() {
-		let equation = "
+		let mut src: Vec<String> = "
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
 			1 + -1 ^ 2;
@@ -591,111 +616,110 @@ mod tests {
 			y = &x;
 			3 ^ 2 & *y | 2 & &x;
 			~x ^ ~*y | 2;
-		".to_string();
-		println!("bitops{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
-
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn logops() {
-		let equation = "
+		let mut src: Vec<String> = "
 			x = 10;
 			y = 20;
 			z = 20;
 			q = !x && !!y - z || 0;
-		".to_string();
-		println!("logops{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn comma() {
-		let equation = "
+		let mut src: Vec<String> = "
 			x = 10, y = 10, z = 10;
-		".to_string();
-		println!("comma{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+		
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn if_() {
-		let equation = "
+		let mut src: Vec<String> = "
 			i = 10;
 			if (1) i + 1;
 			x = i + 10;
-		".to_string();
-		println!("if{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+		
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn while_() {
-		let equation = "
+		let mut src: Vec<String> = "
 			i = 10;
 			while (i > 1) i = i - 1;
 			i;
-		".to_string();
-		println!("while{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+		
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn for_() {
-		let equation = "
+		let mut src: Vec<String> = "
 			sum = 10;
 			for (i = 0; i < 10; i = i + 1) sum = sum + i;
 			return sum;
-		".to_string();
-		println!("for{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 	
 	#[test]
 	fn block() {
-		let equation = "
+		let mut src: Vec<String> = "
 			sum = 10;
 			sum2 = 20;
 			for (i = 0; i < 10; i = i + 1) {
@@ -704,79 +728,79 @@ mod tests {
 			}
 			return sum;
 			return;
-		".to_string();
-		println!("block{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 	
 	#[test]
 	fn func() {
-		let equation = "
+		let mut src: Vec<String> = "
 			call_fprint();
 			i = get(1);
 			j = get(2, 3, 4);
 			k = get(i+j, (i=3), k);
 			return i + j;
-		".to_string();
-		println!("func{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn addr_deref() {
-		let equation = "
+		let mut src: Vec<String> = "
 			x = 3;
 			y = 5;
 			z = &y + 8;
-			return *z;;
-		".to_string();
-		println!("addr_deref{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+			return *z;
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn addr_deref2() {
-		let equation = "
+		let mut src: Vec<String> = "
 			x = 3;
 			y = &x;
 			z = &y;
 			return *&**z;
-		".to_string();
-		println!("addr_deref2{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 			*ASM.lock().unwrap() += "	pop rax\n";
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn funcdec() {
-		let equation = "
+		let mut src: Vec<String> = "
 			func(x, y) {
 				return x * (y + 1);
 			}
@@ -791,34 +815,34 @@ mod tests {
 				}
 				return func(i, sum);
 			}
-		".to_string();
-		println!("funcdec{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 
 	#[test]
 	fn recursion() {
-		let equation = "
+		let mut src: Vec<String> = "
 			fib(n) {
 				return fib(n-1)+fib(n-2);
 			}
 			main() {
 				return fib(10);
 			}
-		".to_string();
-		println!("recursion{}", "-".to_string().repeat(REP));
-		let mut token_ptr = tokenize(equation);
+		".split("\n").map(|s| s.into()).collect();
+		test_init(&mut src);
+
+		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen(&node_ptr);
 		}
-
 		println!("{}", ASM.lock().unwrap());
 	}
 }
