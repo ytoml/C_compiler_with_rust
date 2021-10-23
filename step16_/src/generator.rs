@@ -1,12 +1,13 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Mutex;
+
+use once_cell::sync::Lazy;
+
 use crate::{
 	node::{Node, Nodekind},
 	exit_eprintln,
 };
-
-use once_cell::sync::Lazy;
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Mutex;
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
 	|| Mutex::new(
@@ -483,7 +484,7 @@ mod tests {
 		tests::parse_stmts,
 	};
 	use crate::tokenizer::tokenize;
-	use crate::utils::CODES;
+	use crate::globals::CODES;
 
 	#[test]
 	fn addsub() {

@@ -1,22 +1,24 @@
-use clap::Clap;
 use std::fs::File;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 
+use clap::Clap;
+
+mod generator;
+mod utils;
+mod node;
 mod options;
+mod parser;
 mod token;
 mod tokenizer;
-mod node;
-mod parser;
-mod utils;
-mod generator;
+mod globals;
 use generator::{gen, ASM};
 use options::Opts;
 use parser::program;
 use token::Token;
 use tokenizer::tokenize;
-use utils::{CODES, FILE_NAMES};
+use globals::{CODES, FILE_NAMES};
 
 fn main() {
     // 引数の処理
@@ -60,7 +62,7 @@ fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 #[cfg(test)]
 mod tests {
 	use super::code_load;
-	use crate::utils::{CODES, FILE_NAMES};
+	use crate::globals::{CODES, FILE_NAMES};
 	use std::io::BufReader;
 	use std::fs::File;
 

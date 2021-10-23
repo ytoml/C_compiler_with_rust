@@ -1,17 +1,17 @@
 // 再帰下降構文のパーサ
-use crate::{
-	token::{Token, Tokenkind},
-	tokenizer::{consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof},
-	node::{Node, Nodekind},
-	exit_eprintln, error_with_token
-};
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
+
+use crate::{
+	token::{Token, Tokenkind},
+	tokenizer::{consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof},
+	node::{Node, Nodekind},
+	exit_eprintln, error_with_token
+};
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -586,7 +586,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 pub mod tests {
 	use super::*;
 	use crate::tokenizer::tokenize;
-	use crate::utils::CODES;
+	use crate::globals::CODES;
 	
 	static REP: usize = 40;
 

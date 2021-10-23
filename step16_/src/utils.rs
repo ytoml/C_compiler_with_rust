@@ -1,33 +1,4 @@
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
-
-pub static CODES: Lazy<Mutex<Vec<Vec<String>>>> = Lazy::new(|| Mutex::new(vec![]));
-pub static FILE_NAMES: Lazy<Mutex<Vec<String>>> = Lazy::new(|| Mutex::new(vec![]));
-
-// 数字かどうかを判別する
-pub fn is_digit(c: &char) -> bool{
-	*c >= '0' && *c <= '9'
-}
-
-// 数字を読みつつindexを進める
-pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
-	let mut c = string[*index];
-	let mut val = 0;
-	let limit = string.len();
-
-	// 数字を読む限りu32として加える
-	while is_digit(&c) {
-		val = val * 10 + (c.to_digit(10).unwrap() - '0'.to_digit(10).unwrap());
-		*index += 1;
-
-		// 最後に到達した場合は処理を終える
-		if *index >= limit {
-			return val;
-		}
-		c = string[*index];
-	} 
-	val
-}
+use crate::globals::{CODES, FILE_NAMES};
 
 // Errorの報告をするマクロ(ほぼeprint!のラッパ)
 // これを使う際は使う側でuseが必要なことに注意
@@ -71,7 +42,30 @@ macro_rules! exit_eprintln {
 	);
 }
 
+// 数字かどうかを判別する
+pub fn is_digit(c: &char) -> bool{
+	*c >= '0' && *c <= '9'
+}
 
+// 数字を読みつつindexを進める
+pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
+	let mut c = string[*index];
+	let mut val = 0;
+	let limit = string.len();
+
+	// 数字を読む限りu32として加える
+	while is_digit(&c) {
+		val = val * 10 + (c.to_digit(10).unwrap() - '0'.to_digit(10).unwrap());
+		*index += 1;
+
+		// 最後に到達した場合は処理を終える
+		if *index >= limit {
+			return val;
+		}
+		c = string[*index];
+	} 
+	val
+}
 
 // エラー位置を報告し、exit_eprintln! する関数
 const RED: usize = 31;
@@ -85,4 +79,9 @@ pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize)
 	eprint!("{}", code_line); // code_line には \n が含まれるので eprint! を使う
 	exit_eprintln!("{}\x1b[{}m^\x1b[m {}", space, RED, msg);
 }
+
+
+
+
+
 

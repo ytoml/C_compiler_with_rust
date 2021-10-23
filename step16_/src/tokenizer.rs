@@ -1,13 +1,17 @@
-use crate::{
-	error_with_token,
-	token::{Token, Tokenkind, token_ptr_exceed},
-	utils::{strtol, is_digit, error_at, CODES}
-};
-use once_cell::sync::Lazy;
+// トークナイザ
 use std::sync::Mutex;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::iter::FromIterator;
+
+use once_cell::sync::Lazy;
+
+use crate::{
+	error_with_token,
+	globals::CODES,
+	token::{Token, Tokenkind, token_ptr_exceed},
+	utils::{strtol, is_digit, error_at},
+};
 
 // 入力文字列のトークナイズ
 pub fn tokenize(file_num: usize) -> Rc<RefCell<Token>> {
