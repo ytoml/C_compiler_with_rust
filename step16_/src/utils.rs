@@ -79,6 +79,7 @@ pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize)
 			let code_line = &codes[file_num][line_num];
 			let all_space = code_line.chars().map(|c| if c == '\t' {'\t'} else {' '}).collect::<String>();
 			let space = &all_space[..line_offset];
+			eprintln!("\x1b[{}mRSCC: Compile Error\x1b[m", RED);
 			eprintln!("\x1b[{}m{}:{}:{}\x1b[m", LIGHTBLUE, file_name, line_num, line_offset);
 			eprint!("{}", code_line); // code_line には \n が含まれるので eprint! を使う
 			exit_eprintln!("{}\x1b[{}m^\x1b[m {}", space, RED, msg);
