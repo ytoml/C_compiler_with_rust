@@ -1,11 +1,12 @@
-use crate::{
-	exit_eprintln,
-	utils::error_at,
-};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt::{Display,  Formatter};
 use std::fmt;
+
+use crate::{
+	exit_eprintln,
+	utils::error_at,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Tokenkind {

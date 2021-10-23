@@ -1,9 +1,10 @@
-use crate::token::Token;
-
 use std::cell::RefCell;
 use std::fmt::{Formatter, Display, Result};
 use std::rc::Rc;
 
+use crate::{
+	token::{Token, error_tok},
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Nodekind {
@@ -123,6 +124,26 @@ impl Display for Node {
 		write!(f, "{}", s)
 	}
 }
+
+// $tok は &Token を渡す
+#[macro_export]
+macro_rules! error_with_node {
+	($fmt: expr, $tok: expr) => (
+		use crate::node::error_nod;
+		error_nod($fmt, $tok);
+	);
+
+	($fmt: expr, $tok: expr, $($arg: tt)*) => (
+		use crate::node::error_nod;
+		error_nod(format!($fmt, $($arg)*).as_str(), $tok);
+	);
+}
+
+pub fn error_nod(msg: &str, node: &Node) -> ! {
+	// token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
+	error_tok(msg, &*node.token.as_ref().unwrap().borrow());
+}
+
 
 #[cfg(test)]
 mod tests {

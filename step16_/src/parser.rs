@@ -77,8 +77,8 @@ fn new_ctrl(kind: Nodekind,
 }
 
 // 関数呼び出しのノード
-fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>) -> Rc<RefCell<Node>> {
-	Rc::new(RefCell::new(Node{kind: Nodekind::FuncNd, name: Some(name), args: args, ..Default::default()}))
+fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	Rc::new(RefCell::new(Node{kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ..Default::default()}))
 }
 
 // 生成規則:
@@ -113,12 +113,10 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
 		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
 
-
-
-		let token_ptr_for_err =  token_ptr.clone();
+		let ptr =  token_ptr.clone();
 		let func_name = expect_ident(token_ptr);
 		if ARGS_COUNTS.lock().unwrap().contains_key(&func_name) {
-			error_with_token!("{}: 重複した関数宣言です。", &*token_ptr_for_err.borrow(), func_name);
+			error_with_token!("{}: 重複した関数宣言です。", &*ptr.borrow(), func_name);
 		}
 		expect(token_ptr, "(");
 		// 引数を6つまでサポート
@@ -143,6 +141,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		let global = Rc::new(RefCell::new(
 			Node {
 				kind: Nodekind::FuncDecNd,
+				token: Some(ptr),
 				name: Some(func_name),
 				args: args,
 				stmts: Some(statements),
@@ -566,8 +565,8 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		node_ptr
 
 	} else if is_ident(token_ptr) {
+		let ptr = token_ptr.clone();
 		let name: String = expect_ident(token_ptr);
-		let token_ptr_for_err = token_ptr.clone();
 
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
@@ -575,9 +574,9 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&name);
 			if declared  {
 				let argc = *ARGS_COUNTS.lock().unwrap().get(&name).unwrap();
-				if args.len() != argc { error_with_token!("\"{}\"の引数は{}個で宣言されていますが、{}個が渡されました。", &*token_ptr_for_err.borrow(), name, argc, args.len()); }
+				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 			}
-			new_func(name, args)
+			new_func(name, args, ptr)
 		} else {new_lvar(name)}
 
 	} else {

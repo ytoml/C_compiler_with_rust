@@ -1,12 +1,13 @@
-use std::cell::RefCell;
+use std::{borrow::Borrow, cell::RefCell};
 use std::rc::Rc;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
 use crate::{
-	node::{Node, Nodekind},
+	error_with_node,
 	exit_eprintln,
+	node::{Node, Nodekind}
 };
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
@@ -44,8 +45,8 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 				}
 
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-				if (*node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
-				for (ix, arg) in (&(*node).borrow().args).iter().enumerate() {
+				if (**node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+				for (ix, arg) in (&(**node).borrow().args).iter().enumerate() {
 					*_asm += "	mov rax, rbp\n";
 					*_asm += format!("	sub rax, {}\n", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap()).as_str();
 					*_asm += format!("	mov [rax], {}\n", ARGS_REGISTERS.lock().unwrap()[ix]).as_str();
@@ -53,8 +54,8 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 			}
 			
 			// 関数内の文の処理
-			let s = (*node).borrow().stmts.as_ref().unwrap().len();
-			for (ix, stmt_) in (*node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
+			let s = (**node).borrow().stmts.as_ref().unwrap().len();
+			for (ix, stmt_) in (**node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
 				gen(stmt_);
 				if ix != s - 1 {*ASM.lock().unwrap() += "	pop rax\n";}
 			}
@@ -434,7 +435,7 @@ pub fn gen(node: &Rc<RefCell<Node>>) {
 		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
-			exit_eprintln!("不正なNodekindです");
+			error_with_node!("不正な Nodekind です。", &*(**node).borrow());
 		}
 	}
 
@@ -455,7 +456,9 @@ fn gen_lval(node: &Rc<RefCell<Node>>) {
 			// &* は単に打ち消せば良く、node を無視して gen(node->left) する
 			gen((**node).borrow().left.as_ref().unwrap());
 		}
-		_ => {exit_eprintln!("左辺値が変数ではありません。");}
+		_ => {
+			error_with_node!("左辺値が変数ではありません。", &*(**node).borrow());
+		}
 	}
 }
 
