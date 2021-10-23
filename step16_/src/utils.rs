@@ -71,17 +71,19 @@ pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 const RED: usize = 31;
 const LIGHTBLUE: usize = 36;
 pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize) -> ! {
+	// ファイル名には今のところこの関数でしかアクセスしないので、デッドロックの検査はしない
 	let file_name = &FILE_NAMES.lock().unwrap()[file_num];
-	let code_line = &CODES.lock().unwrap()[file_num][line_num];
-	let all_space = code_line.chars().map(|c| if c == '\t' {'\t'} else {' '}).collect::<String>();
-	let space = &all_space[..line_offset];
-	eprintln!("\x1b[{}m{}: {}\x1b[m", LIGHTBLUE, file_name, line_num);
-	eprint!("{}", code_line); // code_line には \n が含まれるので eprint! を使う
-	exit_eprintln!("{}\x1b[{}m^\x1b[m {}", space, RED, msg);
+
+	match CODES.try_lock() {
+		Ok(codes) => {
+			let code_line = &codes[file_num][line_num];
+			let all_space = code_line.chars().map(|c| if c == '\t' {'\t'} else {' '}).collect::<String>();
+			let space = &all_space[..line_offset];
+			eprintln!("\x1b[{}m{}: {}\x1b[m", LIGHTBLUE, file_name, line_num);
+			eprint!("{}", code_line); // code_line には \n が含まれるので eprint! を使う
+			exit_eprintln!("{}\x1b[{}m^\x1b[m {}", space, RED, msg);
+		}
+		// ここのエラーが出ないように CODES の lock をとった状態でエラー関係の関数やマクロを呼ばないことにする
+		Err(e) => { panic!("{:#?}", e);}
+	}
 }
-
-
-
-
-
-

@@ -18,58 +18,66 @@ pub fn tokenize(file_num: usize) -> Rc<RefCell<Token>> {
 	// Rcを使って読み進める
 	let mut token_ptr: Rc<RefCell<Token>> = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
 	let mut token_head_ptr: Rc<RefCell<Token>> = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
-	let code = &mut CODES.lock().unwrap()[file_num];
+	let mut err_profile: (bool, usize, usize) = (false, 0, 0);
+	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
+	{
+		let code = &mut CODES.lock().unwrap()[file_num];
+		for (line_num, string) in (&*code).iter().enumerate() {
 
-	for (line_num, string) in (&*code).iter().enumerate() {
+			// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
+			let len: usize = string.len();
+			let mut lookat: usize = 0;
+			let mut c: char;
+			let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
 
-		// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
-		let len: usize = string.len();
-		let mut lookat: usize = 0;
-		let mut c: char;
-		let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
+			while lookat < len {
+				// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
+				match skipspace(&string, &mut lookat, len) {
+					Ok(()) => {},
+					Err(()) => {break;}
+				}
 
-		while lookat < len {
-			// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
-			match skipspace(&string, &mut lookat, len) {
-				Ok(()) => {},
-				Err(()) => {break;}
+				// 予約文字を判定
+				if let Some(body) = is_reserved(&string, &mut lookat, len) {
+					(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReservedTk, body, file_num, line_num, lookat))));
+					token_ptr_exceed(&mut token_ptr);
+					continue;
+				}
+
+				if is_return(&string, &mut lookat, len) {
+					// トークン列にIdentTkとして追加する必要がある
+					(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReturnTk, "", file_num, line_num, lookat))));
+					token_ptr_exceed(&mut token_ptr);
+					continue;
+				}
+				
+				// 数字ならば、数字が終わるまでを読んでトークンを生成
+				c = string[lookat];
+				if is_digit(&c) {
+					let num = strtol(&string, &mut lookat);
+					(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, num.to_string(), file_num, line_num, lookat))));
+					token_ptr_exceed(&mut token_ptr);
+					continue;
+				}
+
+				// 英字とアンダーバーを先頭とする文字を識別子としてサポートする
+				if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
+					let name = read_lvar(&string, &mut lookat);
+
+					// トークン列にIdentTkとして追加する必要がある
+					(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::IdentTk, name, file_num, line_num, lookat))));
+					token_ptr_exceed(&mut token_ptr);
+					continue;
+				}
+
+				err_profile = (true, line_num, lookat);
+				break;
 			}
-
-			// 予約文字を判定
-			if let Some(body) = is_reserved(&string, &mut lookat, len) {
-				(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReservedTk, body, file_num, line_num, lookat))));
-				token_ptr_exceed(&mut token_ptr);
-				continue;
-			}
-
-			if is_return(&string, &mut lookat, len) {
-				// トークン列にIdentTkとして追加する必要がある
-				(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::ReturnTk, "", file_num, line_num, lookat))));
-				token_ptr_exceed(&mut token_ptr);
-				continue;
-			}
-			
-			// 数字ならば、数字が終わるまでを読んでトークンを生成
-			c = string[lookat];
-			if is_digit(&c) {
-				let num = strtol(&string, &mut lookat);
-				(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, num.to_string(), file_num, line_num, lookat))));
-				token_ptr_exceed(&mut token_ptr);
-				continue;
-			}
-
-			// 英字とアンダーバーを先頭とする文字を識別子としてサポートする
-			if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
-				let name = read_lvar(&string, &mut lookat);
-
-				// トークン列にIdentTkとして追加する必要がある
-				(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::IdentTk, name, file_num, line_num, lookat))));
-				token_ptr_exceed(&mut token_ptr);
-				continue;
-			}
-
-			error_at("トークナイズできません", file_num, line_num, lookat);
 		}
+	}
+
+	if err_profile.0 {
+		error_at("トークナイズできません。", file_num, err_profile.1, err_profile.2);
 	}
 
 	(*token_ptr).borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::EOFTk, "", 0, 0, 0))));
