@@ -567,12 +567,16 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	} else if is_ident(token_ptr) {
 		let name: String = expect_ident(token_ptr);
+		let token_ptr_for_err = token_ptr.clone();
 
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&name);
-			if declared && args.len() != *ARGS_COUNTS.lock().unwrap().get(&name).unwrap() {exit_eprintln!("引数の数が一致しません。");}
+			if declared  {
+				let argc = *ARGS_COUNTS.lock().unwrap().get(&name).unwrap();
+				if args.len() != argc { error_with_token!("\"{}\"の引数は{}個で宣言されていますが、{}個が渡されました。", &*token_ptr_for_err.borrow(), name, argc, args.len()); }
+			}
 			new_func(name, args)
 		} else {new_lvar(name)}
 
