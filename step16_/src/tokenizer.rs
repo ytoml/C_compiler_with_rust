@@ -295,11 +295,19 @@ pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
 
 #[cfg(test)]
 mod tests {
+	use crate::globals::{CODES, FILE_NAMES};
 	use super::*;
+
+	fn test_init(src:&mut Vec<String>) {
+		FILE_NAMES.lock().unwrap().push("test".to_string());
+		let mut code = vec!["".to_string()];
+		code.append(src);
+		CODES.lock().unwrap().push(code);
+	}
 
 	#[test]
 	fn lvar(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			local = -1;
 			local_ = 2;
 			local_1 = local_a = local;
@@ -308,10 +316,7 @@ mod tests {
 			local = (100 + 30 / 5 - 99) * (local > local);
 			LOCAL + local*local + (LOCAL + local_)* local_1 + oops;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -324,17 +329,14 @@ mod tests {
 
 	#[test]
 	fn return_(){
-		let src: Vec<String> = "
+		let mut src: Vec<String> = "
 			a = 1;
 			b = a * 8;
 			return8 = 9;
 			_return = 0;
 			return 11;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -347,7 +349,7 @@ mod tests {
 
 	#[test]
 	fn ctrl(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			for( i = 10; ;  ) i = i + 1;
 			x = 20;
 			while(i == 0) x = x + 1;
@@ -356,10 +358,7 @@ mod tests {
 			return8 = 10;
 			return return8;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -372,16 +371,13 @@ mod tests {
 
 	#[test]
 	fn block(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			for( i = 10; ; ) {i = i + 1;}
 			{}
 			{i = i + 1;}
 			return 10;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -394,16 +390,13 @@ mod tests {
 
 	#[test]
 	fn addr_deref(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			x = 4;
 			y = &x;
 			z = &y;
 			return *&**z;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -416,7 +409,7 @@ mod tests {
 
 	#[test]
 	fn ops(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			x = 1;
 			y = 0;
 			z = 2;
@@ -425,10 +418,7 @@ mod tests {
 			p = !x;
 			return ~z;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -441,7 +431,7 @@ mod tests {
 
 	#[test]
 	fn ops2(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			x = 1;
 			y = 0;
 			z = 2;
@@ -450,10 +440,7 @@ mod tests {
 			p = !x;
 			return ~z;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -466,7 +453,7 @@ mod tests {
 
 	#[test]
 	fn ops3(){
-		let src: Vec<String> ="
+		let mut src: Vec<String> ="
 			x = 1;
 			x += 1;
 			x -= 1;
@@ -483,10 +470,7 @@ mod tests {
 			++x;
 			--x;
 		".split("\n").map(|s| s.into()).collect();
-		{
-			let code = &mut CODES.lock().unwrap()[0];
-			for line in src { code.push(line); }
-		}
+		test_init(&mut src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {

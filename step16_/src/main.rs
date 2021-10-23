@@ -61,10 +61,11 @@ fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 
 #[cfg(test)]
 mod tests {
-	use super::code_load;
-	use crate::globals::{CODES, FILE_NAMES};
 	use std::io::BufReader;
 	use std::fs::File;
+
+	use crate::globals::{CODES, FILE_NAMES};
+	use super::code_load;
 
 	#[test]
 	fn code_concat_test() {
