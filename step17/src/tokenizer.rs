@@ -115,6 +115,11 @@ static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 	' ', '\t', '\n'
 ]));
 
+// 現在は int のみサポート
+static TYPES: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+	"int"
+]));
+
 // 空白を飛ばして読み進める
 fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()> {
 
@@ -271,21 +276,30 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
-		return false;
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
 	}
-	token_ptr_exceed(token_ptr);
-
-	true
 }
 
 // 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool {
 	if (**token_ptr).borrow().kind != kind {
-		return false;
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
 	}
-	token_ptr_exceed(token_ptr);
+}
 
-	true
+pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
+	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
+	}
 }
 
 // 識別子であるかを判別する
