@@ -89,7 +89,11 @@ pub fn tokenize(file_num: usize) -> Rc<RefCell<Token>> {
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
 
 static TRI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
-		"<<=", ">>=",
+	"<<=", ">>=",
+]));
+
+static TRI_KEYWORDS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+	"for", "int"
 ]));
 
 static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
@@ -106,6 +110,7 @@ static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 	'=',
 	'<', '>',
 ]));
+
 static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 	' ', '\t', '\n'
 ]));
@@ -173,7 +178,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	let lim = *index + 3;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
-		if TRI_OPS.lock().unwrap().contains(&slice.as_str()) || slice == "for" && can_follow_reserved(string, lim) {
+		if TRI_OPS.lock().unwrap().contains(&slice.as_str()) || TRI_KEYWORDS.lock().unwrap().contains(&slice.as_str()) && can_follow_reserved(string, lim) {
 			*index = lim;
 			return Some(slice);
 		}
