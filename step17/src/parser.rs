@@ -121,8 +121,12 @@ fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<Re
 	Rc::new(RefCell::new(Node{kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ..Default::default()}))
 }
 
+
 // 生成規則:
-// func-args = ident ("," ident)* | null
+// type = "int"
+
+// 生成規則:
+// func-args = type ident ("," type ident)* | null
 fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
 	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	let mut argc: usize = 0;
@@ -147,7 +151,7 @@ fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>
 }
 
 // 生成規則: 
-// program = ident "(" func-args ")" "{" stmt* "}"
+// program = (type ident "(" func-args ")" "{" stmt* "}")*
 pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 	let mut globals : Vec<Rc<RefCell<Node>>> = Vec::new();
 
@@ -203,7 +207,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 // 生成規則:
 // stmt = expr? ";"
-//		| "int" ident ";"
+//		| type ident ";"
 //		| "{" stmt* "}" 
 //		| "if" "(" expr ")" stmt ("else" stmt)?
 //		| ...(今はelse ifは実装しない)
