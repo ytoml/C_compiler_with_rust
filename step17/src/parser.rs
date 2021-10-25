@@ -616,10 +616,7 @@ fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> 
 		args.push(Some(assign(token_ptr)));
 
 		loop {
-			if !consume(token_ptr, ",") {
-				expect(token_ptr,")"); // 括弧が閉じないような書き方になっているとここで止まるため、if at_eof ~ のようなチェックは不要
-				break;
-			}
+			if !consume(token_ptr, ",") {break;}
 			args.push(Some(assign(token_ptr)));
 		}
 	}
@@ -644,6 +641,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
+			expect(token_ptr,")"); // 括弧が閉じないような書き方になっているとここで止まるため、if at_eof ~ のようなチェックは不要
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&name);
 			if declared  {
