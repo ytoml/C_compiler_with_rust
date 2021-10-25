@@ -273,6 +273,16 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 	token_ptr_exceed(token_ptr);
 }
 
+pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> String {
+	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		error_with_token!("型の宣言が必要です。", &*token_ptr.borrow());
+	} 
+	let body = (**token_ptr).borrow().body.as_ref().unwrap().clone();
+	token_ptr_exceed(token_ptr);
+
+	body
+}
+
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
@@ -293,14 +303,14 @@ pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool
 	}
 }
 
-pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
-	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
-		false
-	} else {
-		token_ptr_exceed(token_ptr);
-		true
-	}
-}
+// pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
+// 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+// 		false
+// 	} else {
+// 		token_ptr_exceed(token_ptr);
+// 		true
+// 	}
+// }
 
 // 識別子であるかを判別する
 pub fn is_ident(token_ptr: &Rc<RefCell<Token>>) -> bool {
