@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 
 use crate::{
 	token::{Token, Tokenkind},
-	tokenizer::{consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof},
+	tokenizer::{consume, consume_kind, consume_ident, expect, expect_number, expect_ident, at_eof},
 	node::{Node, Nodekind},
 	exit_eprintln, error_with_token
 };
@@ -126,9 +126,8 @@ fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<Re
 fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
 	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	let mut argc: usize = 0;
-	if is_ident(token_ptr) {
-		let ptr = token_ptr.clone();
-		let name: String = expect_ident(token_ptr);
+	let ptr = token_ptr.clone();
+	if let Some(name) = consume_ident(token_ptr) {
 		args.push(Some(new_lvar(name, ptr)));
 		argc += 1;
 
@@ -630,8 +629,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 		node_ptr
 
-	} else if is_ident(token_ptr) {
-		let name: String = expect_ident(token_ptr);
+	} else if let Some(name) = consume_ident(token_ptr) {
 
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
