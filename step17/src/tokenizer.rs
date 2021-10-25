@@ -89,7 +89,11 @@ pub fn tokenize(file_num: usize) -> Rc<RefCell<Token>> {
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
 
 static TRI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
-		"<<=", ">>=",
+	"<<=", ">>=",
+]));
+
+static TRI_KEYWORDS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+	"for", "int"
 ]));
 
 static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
@@ -106,8 +110,14 @@ static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 	'=',
 	'<', '>',
 ]));
+
 static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 	' ', '\t', '\n'
+]));
+
+// 現在は int のみサポート
+static TYPES: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+	"int"
 ]));
 
 // 空白を飛ばして読み進める
@@ -173,7 +183,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	let lim = *index + 3;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
-		if TRI_OPS.lock().unwrap().contains(&slice.as_str()) || slice == "for" && can_follow_reserved(string, lim) {
+		if TRI_OPS.lock().unwrap().contains(&slice.as_str()) || TRI_KEYWORDS.lock().unwrap().contains(&slice.as_str()) && can_follow_reserved(string, lim) {
 			*index = lim;
 			return Some(slice);
 		}
@@ -263,24 +273,43 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 	token_ptr_exceed(token_ptr);
 }
 
+pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> String {
+	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		error_with_token!("型の宣言が必要です。", &*token_ptr.borrow());
+	} 
+	let body = (**token_ptr).borrow().body.as_ref().unwrap().clone();
+	token_ptr_exceed(token_ptr);
+
+	body
+}
+
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
-		return false;
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
 	}
-	token_ptr_exceed(token_ptr);
-
-	true
 }
 
 // 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool {
 	if (**token_ptr).borrow().kind != kind {
-		return false;
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
 	}
-	token_ptr_exceed(token_ptr);
+}
 
-	true
+pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
+	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
+	}
 }
 
 // 識別子であるかを判別する
