@@ -303,14 +303,14 @@ pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool
 	}
 }
 
-// pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
-// 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
-// 		false
-// 	} else {
-// 		token_ptr_exceed(token_ptr);
-// 		true
-// 	}
-// }
+pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
+	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		false
+	} else {
+		token_ptr_exceed(token_ptr);
+		true
+	}
+}
 
 // 識別子であるかを判別する
 pub fn is_ident(token_ptr: &Rc<RefCell<Token>>) -> bool {
