@@ -6,12 +6,7 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
-use crate::{
-	token::{Token, Tokenkind},
-	tokenizer::{consume, consume_kind, expect, expect_number, expect_ident, is_ident, at_eof},
-	node::{Node, Nodekind},
-	exit_eprintln, error_with_token
-};
+use crate::{error_with_token, exit_eprintln, node::{Node, Nodekind}, token::{Token, Tokenkind}, tokenizer::{at_eof, consume, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_ident}};
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -130,7 +125,7 @@ fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<Re
 fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
 	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	let mut argc: usize = 0;
-	if is_ident(token_ptr) {
+	if consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
 		let ptr = token_ptr.clone();
 		let name: String = expect_ident(token_ptr);
 		args.push(Some(new_lvar(name, ptr)));
@@ -141,6 +136,7 @@ fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>
 			if argc >= 6 {
 				exit_eprintln!("現在7つ以上の引数はサポートされていません。");
 			}
+			let _ = expect_type(token_ptr); // 型宣言の読み込み
 			let ptr = token_ptr.clone();
 			let name: String = expect_ident(token_ptr);
 			args.push(Some(new_lvar(name, ptr)));
@@ -159,6 +155,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
 		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
 
+		let _ = expect_type(token_ptr); // 型宣言の読み込み
 		let ptr =  token_ptr.clone();
 		let func_name = expect_ident(token_ptr);
 		if ARGS_COUNTS.lock().unwrap().contains_key(&func_name) {
@@ -219,7 +216,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
-	} else if consume(token_ptr, "int") {
+	} else if consume_type(token_ptr) {
 		let ptr = token_ptr.clone();
 		let name = expect_ident(token_ptr);
 		expect(token_ptr, ";");
