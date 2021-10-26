@@ -6,7 +6,12 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
-use crate::{error_with_token, exit_eprintln, node::{Node, Nodekind}, token::{Token, Tokenkind}, tokenizer::{at_eof, consume, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_ident}};
+use crate::{
+	token::{Token, Tokenkind},
+	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
+	node::{Node, Nodekind},
+	exit_eprintln, error_with_token
+};
 
 static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -653,8 +658,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 		node_ptr
 
-	} else if is_ident(token_ptr) {
-		let name: String = expect_ident(token_ptr);
+	} else if let Some(name) = consume_ident(token_ptr) {
 
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);

@@ -312,9 +312,17 @@ pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
 	}
 }
 
-// 識別子であるかを判別する
-pub fn is_ident(token_ptr: &Rc<RefCell<Token>>) -> bool {
-	(**token_ptr).borrow().kind == Tokenkind::IdentTk
+
+pub fn consume_ident(token_ptr: &mut Rc<RefCell<Token>>) -> Option<String> {
+	if (**token_ptr).borrow().kind == Tokenkind::IdentTk {
+		let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
+		token_ptr_exceed(token_ptr);
+
+		Some(body)
+
+	} else {
+		None
+	}
 }
 
 // EOFかどうかを判断する関数
