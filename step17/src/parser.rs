@@ -727,6 +727,7 @@ pub mod tests {
 	#[test]
 	fn basic_calc() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 1 + 2 / 1;
 			y = 200 % (3 + 1);
 			z = 30 % 3 + 2 * 4;
@@ -746,6 +747,7 @@ pub mod tests {
 	#[test]
 	fn shift() {
 		let mut src: Vec<String> = "
+			int x;
 			x = 10 << 2 + 3 % 2 >> 3;
 		".split("\n").map(|s| s.into()).collect();
 		test_init(&mut src);
@@ -763,6 +765,7 @@ pub mod tests {
 	#[test]
 	fn bitops() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
 			1 + -1 ^ 2;
@@ -806,6 +809,7 @@ pub mod tests {
 	#[test]
 	fn inc_dec() {
 		let mut src: Vec<String> = "
+			int i;
 			i = 0;
 			++i;
 			--i;
@@ -828,6 +832,7 @@ pub mod tests {
 	#[test]
 	fn for_() {
 		let mut src: Vec<String> = "
+			int sum, i;
 			sum = 10;
 			sum = sum + i;
 			for (i = 1 ; i < 10; i = i + 1) sum = sum +i;
@@ -848,6 +853,7 @@ pub mod tests {
 	#[test]
 	fn while_() {
 		let mut src: Vec<String> = "
+			int sum;
 			sum = 10;
 			while(sum > 0) sum = sum - 1;
 			return sum;
@@ -867,6 +873,7 @@ pub mod tests {
 	#[test]
 	fn if_() {
 		let mut src: Vec<String> = "
+			int i;
 			i = 10;
 			if (i == 10) i = i / 5;
 			if (i == 2) i = i + 5; else i = i / 5;
@@ -888,6 +895,7 @@ pub mod tests {
 	#[test]
 	fn ctrls() {
 		let mut src: Vec<String> = "
+			int i, sum;
 			sum = 0;
 			i = 10;
 			if (i == 10) while(i < 0) for(;;) sum = sum + 1;
@@ -928,6 +936,7 @@ pub mod tests {
 	#[test]
 	fn block2() {
 		let mut src: Vec<String> = "
+			int i, x;
 			while(i < 10) {i = i + 1; i = i * 2;}
 			x = 10;
 			if ( x == 10 ){
@@ -957,6 +966,7 @@ pub mod tests {
 	#[test]
 	fn func() {
 		let mut src: Vec<String> = "
+			int i, j;
 			call_fprint();
 			i = getOne();
 			j = getTwo();
@@ -977,6 +987,7 @@ pub mod tests {
 	#[test]
 	fn func2() {
 		let mut src: Vec<String> = "
+			int i, j, k;
 			call_fprint();
 			i = get(1);
 			j = get(2, 3, 4);
@@ -998,6 +1009,7 @@ pub mod tests {
 	#[test]
 	fn addr_deref() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 3;
 			y = 5;
 			z = &y + 8;
@@ -1018,6 +1030,7 @@ pub mod tests {
 	#[test]
 	fn addr_deref2() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 3;
 			y = &x;
 			z = &y;
@@ -1038,6 +1051,7 @@ pub mod tests {
 	#[test]
 	fn comma() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 3, y = 4, z = 10;
 		".split("\n").map(|s| s.into()).collect();
 		test_init(&mut src);
@@ -1055,6 +1069,7 @@ pub mod tests {
 	#[test]
 	fn assign_op() {
 		let mut src: Vec<String> = "
+			int x;
 			x = 10;
 			x += 1;
 			x <<= 1;
@@ -1074,13 +1089,14 @@ pub mod tests {
 	#[test]
 	fn declare() {
 		let mut src: Vec<String> = "
-			func(x, y) {
+			func(int x, int y) {
 				return x + y;
 			}
-			calc(a, b, c, d, e, f) {
+			calc(int a, int b, int c, int d, int e, int f) {
 				return a*b + c - d + e/f;
 			}
 			main() {
+				int i, sum;
 				i = 0;
 				sum = 0;
 				for (; i < 10; i=i+1) {
@@ -1104,10 +1120,11 @@ pub mod tests {
 	#[test]
 	fn no_return() {
 		let mut src: Vec<String> = "
-			func(x, y) {
+			int func(int x, int y) {
 				return x + y;
 			}
-			main() {
+			int main() {
+				int i, sum, x, y, z;
 				i = 0;
 				sum = 0;
 				for (; i < 10; i=i+1) {
@@ -1132,11 +1149,12 @@ pub mod tests {
 	#[test]
 	fn wip() {
 		let mut src: Vec<String> = "
-			func(x, y) {
+			int func(int x, int y) {
 				print_helper(x+y);
 				return x + y;
 			}
-			main() {
+			int main() {
+				int i, j, k, sum, x, y, z;
 				i = 0;
 				j = 0;
 				k = 1;
