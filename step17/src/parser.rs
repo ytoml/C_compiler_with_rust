@@ -689,10 +689,11 @@ pub mod tests {
 	
 	static REP: usize = 40;
 
-	fn test_init(src:&mut Vec<String>) {
+	fn test_init(src: &str) {
+		let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string()+"\n").collect();
 		FILE_NAMES.lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
-		code.append(src);
+		code.append(&mut src_);
 		CODES.lock().unwrap().push(code);
 	}
 
@@ -730,13 +731,13 @@ pub mod tests {
 
 	#[test]
 	fn basic_calc() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int x, y, z;
 			x = 1 + 2 / 1;
 			y = 200 % (3 + 1);
 			z = 30 % 3 + 2 * 4;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -750,11 +751,11 @@ pub mod tests {
 
 	#[test]
 	fn shift() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int x;
 			x = 10 << 2 + 3 % 2 >> 3;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -768,8 +769,7 @@ pub mod tests {
 
 	#[test]
 	fn bitops() {
-		let mut src: Vec<String> = "
-			int x, y, z;
+		let src: &str = "
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
 			1 + -1 ^ 2;
@@ -778,8 +778,8 @@ pub mod tests {
 			y = &x;
 			3 ^ 2 & *y | 2 & &x;
 			z = ~x;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -793,12 +793,12 @@ pub mod tests {
 
 	#[test]
 	fn logops() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			1 && 2 || 3 && 4;
 			1 && 2 ^ 3 || 4 && 5 || 6;
 			!2;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -812,15 +812,15 @@ pub mod tests {
 
 	#[test]
 	fn inc_dec() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int i;
 			i = 0;
 			++i;
 			--i;
 			i++;
 			i--;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -835,14 +835,14 @@ pub mod tests {
 
 	#[test]
 	fn for_() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int sum, i;
 			sum = 10;
 			sum = sum + i;
 			for (i = 1 ; i < 10; i = i + 1) sum = sum +i;
 			return sum;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -856,13 +856,13 @@ pub mod tests {
 
 	#[test]
 	fn while_() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int sum;
 			sum = 10;
 			while(sum > 0) sum = sum - 1;
 			return sum;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -876,14 +876,14 @@ pub mod tests {
 
 	#[test]
 	fn if_() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int i;
 			i = 10;
 			if (i == 10) i = i / 5;
 			if (i == 2) i = i + 5; else i = i / 5;
 			return i;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -898,14 +898,14 @@ pub mod tests {
 
 	#[test]
 	fn ctrls() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int i, sum;
 			sum = 0;
 			i = 10;
 			if (i == 10) while(i < 0) for(;;) sum = sum + 1;
 			return sum;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -919,13 +919,13 @@ pub mod tests {
 
 	#[test]
 	fn block() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			for( i = 10; ; ) {i = i + 1;}
 			{}
 			{i = i + 1; 10;}
 			return 10;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -939,7 +939,7 @@ pub mod tests {
 
 	#[test]
 	fn block2() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int i, x;
 			while(i < 10) {i = i + 1; i = i * 2;}
 			x = 10;
@@ -954,8 +954,8 @@ pub mod tests {
 			{i = i + 1; 10;}
 			return 200;
 			return;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -969,14 +969,14 @@ pub mod tests {
 
 	#[test]
 	fn func() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int i, j;
 			call_fprint();
 			i = getOne();
 			j = getTwo();
 			return i + j;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -990,15 +990,15 @@ pub mod tests {
 
 	#[test]
 	fn func2() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int i, j, k;
 			call_fprint();
 			i = get(1);
 			j = get(2, 3, 4);
 			k = get(i+j, (i=3), k);
 			return i + j;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -1012,14 +1012,14 @@ pub mod tests {
 
 	#[test]
 	fn addr_deref() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int x, y, z;
 			x = 3;
 			y = 5;
 			z = &y + 8;
 			return *z;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -1033,14 +1033,14 @@ pub mod tests {
 
 	#[test]
 	fn addr_deref2() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int x, y, z;
 			x = 3;
 			y = &x;
 			z = &y;
 			return *&**z;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -1054,11 +1054,11 @@ pub mod tests {
 
 	#[test]
 	fn comma() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int x, y, z;
 			x = 3, y = 4, z = 10;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -1072,13 +1072,13 @@ pub mod tests {
 
 	#[test]
 	fn assign_op() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int x;
 			x = 10;
 			x += 1;
 			x <<= 1;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = parse_stmts(&mut token_ptr);
@@ -1092,7 +1092,7 @@ pub mod tests {
 
 	#[test]
 	fn declare() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			func(int x, int y) {
 				return x + y;
 			}
@@ -1108,8 +1108,8 @@ pub mod tests {
 				}
 				return func(i, sum);
 			}
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 		
 		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);
@@ -1123,7 +1123,7 @@ pub mod tests {
 
 	#[test]
 	fn no_return() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int func(int x, int y) {
 				return x + y;
 			}
@@ -1136,8 +1136,8 @@ pub mod tests {
 				}
 				func(x=1, (y=1, z=1));
 			}
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 
 		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);
@@ -1152,7 +1152,7 @@ pub mod tests {
 	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする
 	#[test]
 	fn wip() {
-		let mut src: Vec<String> = "
+		let src: &str = "
 			int func(int x, int y) {
 				print_helper(x+y);
 				return x + y;
@@ -1176,8 +1176,8 @@ pub mod tests {
 				func(x=1, (y=1, z=1));
 				return k;
 			}
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		";
+		test_init(src);
 
 		let mut token_ptr = tokenize(0);
 		let node_heads = program(&mut token_ptr);

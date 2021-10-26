@@ -335,16 +335,18 @@ mod tests {
 	use crate::globals::{CODES, FILE_NAMES};
 	use super::*;
 
-	fn test_init(src:&mut Vec<String>) {
+	fn test_init(src: &str) {
+		let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string()+"\n").collect();
 		FILE_NAMES.lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
-		code.append(src);
+		code.append(&mut src_);
 		CODES.lock().unwrap().push(code);
 	}
 
 	#[test]
 	fn lvar(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int local, local_, local_1, local_a, oops, LOCAL;
 			local = -1;
 			local_ = 2;
 			local_1 = local_a = local;
@@ -352,8 +354,8 @@ mod tests {
 			LOCAL = local * 30;
 			local = (100 + 30 / 5 - 99) * (local > local);
 			LOCAL + local*local + (LOCAL + local_)* local_1 + oops;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -366,14 +368,15 @@ mod tests {
 
 	#[test]
 	fn return_(){
-		let mut src: Vec<String> = "
+		let src: &str = "
+			int a, b, return8, _return;
 			a = 1;
 			b = a * 8;
 			return8 = 9;
 			_return = 0;
 			return 11;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -386,7 +389,8 @@ mod tests {
 
 	#[test]
 	fn ctrl(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int i, x, if_, return8;
 			for( i = 10; ;  ) i = i + 1;
 			x = 20;
 			while(i == 0) x = x + 1;
@@ -394,8 +398,8 @@ mod tests {
 			if(if_ >= 0) if_ - 100; else if_ * 100;
 			return8 = 10;
 			return return8;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -408,13 +412,14 @@ mod tests {
 
 	#[test]
 	fn block(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int i;
 			for( i = 10; ; ) {i = i + 1;}
 			{}
 			{i = i + 1;}
 			return 10;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -427,13 +432,14 @@ mod tests {
 
 	#[test]
 	fn addr_deref(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int x, y, z;
 			x = 4;
 			y = &x;
 			z = &y;
 			return *&**z;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -446,7 +452,8 @@ mod tests {
 
 	#[test]
 	fn ops(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int x, y, z, w, p;
 			x = 1;
 			y = 0;
 			z = 2;
@@ -454,8 +461,8 @@ mod tests {
 			w = x & y ^ z;
 			p = !x;
 			return ~z;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -468,7 +475,8 @@ mod tests {
 
 	#[test]
 	fn ops2(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int x, y, z;
 			x = 1;
 			y = 0;
 			z = 2;
@@ -476,8 +484,8 @@ mod tests {
 			w = x & y ^ z;
 			p = !x;
 			return ~z;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
@@ -490,7 +498,8 @@ mod tests {
 
 	#[test]
 	fn ops3(){
-		let mut src: Vec<String> ="
+		let src: &str ="
+			int x;
 			x = 1;
 			x += 1;
 			x -= 1;
@@ -506,8 +515,8 @@ mod tests {
 			x--;
 			++x;
 			--x;
-		".split("\n").map(|s| s.into()).collect();
-		test_init(&mut src);
+		test";
+		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
