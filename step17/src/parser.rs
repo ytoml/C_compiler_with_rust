@@ -616,7 +616,10 @@ fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> 
 		args.push(Some(assign(token_ptr)));
 
 		loop {
-			if !consume(token_ptr, ",") {break;}
+			if !consume(token_ptr, ",") {
+				expect(token_ptr,")"); // 括弧が閉じないような書き方になっているとここで止まるため、if at_eof ~ のようなチェックは不要
+				break;
+			}
 			args.push(Some(assign(token_ptr)));
 		}
 	}
@@ -625,7 +628,7 @@ fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> 
 
 // 生成規則: 
 // primary = num
-//			| ident ( "(" (assign ",")* assign? ")" )?
+//			| ident ( "(" params ")" )?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let ptr = token_ptr.clone();
@@ -641,7 +644,6 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
-			expect(token_ptr,")"); // 括弧が閉じないような書き方になっているとここで止まるため、if at_eof ~ のようなチェックは不要
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&name);
 			if declared  {
@@ -649,7 +651,11 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 			}
 			new_func(name, args, ptr)
-		} else {new_lvar(name, ptr)}
+		} else {
+			let declared: bool = LOCALS.lock().unwrap().contains_key(&name);
+			if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
+			new_lvar(name, ptr)
+		}
 
 	} else {
 		new_num(expect_number(token_ptr), ptr)
