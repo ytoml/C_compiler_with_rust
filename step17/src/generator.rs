@@ -576,6 +576,7 @@ mod tests {
 	#[test]
 	fn assign1() {
 		let mut src: Vec<String> = "
+			int a;
 			a = 1; a + 1;
 		".split("\n").map(|s| s.into()).collect();
 		test_init(&mut src);
@@ -592,6 +593,7 @@ mod tests {
 	#[test]
 	fn assign2() {
 		let mut src: Vec<String> = "
+			int local, local_value, local_value99;
 			local = 1; local_value = local + 1; local_value99 = local_value + 3;
 		".split("\n").map(|s| s.into()).collect();
 		test_init(&mut src);
@@ -608,6 +610,7 @@ mod tests {
 	#[test]
 	fn bitops() {
 		let mut src: Vec<String> = "
+			int x, y;
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
 			1 + -1 ^ 2;
@@ -631,6 +634,7 @@ mod tests {
 	#[test]
 	fn logops() {
 		let mut src: Vec<String> = "
+			int x, y, z, q;
 			x = 10;
 			y = 20;
 			z = 20;
@@ -650,6 +654,7 @@ mod tests {
 	#[test]
 	fn comma() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 10, y = 10, z = 10;
 		".split("\n").map(|s| s.into()).collect();
 		test_init(&mut src);
@@ -666,6 +671,7 @@ mod tests {
 	#[test]
 	fn if_() {
 		let mut src: Vec<String> = "
+			int i;
 			i = 10;
 			if (1) i + 1;
 			x = i + 10;
@@ -684,6 +690,7 @@ mod tests {
 	#[test]
 	fn while_() {
 		let mut src: Vec<String> = "
+			int i;
 			i = 10;
 			while (i > 1) i = i - 1;
 			i;
@@ -702,6 +709,7 @@ mod tests {
 	#[test]
 	fn for_() {
 		let mut src: Vec<String> = "
+			int sum, i;
 			sum = 10;
 			for (i = 0; i < 10; i = i + 1) sum = sum + i;
 			return sum;
@@ -720,6 +728,7 @@ mod tests {
 	#[test]
 	fn block() {
 		let mut src: Vec<String> = "
+			int sum, sum2, i;
 			sum = 10;
 			sum2 = 20;
 			for (i = 0; i < 10; i = i + 1) {
@@ -743,6 +752,7 @@ mod tests {
 	#[test]
 	fn func() {
 		let mut src: Vec<String> = "
+			int i, j, k;
 			call_fprint();
 			i = get(1);
 			j = get(2, 3, 4);
@@ -763,6 +773,7 @@ mod tests {
 	#[test]
 	fn addr_deref() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 3;
 			y = 5;
 			z = &y + 8;
@@ -782,6 +793,7 @@ mod tests {
 	#[test]
 	fn addr_deref2() {
 		let mut src: Vec<String> = "
+			int x, y, z;
 			x = 3;
 			y = &x;
 			z = &y;
@@ -801,13 +813,14 @@ mod tests {
 	#[test]
 	fn funcdec() {
 		let mut src: Vec<String> = "
-			func(x, y) {
+			int func(int x, int y) {
 				return x * (y + 1);
 			}
-			sum(i, j) {
+			int sum(int i, int j) {
 				return i + j;
 			}
-			main() {
+			int main() {
+				int i, sum;
 				i = 0;
 				sum = 0;
 				for (; i < 10; i=i+1) {
@@ -829,10 +842,10 @@ mod tests {
 	#[test]
 	fn recursion() {
 		let mut src: Vec<String> = "
-			fib(n) {
+			int fib(int n) {
 				return fib(n-1)+fib(n-2);
 			}
-			main() {
+			int main() {
 				return fib(10);
 			}
 		".split("\n").map(|s| s.into()).collect();
