@@ -275,7 +275,7 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 
 pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
-		error_with_token!("型の宣言が必要です。", &*token_ptr.borrow());
+		error_with_token!("型の指定が必要です。", &*token_ptr.borrow());
 	} 
 	let body = (**token_ptr).borrow().body.as_ref().unwrap().clone();
 	token_ptr_exceed(token_ptr);

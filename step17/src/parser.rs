@@ -147,6 +147,12 @@ fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>
 			args.push(Some(new_lvar(name, ptr)));
 			argc += 1;
 		}
+	} else {
+		// エラーメッセージがわかりやすくなるように分岐する
+		let ptr = token_ptr.clone();
+		if let Some(_) = consume_ident(token_ptr) {
+			error_with_token!("型指定が必要です。", &*ptr.borrow());
+		}
 	}
 	args
 }
