@@ -203,8 +203,27 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 }
 
 // 生成規則:
+// declare = ident ("," ident)* ";"
+fn declare(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	let ptr = token_ptr.clone();
+	let name = expect_ident(token_ptr);
+	let mut node_ptr = new_lvar(name, ptr);
+	loop {
+		let ptr_com = token_ptr.clone();
+		if !consume(token_ptr, ",") { break; }
+		let ptr = token_ptr.clone();
+		let name = expect_ident(token_ptr);
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, new_lvar(name, ptr), ptr_com);
+	}
+	expect(token_ptr,";");
+	
+	node_ptr
+}
+
+
+// 生成規則:
 // stmt = expr? ";"
-//		| type ident ";"
+//		| type declare
 //		| "{" stmt* "}" 
 //		| "if" "(" expr ")" stmt ("else" stmt)?
 //		| ...(今はelse ifは実装しない)
@@ -217,12 +236,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
 	} else if consume_type(token_ptr) {
-		let ptr = token_ptr.clone();
-		let name = expect_ident(token_ptr);
-		expect(token_ptr, ";");
-
-		new_lvar(name, ptr)
-
+		declare(token_ptr)
 	} else if consume(token_ptr, "{") {
 		let mut children: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 		loop {
