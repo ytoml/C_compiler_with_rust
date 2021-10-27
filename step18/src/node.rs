@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::{
 	token::{Token, error_tok},
+	typecell::{Type, TypeCell}
 };
 
 #[derive(Debug, PartialEq)]
@@ -46,7 +47,8 @@ pub enum Nodekind {
 
 pub struct Node {
 	pub kind: Nodekind, // Nodeの種類
-	pub token: Option<Rc<RefCell<Token>>>,
+	pub token: Option<Rc<RefCell<Token>>>, // 対応する Token (エラーメッセージに必要)
+	pub typ: Option<TypeCell>, 
 
 	// プロパティとなる数値
 	pub val: Option<i32>,
@@ -80,7 +82,7 @@ pub struct Node {
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
 	}
 }
 

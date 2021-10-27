@@ -130,7 +130,7 @@ fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<Re
 fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
 	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	let mut argc: usize = 0;
-	if consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
+	if let Some(typ) = consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
 		let ptr = token_ptr.clone();
 		let name: String = expect_ident(token_ptr);
 		args.push(Some(new_lvar(name, ptr)));
@@ -246,7 +246,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
-	} else if consume_type(token_ptr) {
+	} else if let Some(typ) = consume_type(token_ptr) {
 		declare(token_ptr)
 	} else if consume(token_ptr, "{") {
 		let mut children: Vec<Option<Rc<RefCell<Node>>>> = vec![];

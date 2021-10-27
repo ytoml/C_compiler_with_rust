@@ -10,6 +10,7 @@ use crate::{
 	error_with_token,
 	globals::CODES,
 	token::{Token, Tokenkind, token_ptr_exceed},
+	typecell::{Type, TypeCell},
 	utils::{strtol, is_digit, error_at},
 };
 
@@ -285,7 +286,7 @@ pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
-	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
+	if (*token_ptr).borrow().kind != Tokenkind::ReservedTk || (*token_ptr).borrow().body.as_ref().unwrap() != op {
 		false
 	} else {
 		token_ptr_exceed(token_ptr);
@@ -295,7 +296,7 @@ pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
 
 // 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool {
-	if (**token_ptr).borrow().kind != kind {
+	if (*token_ptr).borrow().kind != kind {
 		false
 	} else {
 		token_ptr_exceed(token_ptr);
@@ -303,18 +304,30 @@ pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool
 	}
 }
 
-pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> bool {
-	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
-		false
-	} else {
+pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> Option<TypeCell> {
+	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.lock().unwrap().contains(&(*token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
-		true
+
+		let mut cell: TypeCell = match ptr.borrow().body.as_ref().unwrap().as_str() {
+			"int" => { TypeCell::new(Type::Int) }
+			_ => { panic!("invalid type annotation is now treated as type."); }
+		};
+
+		while consume(token_ptr, "*") {
+			cell = TypeCell { typ: Type::Ptr, ptr_to: Some(Rc::new(RefCell::new(cell)))};
+		}
+
+		Some(cell)
+
+	} else {
+		None
 	}
 }
 
 
 pub fn consume_ident(token_ptr: &mut Rc<RefCell<Token>>) -> Option<String> {
-	if (**token_ptr).borrow().kind == Tokenkind::IdentTk {
+	if (*token_ptr).borrow().kind == Tokenkind::IdentTk {
 		let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
 		token_ptr_exceed(token_ptr);
 
@@ -327,7 +340,7 @@ pub fn consume_ident(token_ptr: &mut Rc<RefCell<Token>>) -> Option<String> {
 
 // EOFかどうかを判断する関数
 pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
-	(**token_ptr).borrow().kind == Tokenkind::EOFTk
+	(*token_ptr).borrow().kind == Tokenkind::EOFTk
 }
 
 #[cfg(test)]

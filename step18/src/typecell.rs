@@ -23,12 +23,22 @@ impl Display for Type {
 }
 
 pub struct TypeCell {
-	pub ty: Type,
+	pub typ: Type,
 	pub ptr_to: Option<Rc<RefCell<TypeCell>>>,
+}
+
+impl TypeCell {
+	pub fn new(typ: Type) -> Self {
+		TypeCell { typ:typ, ptr_to: None }
+	}
+
+	pub fn set_ptr(&mut self, cell: TypeCell) {
+		let _ = self.ptr_to.insert(Rc::new(RefCell::new(cell)));
+	}
 }
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell {ty: Type::Default, ptr_to: None}
+		TypeCell {typ: Type::Default, ptr_to: None}
 	}
 }
