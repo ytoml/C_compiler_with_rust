@@ -6,13 +6,14 @@ use std::io::{BufRead, BufReader};
 use clap::Clap;
 
 mod generator;
-mod utils;
+mod globals;
 mod node;
 mod options;
 mod parser;
 mod token;
 mod tokenizer;
-mod globals;
+mod typecell; // type が予約語だったので typecell とした
+mod utils;
 use generator::{gen, ASM};
 use options::Opts;
 use parser::program;
