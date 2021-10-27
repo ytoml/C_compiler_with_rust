@@ -274,14 +274,25 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 	token_ptr_exceed(token_ptr);
 }
 
-pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> String {
-	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || !TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
-		error_with_token!("型の指定が必要です。", &*token_ptr.borrow());
-	} 
-	let body = (**token_ptr).borrow().body.as_ref().unwrap().clone();
-	token_ptr_exceed(token_ptr);
+pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> TypeCell {
+	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+		let ptr = token_ptr.clone();
+		token_ptr_exceed(token_ptr);
 
-	body
+		let mut cell: TypeCell = match ptr.borrow().body.as_ref().unwrap().as_str() {
+			"int" => { TypeCell::new(Type::Int) }
+			_ => { panic!("invalid type annotation is now treated as type."); }
+		};
+
+		while consume(token_ptr, "*") {
+			cell = TypeCell { typ: Type::Ptr, ptr_to: Some(Rc::new(RefCell::new(cell)))};
+		}
+
+		cell
+
+	} else {
+		error_with_token!("型の指定が必要です。", &*token_ptr.borrow());
+	}
 }
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)

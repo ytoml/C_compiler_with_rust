@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
 	Default,
 	Int,
@@ -22,6 +22,7 @@ impl Display for Type {
 	}
 }
 
+#[derive(Debug, Clone)]
 pub struct TypeCell {
 	pub typ: Type,
 	pub ptr_to: Option<Rc<RefCell<TypeCell>>>,
@@ -42,3 +43,6 @@ impl Default for TypeCell {
 		TypeCell {typ: Type::Default, ptr_to: None}
 	}
 }
+
+unsafe impl Send for TypeCell {}
+unsafe impl Sync for TypeCell {}

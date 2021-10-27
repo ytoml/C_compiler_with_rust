@@ -7,13 +7,14 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 use crate::{
+	node::{Node, Nodekind},
 	token::{Token, Tokenkind},
 	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
-	node::{Node, Nodekind},
+	typecell::{Type, TypeCell},
 	exit_eprintln, error_with_token
 };
 
-static LOCALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
@@ -63,14 +64,15 @@ macro_rules! tmp_num {
 }
 
 // 左辺値(今のうちはローカル変数)に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
-fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
+fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option<TypeCell>) -> Rc<RefCell<Node>> {
 	let name: String = name.into();
 	let offset;
 
 	// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
 	let mut not_found: bool = false;
-	match LOCALS.lock().unwrap().get(&name) {
-		Some(offset_) => {
+	let locals = LOCALS.try_lock().unwrap();
+	match locals.get(&name) {
+		Some((offset_,_)) => {
 			offset = *offset_;
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
@@ -82,19 +84,19 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCe
 	}
 
 	if not_found {
-		LOCALS.lock().unwrap().insert(name, offset); 
+		LOCALS.lock().unwrap().insert(name, (offset, typ.clone().unwrap())); 
 	}
 	
-	Rc::new(RefCell::new(Node {kind: Nodekind::LvarNd, token: token, offset: Some(offset), .. Default::default()}))
+	Rc::new(RefCell::new(Node {kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
 }
 
-fn new_lvar(name: impl Into<String>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	_lvar(name, Some(token_ptr))
+fn new_lvar(name: impl Into<String>, token_ptr: Rc<RefCell<Token>>, typ: TypeCell) -> Rc<RefCell<Node>> {
+	_lvar(name, Some(token_ptr), Some(typ))
 }
 
 macro_rules! tmp_lvar {
 	($name: expr) => {
-		_lvar($name, None)
+		_lvar($name, None, None)
 	};
 }
 
@@ -133,7 +135,7 @@ fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>
 	if let Some(typ) = consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
 		let ptr = token_ptr.clone();
 		let name: String = expect_ident(token_ptr);
-		args.push(Some(new_lvar(name, ptr)));
+		args.push(Some(new_lvar(name, ptr, typ)));
 		argc += 1;
 
 		loop {
@@ -141,10 +143,10 @@ fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>
 			if argc >= 6 {
 				exit_eprintln!("現在7つ以上の引数はサポートされていません。");
 			}
-			let _ = expect_type(token_ptr); // 型宣言の読み込み
+			let typ = expect_type(token_ptr); // 型宣言の読み込み
 			let ptr = token_ptr.clone();
 			let name: String = expect_ident(token_ptr);
-			args.push(Some(new_lvar(name, ptr)));
+			args.push(Some(new_lvar(name, ptr, typ)));
 			argc += 1;
 		}
 	} else {
@@ -215,16 +217,16 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 // 生成規則:
 // declare = ident ("," ident)* ";"
-fn declare(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn declare(token_ptr: &mut Rc<RefCell<Token>>, typ: TypeCell) -> Rc<RefCell<Node>> {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
-	let mut node_ptr = new_lvar(name, ptr);
+	let mut node_ptr = new_lvar(name, ptr, typ.clone());
 	loop {
 		let ptr_com = token_ptr.clone();
 		if !consume(token_ptr, ",") { break; }
 		let ptr = token_ptr.clone();
 		let name = expect_ident(token_ptr);
-		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, new_lvar(name, ptr), ptr_com);
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, new_lvar(name, ptr, typ.clone()), ptr_com);
 	}
 	expect(token_ptr,";");
 	
@@ -247,7 +249,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
 	} else if let Some(typ) = consume_type(token_ptr) {
-		declare(token_ptr)
+		declare(token_ptr, typ)
 	} else if consume(token_ptr, "{") {
 		let mut children: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 		loop {
@@ -676,9 +678,11 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			}
 			new_func(name, args, ptr)
 		} else {
-			let declared: bool = LOCALS.lock().unwrap().contains_key(&name);
+			let locals = LOCALS.try_lock().unwrap();
+			let declared: bool = locals.contains_key(&name);
 			if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
-			new_lvar(name, ptr)
+			let (_, typ) = locals.get(&name).as_ref().unwrap();
+			new_lvar(name, ptr, typ.clone())
 		}
 
 	} else {
