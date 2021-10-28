@@ -11,7 +11,7 @@ use crate::{
 	token::{Token, Tokenkind},
 	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
 	typecell::TypeCell,
-	exit_eprintln, error_with_token
+	exit_eprintln, error_with_token,
 };
 
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::{
 	token::{Token, error_tok},
-	typecell::{Type, TypeCell}
+	typecell::TypeCell,
 };
 
 #[derive(Debug, PartialEq)]
