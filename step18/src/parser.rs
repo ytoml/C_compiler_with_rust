@@ -10,7 +10,7 @@ use crate::{
 	node::{Node, Nodekind},
 	token::{Token, Tokenkind},
 	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
-	typecell::{Type, TypeCell},
+	typecell::TypeCell,
 	exit_eprintln, error_with_token
 };
 
@@ -70,7 +70,7 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option
 
 	// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
 	let mut not_found: bool = false;
-	let locals = LOCALS.try_lock().unwrap();
+	let mut locals = LOCALS.try_lock().unwrap();
 	match locals.get(&name) {
 		Some((offset_,_)) => {
 			offset = *offset_;
@@ -84,7 +84,7 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option
 	}
 
 	if not_found {
-		LOCALS.try_lock().unwrap().insert(name, (offset, typ.clone().unwrap())); 
+		locals.insert(name, (offset, typ.clone().unwrap())); 
 	}
 	
 	Rc::new(RefCell::new(Node {kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
@@ -95,8 +95,8 @@ fn new_lvar(name: impl Into<String>, token_ptr: Rc<RefCell<Token>>, typ: TypeCel
 }
 
 macro_rules! tmp_lvar {
-	($name: expr) => {
-		_lvar($name, None, None)
+	() => {
+		_lvar("", None, Some(TypeCell::default()))
 	};
 }
 
@@ -122,7 +122,6 @@ fn new_ctrl(kind: Nodekind,
 fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(Node{kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ..Default::default()}))
 }
-
 
 // 生成規則:
 // type = "int"
@@ -385,14 +384,14 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, 
 	// tmp として通常は認められない無名の変数を使うことで重複を避ける
 	let expr_left = tmp_binary!(
 		Nodekind::AssignNd,
-		tmp_lvar!(""),
+		tmp_lvar!(),
 		tmp_unary!(Nodekind::AddrNd, left)
 	);
 
 	let expr_right = tmp_binary!(
 		Nodekind::AssignNd,
-		tmp_unary!(Nodekind::DerefNd, tmp_lvar!("")),
-		tmp_binary!(kind, tmp_unary!(Nodekind::DerefNd, tmp_lvar!("")), right)
+		tmp_unary!(Nodekind::DerefNd, tmp_lvar!()),
+		tmp_binary!(kind, tmp_unary!(Nodekind::DerefNd, tmp_lvar!()), right)
 	);
 
 	new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
@@ -678,10 +677,13 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			}
 			new_func(name, args, ptr)
 		} else {
-			let locals = LOCALS.try_lock().unwrap();
-			let declared: bool = locals.contains_key(&name);
-			if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
-			let (_, typ) = locals.get(&name).as_ref().unwrap();
+			let typ: TypeCell;
+			{
+				let locals = LOCALS.try_lock().unwrap();
+				let declared: bool = locals.contains_key(&name);
+				if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
+				typ = locals.get(&name).as_ref().unwrap().1.clone();
+			}
 			new_lvar(name, ptr, typ.clone())
 		}
 

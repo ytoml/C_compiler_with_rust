@@ -378,7 +378,7 @@ mod tests {
 			LOCAL = local * 30;
 			local = (100 + 30 / 5 - 99) * (local > local);
 			LOCAL + local*local + (LOCAL + local_)* local_1 + oops;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -399,7 +399,7 @@ mod tests {
 			return8 = 9;
 			_return = 0;
 			return 11;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -422,7 +422,7 @@ mod tests {
 			if(if_ >= 0) if_ - 100; else if_ * 100;
 			return8 = 10;
 			return return8;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -442,7 +442,7 @@ mod tests {
 			{}
 			{i = i + 1;}
 			return 10;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -462,7 +462,7 @@ mod tests {
 			y = &x;
 			z = &y;
 			return *&**z;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -485,7 +485,7 @@ mod tests {
 			w = x & y ^ z;
 			p = !x;
 			return ~z;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -508,7 +508,7 @@ mod tests {
 			w = x & y ^ z;
 			p = !x;
 			return ~z;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
@@ -539,7 +539,7 @@ mod tests {
 			x--;
 			++x;
 			--x;
-		test";
+		";
 		test_init(src);
 
 		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
