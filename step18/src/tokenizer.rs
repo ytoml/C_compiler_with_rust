@@ -22,7 +22,7 @@ pub fn tokenize(file_num: usize) -> Rc<RefCell<Token>> {
 	let mut err_profile: (bool, usize, usize) = (false, 0, 0);
 	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
 	{
-		let code = &mut CODES.lock().unwrap()[file_num];
+		let code = &mut CODES.try_lock().unwrap()[file_num];
 		for (line_num, string) in (&*code).iter().enumerate() {
 
 			// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
@@ -130,7 +130,7 @@ fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()
 	}
 
 	// 空白でなくなるまで読み進める
-	while SPACES.lock().unwrap().contains(&string[*index]) {
+	while SPACES.try_lock().unwrap().contains(&string[*index]) {
 		*index += 1;
 		if *index >= len {
 			return Err(());
@@ -148,7 +148,7 @@ fn canbe_ident_part (c: &char) -> bool {
 // 予約されたトークンの後に空白なしで連続して良い文字であるかどうかを判別する。
 fn can_follow_reserved(string: &Vec<char>, index: usize) -> bool {
 	if let Some(c) = string.get(index) {
-		if UNI_RESERVED.lock().unwrap().contains(c) || SPACES.lock().unwrap().contains(c) {
+		if UNI_RESERVED.try_lock().unwrap().contains(c) || SPACES.try_lock().unwrap().contains(c) {
 			return true;
 		}
 		return false;
@@ -184,7 +184,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	let lim = *index + 3;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
-		if TRI_OPS.lock().unwrap().contains(&slice.as_str()) || TRI_KEYWORDS.lock().unwrap().contains(&slice.as_str()) && can_follow_reserved(string, lim) {
+		if TRI_OPS.try_lock().unwrap().contains(&slice.as_str()) || TRI_KEYWORDS.try_lock().unwrap().contains(&slice.as_str()) && can_follow_reserved(string, lim) {
 			*index = lim;
 			return Some(slice);
 		}
@@ -194,7 +194,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	let lim = *index + 2;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..(*index+2)].iter());
-		if BI_OPS.lock().unwrap().contains(&slice.as_str()) || (slice == "if" && can_follow_reserved(string, lim))  {
+		if BI_OPS.try_lock().unwrap().contains(&slice.as_str()) || (slice == "if" && can_follow_reserved(string, lim))  {
 			*index = lim;
 			return Some(slice);
 		}
@@ -204,7 +204,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	if *index < len {
 		let c: char = string[*index];
 
-		if UNI_RESERVED.lock().unwrap().contains(&c) {
+		if UNI_RESERVED.try_lock().unwrap().contains(&c) {
 			*index += 1;
 			return Some(c.to_string());
 		}
@@ -275,7 +275,7 @@ pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
 }
 
 pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> TypeCell {
-	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
 
@@ -316,7 +316,7 @@ pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool
 }
 
 pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> Option<TypeCell> {
-	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.lock().unwrap().contains(&(*token_ptr).borrow().body.as_ref().unwrap().as_str()) {
+	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(*token_ptr).borrow().body.as_ref().unwrap().as_str()) {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
 
@@ -361,10 +361,10 @@ mod tests {
 
 	fn test_init(src: &str) {
 		let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string()+"\n").collect();
-		FILE_NAMES.lock().unwrap().push("test".to_string());
+		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
 		code.append(&mut src_);
-		CODES.lock().unwrap().push(code);
+		CODES.try_lock().unwrap().push(code);
 	}
 
 	#[test]

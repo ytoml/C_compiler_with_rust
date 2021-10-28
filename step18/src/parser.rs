@@ -77,14 +77,14 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
-			*LVAR_MAX_OFFSET.lock().unwrap() += 8; 
-			offset = *LVAR_MAX_OFFSET.lock().unwrap();
+			*LVAR_MAX_OFFSET.try_lock().unwrap() += 8; 
+			offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
 			not_found = true;
 		}
 	}
 
 	if not_found {
-		LOCALS.lock().unwrap().insert(name, (offset, typ.clone().unwrap())); 
+		LOCALS.try_lock().unwrap().insert(name, (offset, typ.clone().unwrap())); 
 	}
 	
 	Rc::new(RefCell::new(Node {kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
@@ -171,7 +171,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		let _ = expect_type(token_ptr); // 型宣言の読み込み
 		let ptr =  token_ptr.clone();
 		let func_name = expect_ident(token_ptr);
-		if ARGS_COUNTS.lock().unwrap().contains_key(&func_name) {
+		if ARGS_COUNTS.try_lock().unwrap().contains_key(&func_name) {
 			error_with_token!("{}: 重複した関数宣言です。", &*ptr.borrow(), func_name);
 		}
 		expect(token_ptr, "(");
@@ -179,7 +179,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		let args: Vec<Option<Rc<RefCell<Node>>>> = func_args(token_ptr);
 
 		// 引数の数をチェックするためにマップに保存
-		ARGS_COUNTS.lock().unwrap().insert(func_name.clone(), args.len());
+		ARGS_COUNTS.try_lock().unwrap().insert(func_name.clone(), args.len());
 		expect(token_ptr, ")");
 		
 
@@ -201,13 +201,13 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 				name: Some(func_name),
 				args: args,
 				stmts: Some(statements),
-				max_offset: Some(*LVAR_MAX_OFFSET.lock().unwrap()),
+				max_offset: Some(*LVAR_MAX_OFFSET.try_lock().unwrap()),
 				..Default::default()
 			}
 		));
 		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
-		LOCALS.lock().unwrap().clear();
-		*LVAR_MAX_OFFSET.lock().unwrap() = 0;
+		LOCALS.try_lock().unwrap().clear();
+		*LVAR_MAX_OFFSET.try_lock().unwrap() = 0;
 
 		globals.push(global);
 	}
@@ -671,9 +671,9 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
-			let declared: bool = ARGS_COUNTS.lock().unwrap().contains_key(&name);
+			let declared: bool = ARGS_COUNTS.try_lock().unwrap().contains_key(&name);
 			if declared  {
-				let argc = *ARGS_COUNTS.lock().unwrap().get(&name).unwrap();
+				let argc = *ARGS_COUNTS.try_lock().unwrap().get(&name).unwrap();
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 			}
 			new_func(name, args, ptr)
@@ -701,10 +701,10 @@ pub mod tests {
 
 	fn test_init(src: &str) {
 		let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string()+"\n").collect();
-		FILE_NAMES.lock().unwrap().push("test".to_string());
+		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
 		code.append(&mut src_);
-		CODES.lock().unwrap().push(code);
+		CODES.try_lock().unwrap().push(code);
 	}
 
 	fn search_tree(tree: &Rc<RefCell<Node>>) {
@@ -928,7 +928,7 @@ pub mod tests {
 	}
 
 	#[test]
-	fn block() {
+	fn btry_lock() {
 		let src: &str = "
 			for( i = 10; ; ) {i = i + 1;}
 			{}

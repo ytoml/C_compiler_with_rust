@@ -72,7 +72,7 @@ const RED: usize = 31;
 const LIGHTBLUE: usize = 36;
 pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize) -> ! {
 	// ファイル名には今のところこの関数でしかアクセスしないので、デッドロックの検査はしない
-	let file_name = &FILE_NAMES.lock().unwrap()[file_num];
+	let file_name = &FILE_NAMES.try_lock().unwrap()[file_num];
 
 	match CODES.try_lock() {
 		Ok(codes) => {

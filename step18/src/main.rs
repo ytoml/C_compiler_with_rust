@@ -41,7 +41,7 @@ fn main() {
 		}
 
 		// 最後に一気に書き込み
-		println!("{}", *ASM.lock().unwrap());
+		println!("{}", *ASM.try_lock().unwrap());
 
     } else {
 		// fileが指定されていない場合、exit
@@ -51,13 +51,13 @@ fn main() {
 
 // ファイルの情報を、グローバル変数の CODES と FILE_NAME に渡す
 fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
-	FILE_NAMES.lock().unwrap().push(file_name.into());
+	FILE_NAMES.try_lock().unwrap().push(file_name.into());
 	let mut code = vec!["".to_string()]; // コードの行の index を1始まりにするため空文字を入れておく
 	for line in reader.lines() {
 		// tokenizer の便利のため、各行の "\n" を復活させておく
 		code.push(line.unwrap()+"\n");
 	}
-	CODES.lock().unwrap().push(code);
+	CODES.try_lock().unwrap().push(code);
 }
 
 #[cfg(test)]
@@ -74,7 +74,7 @@ mod tests {
 		let f: File = File::open(path).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
 		code_load(reader,path);
-		println!("{:#?}", CODES.lock().unwrap());
-		println!("{:#?}", FILE_NAMES.lock().unwrap());
+		println!("{:#?}", CODES.try_lock().unwrap());
+		println!("{:#?}", FILE_NAMES.try_lock().unwrap());
 	}
 }
