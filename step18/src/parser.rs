@@ -930,7 +930,7 @@ pub mod tests {
 	}
 
 	#[test]
-	fn btry_lock() {
+	fn block() {
 		let src: &str = "
 			for( i = 10; ; ) {i = i + 1;}
 			{}
@@ -1046,7 +1046,9 @@ pub mod tests {
 	#[test]
 	fn addr_deref2() {
 		let src: &str = "
-			int x, y, z;
+			int x;
+			int *y;
+			int **z;
 			x = 3;
 			y = &x;
 			z = &y;
@@ -1169,24 +1171,39 @@ pub mod tests {
 				print_helper(x+y);
 				return x + y;
 			}
+			
+			int fib(int N) {
+				if (N <= 2) return 1;
+				return fib(N-1) + fib(N-2);
+			}
+			
 			int main() {
-				int i, j, k, sum, x, y, z;
-				i = 0;
-				j = 0;
-				k = 1;
-				sum = 0;
+				int i; i = 0;
+				int j; j = 0;
+				int k; k = 1;
+				int sum; sum = 0;
 				for (; i < 10; i+=i+1, j++) {
 					sum++;
 				}
-				while (j) {
+				print_helper(j);
+				print_helper(k);
+				while (j > 0, 0) {
 					j /= 2;
 					k <<= 1;
 				}
-				if (k) k--;
-				else k = 0;
-
-				func(x=1, (y=1, z=1));
-				return k;
+				if (1 && !(k/2)) k--;
+				else k = -1;
+			
+				int x, y, z;
+				func(x=1, (y=1, z=~1));
+			
+				x = 15 & 10;
+				x = (++x) + y;
+				int *p; p = &x; 
+				int **pp; pp = &p;
+				print_helper(z = fib(*&(**pp)));
+				func(getOne(), getTwo());
+				*x = 10;
 			}
 		";
 		test_init(src);

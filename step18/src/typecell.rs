@@ -11,7 +11,7 @@ pub enum Type {
 }
 
 impl Display for Type {
-	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		let s: &str;
 		match self {
 			Type::Invalid => { s = "invalid"; }
@@ -39,7 +39,7 @@ impl TypeCell {
 				let (p, typ) = ptr.borrow_mut().get_ptr_chains();
 				(p+1, typ)
 			}
-			None => (0, self.typ.clone())
+			None => (1, self.typ.clone())
 		}
 	}
 }
@@ -47,6 +47,21 @@ impl TypeCell {
 impl Default for TypeCell {
 	fn default() -> Self {
 		TypeCell {typ: Type::Invalid, ptr_to: None}
+	}
+}
+
+impl Display for TypeCell {
+	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+		let s: &str;
+		match self.typ {
+			Type::Invalid => { s = "invalid"; }
+			Type::Int => { s = "int"; }
+			Type::Ptr => {
+				let (p, typ) = self.ptr_to.as_ref().unwrap().borrow_mut().get_ptr_chains();
+				return write!(f, "{}-chained pointer to {}", p, typ);
+			}
+		}
+		write!(f, "{}", s)
 	}
 }
 

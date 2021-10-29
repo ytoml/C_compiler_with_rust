@@ -7,7 +7,8 @@ use once_cell::sync::Lazy;
 use crate::{
 	error_with_node,
 	exit_eprintln,
-	node::{Node, Nodekind}
+	node::{Node, Nodekind},
+	typecell::Type
 };
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
@@ -170,7 +171,14 @@ pub fn gen_expr(node: &Rc<RefCell<Node>>) {
 		}
 		Nodekind::DerefNd => {
 			// gen_expr内で *var の var のアドレスをスタックにプッシュしたことになる
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			// DerefNd は生成過程で必ず left を持つことが保証されるが、left.typ が None の可能性がある( a+= 1; などで生成される無名変数)
+			let left = &node.borrow().left;
+			if let Some(typ) = left.as_ref().unwrap().borrow().typ.as_ref() {
+				if typ.typ != Type::Ptr {
+					error_with_node!("ポインタではないため、参照を外すことができません。", &(left.as_ref().unwrap()).borrow());
+				}
+			}
+			gen_expr(left.as_ref().unwrap());
 			let mut _asm = ASM.try_lock().unwrap();
 			*_asm += "	pop rax\n"; 
 			*_asm += "	mov rax, [rax]\n";
