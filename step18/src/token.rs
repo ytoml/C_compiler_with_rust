@@ -36,6 +36,7 @@ impl Display for Tokenkind {
 }
 
 // Rc<RefCell<T>>により共有可能な参照(ポインタ風)を持たせる
+#[derive(Debug)]
 pub struct Token {
 	pub kind: Tokenkind,
 	pub val: Option<i32>,  
