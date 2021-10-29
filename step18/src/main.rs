@@ -14,7 +14,7 @@ mod token;
 mod tokenizer;
 mod typecell; // type が予約語だったので typecell とした
 mod utils;
-use generator::{gen, ASM};
+use generator::{gen_expr, ASM};
 use options::Opts;
 use parser::program;
 use token::Token;
@@ -37,7 +37,7 @@ fn main() {
 
 		// 構文木が複数(関数の数)生成されているはずなのでそれぞれについて回す
 		for node_ptr in node_heads {
-			gen(&node_ptr);
+			gen_expr(&node_ptr);
 		}
 
 		// 最後に一気に書き込み
