@@ -9,9 +9,9 @@ use clap::Clap;
 )]
 
 pub struct Opts {
-    // verbose level
-    #[clap(short, long)]
-    verbose: bool,
+    // // verbose level
+    // #[clap(short, long)]
+    // verbose: bool,
 
     // 入力ファイル名
     #[clap(name = "FILE")]
