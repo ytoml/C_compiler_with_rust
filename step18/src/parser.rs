@@ -84,7 +84,12 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option
 	}
 
 	if not_found {
-		locals.insert(name, (offset, typ.clone().unwrap())); 
+		// typ に渡されるのは Option だが LOCALS に保存するのは生の TypeCell なので let Some で分岐
+		if let Some(typ_) = typ.clone() {
+			locals.insert(name, (offset, typ_)); 
+		} else {
+			locals.insert(name, (offset, TypeCell::default()));
+		}
 	}
 	
 	Rc::new(RefCell::new(Node {kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
@@ -96,7 +101,7 @@ fn new_lvar(name: impl Into<String>, token_ptr: Rc<RefCell<Token>>, typ: TypeCel
 
 macro_rules! tmp_lvar {
 	() => {
-		_lvar("", None, Some(TypeCell::default()))
+		_lvar("", None, None)
 	};
 }
 

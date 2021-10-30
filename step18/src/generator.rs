@@ -1,4 +1,5 @@
-use std::cell::RefCell;
+use std::borrow::Borrow;
+use std::{cell::RefCell, convert::TryInto};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -25,12 +26,12 @@ static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rd
 
 // CTR_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
 fn get_count() -> u32 {
-	*CTR_COUNT.try_lock().unwrap() += 1;
-	*CTR_COUNT.try_lock().unwrap()
+	let mut count = CTR_COUNT.try_lock().unwrap();
+	*count += 1;
+	*count
 }
 
 pub fn gen_expr(node: &Rc<RefCell<Node>>) {
-	// 葉にきた、もしくは葉の親のところで左辺値にに何かしらを代入する操作がきた場合の処理
 	match (**node).borrow().kind {
 		Nodekind::FuncDecNd => {
 			{
@@ -170,15 +171,9 @@ pub fn gen_expr(node: &Rc<RefCell<Node>>) {
 			return;
 		}
 		Nodekind::DerefNd => {
-			// gen_expr内で *var の var のアドレスをスタックにプッシュしたことになる
-			// DerefNd は生成過程で必ず left を持つことが保証されるが、left.typ が None の可能性がある( a+= 1; などで生成される無名変数)
-			let left = &node.borrow().left;
-			if let Some(typ) = left.as_ref().unwrap().borrow().typ.as_ref() {
-				if typ.typ != Type::Ptr {
-					error_with_node!("ポインタではないため、参照を外すことができません。", &(left.as_ref().unwrap()).borrow());
-				}
-			}
-			gen_expr(left.as_ref().unwrap());
+			check_can_deref(node);
+			// gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
+			gen_expr((**node).borrow().left.as_ref().unwrap());
 			let mut _asm = ASM.try_lock().unwrap();
 			*_asm += "	pop rax\n"; 
 			*_asm += "	mov rax, [rax]\n";
@@ -461,13 +456,28 @@ fn gen_addr(node: &Rc<RefCell<Node>>) {
 			*_asm += "	push rax\n";
 		}
 		Nodekind::DerefNd => {
-			// &* は単に打ち消せば良く、node を無視して gen_expr(node->left) する
+			// *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
+			// 今はここが計算式になることをサポートしない(以下の _ => {} での左辺値エラーにたどり着くはず)
+			check_can_deref(node);
 			gen_expr((**node).borrow().left.as_ref().unwrap());
 		}
 		_ => {
 			error_with_node!("左辺値が変数ではありません。", &*(**node).borrow());
 		}
 	}
+}
+
+fn check_can_deref(node: &Rc<RefCell<Node>>) {
+	// *expr において expr が単なる変数(すなわち node.left が LvarNd であれば、その Type が Ptr でない場合にはエラーを吐く)
+	// これは int *p = &x; **p = 10; みたいなパターンを防げないことに注意
+	let left = &(**node).borrow().left;
+	if let Some(typ) = (**left.as_ref().unwrap()).borrow().typ.as_ref() {
+		if typ.typ != Type::Ptr {
+			error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &(**left.as_ref().unwrap()).borrow(), typ.typ);
+		}
+	}
+
+	()
 }
 
 // 関数呼び出し時の引数の処理を行う関数
