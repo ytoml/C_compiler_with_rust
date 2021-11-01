@@ -279,17 +279,28 @@ pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> TypeCell {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
 
-		let mut cell: TypeCell = match ptr.borrow().body.as_ref().unwrap().as_str() {
-			"int" => { TypeCell::new(Type::Int) }
+		let end_type: Type = match ptr.borrow().body.as_ref().unwrap().as_str() {
+			"int" => { Type::Int }
 			_ => { panic!("invalid type annotation is now treated as type."); }
 		};
 
+		let mut chains = 0;
 		while consume(token_ptr, "*") {
-			cell = TypeCell { typ: Type::Ptr, ptr_to: Some(Rc::new(RefCell::new(cell)))};
+			chains += 1;
 		}
 
-		cell
-
+		if chains > 0 {
+			TypeCell {
+				typ: Type::Ptr,
+				chains: chains,
+				ptr_end: Some(end_type),
+			}
+		} else {
+			TypeCell {
+				typ: end_type,
+				..Default::default()
+			}
+		}
 	} else {
 		error_with_token!("型の指定が必要です。", &*token_ptr.borrow());
 	}
@@ -320,14 +331,28 @@ pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> Option<TypeCell> {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
 
-		let mut cell: TypeCell = match ptr.borrow().body.as_ref().unwrap().as_str() {
-			"int" => { TypeCell::new(Type::Int) }
+		let end_type: Type = match ptr.borrow().body.as_ref().unwrap().as_str() {
+			"int" => { Type::Int }
 			_ => { panic!("invalid type annotation is now treated as type."); }
 		};
 
+		let mut chains = 0;
 		while consume(token_ptr, "*") {
-			cell = TypeCell { typ: Type::Ptr, ptr_to: Some(Rc::new(RefCell::new(cell)))};
+			chains += 1;
 		}
+
+		let cell = if chains > 0 {
+			TypeCell {
+				typ: Type::Ptr,
+				chains: chains,
+				ptr_end: Some(end_type),
+			}
+		} else {
+			TypeCell {
+				typ: end_type,
+				..Default::default()
+			}
+		};
 
 		Some(cell)
 
