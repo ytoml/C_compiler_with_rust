@@ -8,7 +8,7 @@ use crate::{
 	utils::error_at,
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tokenkind {
 	DefaultTk,	// Default用のkind
 	HeadTk,		// 先頭にのみ使用するkind

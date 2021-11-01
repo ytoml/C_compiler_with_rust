@@ -7,7 +7,7 @@ use crate::{
 	typecell::TypeCell,
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Nodekind {
 	DefaultNd,	// defalut
 	AddNd,		// '+'

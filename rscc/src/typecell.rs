@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Type {
 	Invalid, // デフォルトや無名ノードに割り当てる
 	Int,

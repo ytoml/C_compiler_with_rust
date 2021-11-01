@@ -10,7 +10,7 @@ use crate::{
 	node::{Node, Nodekind},
 	token::{Token, Tokenkind},
 	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
-	typecell::TypeCell,
+	typecell::{Type, TypeCell},
 	exit_eprintln, error_with_token,
 };
 
@@ -127,6 +127,26 @@ fn new_ctrl(kind: Nodekind,
 fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	Rc::new(RefCell::new(Node{kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ..Default::default()}))
 }
+
+// TODO
+// 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
+fn confirm_type(node: &Rc<RefCell<Node>>) {
+	if let Some(_) = &node.borrow().typ { return; }
+
+	if let Some(n) = &node.borrow().left { confirm_type(n); }
+	if let Some(n) = &node.borrow().right { confirm_type(n); }
+
+	let kind: Nodekind = node.borrow().kind;
+	match kind {
+		Nodekind::NumNd => { let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int)); }
+		Nodekind::AddrNd => {
+			// TODO: left の型に対するポインタの TypeCell を生成して typ.insert
+		}
+		_ => {}
+	}
+}
+
+
 
 // 生成規則:
 // type = "int"
