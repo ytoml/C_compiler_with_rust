@@ -11,7 +11,7 @@ use crate::{
 	token::{Token, Tokenkind},
 	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
 	typecell::{Type, TypeCell},
-	exit_eprintln, error_with_token,
+	exit_eprintln, error_with_token, error_with_node
 };
 
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -140,12 +140,43 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 	match kind {
 		Nodekind::NumNd => { let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int)); }
 		Nodekind::AddrNd => {
-			// TODO: left の型に対するポインタの TypeCell を生成して typ.insert
+			// & は変数やそのポインタにのみ可能であるため、このタイミングで left をチェックして弾くことができる
+			let mut node = node.borrow_mut();
+			let typ: TypeCell;
+			{
+				let left = node.left.as_ref().unwrap().borrow();
+				if ![Nodekind::DerefNd, Nodekind::LvarNd].contains(&left.kind) {
+					error_with_node!("\"&\" では変数として宣言された値のみ参照ができます。", &node);
+				}
+				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			let ptr_end = if typ.typ == Type::Ptr { typ.ptr_end.clone() } else { Some(typ.typ) };
+			let _ = node.typ.insert(
+				TypeCell { typ: Type::Ptr, ptr_end: ptr_end, chains: typ.chains+1 }
+			);
+		}
+		Nodekind::DerefNd => {
+			let mut node = node.borrow_mut();
+			let typ: TypeCell;
+			{
+				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			if let Some(end) = &typ.ptr_end {
+				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければポインタになることに注意
+				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), Type::Ptr) } else { (None, typ.typ) };
+				let _ = node.typ.insert(
+					TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1 }
+				);
+			} else {
+				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
+			}
+		}
+		Nodekind::AddNd | Nodekind::SubNd => {
+			// TODO: ポインタ演算のキャスト処理
 		}
 		_ => {}
 	}
 }
-
 
 
 // 生成規則:
