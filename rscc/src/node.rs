@@ -74,13 +74,14 @@ pub struct Node {
 
 	// 関数宣言時に使用
 	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
-	pub max_offset: Option<usize>
+	pub max_offset: Option<usize>,
+	pub ret_typ: Option<TypeCell>,
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None, ret_typ: None }
 	}
 }
 
@@ -125,6 +126,7 @@ impl Display for Node {
 
 		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
 		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
+		if let Some(e) = self.ret_typ.as_ref() {s = format!("{}return type: {}\n", s, e);}
 
 		write!(f, "{}", s)
 	}

@@ -14,13 +14,17 @@ use crate::{
 	exit_eprintln, error_with_token, error_with_node
 };
 
+/// @static
+/// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
+/// LOCALS: ローカル変数名 -> (引数の数, 戻り値の型)
+/// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static ARGS_COUNTS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static DECLARED_FUNCS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 // 2つ子を持つ汎用ノード
 fn _binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
-	Rc::new(RefCell::new(Node {kind: kind, token: token, left: Some(left), right: Some(right), .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), right: Some(right), .. Default::default()}))
 }
 
 fn new_binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
@@ -35,7 +39,7 @@ macro_rules! tmp_binary {
 
 // 1つ子を持つ汎用ノード
 fn _unary(kind: Nodekind, left: Rc<RefCell<Node>>, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
-	Rc::new(RefCell::new(Node {kind: kind, token: token, left: Some(left), .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), .. Default::default()}))
 }
 
 fn new_unary(kind: Nodekind, left: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
@@ -50,7 +54,7 @@ macro_rules! tmp_unary {
 
 // 数字に対応するノード
 fn _num(val: i32, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
-	Rc::new(RefCell::new(Node {kind: Nodekind::NumNd, token: token, val: Some(val), .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::NumNd, token: token, val: Some(val), .. Default::default()}))
 }
 
 fn new_num(val: i32, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
@@ -92,7 +96,7 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option
 		}
 	}
 	
-	Rc::new(RefCell::new(Node {kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
 }
 
 fn new_lvar(name: impl Into<String>, token_ptr: Rc<RefCell<Token>>, typ: TypeCell) -> Rc<RefCell<Node>> {
@@ -107,7 +111,7 @@ macro_rules! tmp_lvar {
 
 // ブロックのノード
 fn new_block(children: Vec<Option<Rc<RefCell<Node>>>>) -> Rc<RefCell<Node>> {
-	Rc::new(RefCell::new(Node {kind: Nodekind::BlockNd, children: children, ..Default::default()}))
+	Rc::new(RefCell::new(Node { kind: Nodekind::BlockNd, children: children, ..Default::default()}))
 }
 
 // 制御構文のためのノード
@@ -120,12 +124,12 @@ fn new_ctrl(kind: Nodekind,
 	if ![Nodekind::IfNd, Nodekind::ForNd, Nodekind::WhileNd].contains(&kind){
 		exit_eprintln!("new_ctrl: 制御構文ではありません。");
 	}
-	Rc::new(RefCell::new(Node{kind: kind, init: init, enter: enter, routine: routine, branch: branch, els: els, ..Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: kind, init: init, enter: enter, routine: routine, branch: branch, els: els, ..Default::default()}))
 }
 
 // 関数呼び出しのノード
-fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	Rc::new(RefCell::new(Node{kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ..Default::default()}))
+fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, ret_typ: TypeCell, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
 }
 
 // TODO
@@ -188,6 +192,12 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains }
 			);
 		}
+		Nodekind::FuncNd => {
+			// FuncNd には ret_typ があるが、これを typ にも適用することで自然に型を親ノードに伝播できる
+			let mut node = node.borrow_mut();
+			let typ =node.ret_typ.clone().unwrap();
+			let _ = node.typ.insert(typ);
+		}
 		_ => {}
 	}
 }
@@ -237,20 +247,16 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
 		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
 
-		let _ = expect_type(token_ptr); // 型宣言の読み込み
+		let ret_typ = expect_type(token_ptr); // 型宣言の読み込み
 		let ptr =  token_ptr.clone();
 		let func_name = expect_ident(token_ptr);
-		if ARGS_COUNTS.try_lock().unwrap().contains_key(&func_name) {
+		if DECLARED_FUNCS.try_lock().unwrap().contains_key(&func_name) {
 			error_with_token!("{}: 重複した関数宣言です。", &*ptr.borrow(), func_name);
 		}
 		expect(token_ptr, "(");
-		// 引数を6つまでサポート
 		let args: Vec<Option<Rc<RefCell<Node>>>> = func_args(token_ptr);
-
-		// 引数の数をチェックするためにマップに保存
-		ARGS_COUNTS.try_lock().unwrap().insert(func_name.clone(), args.len());
+		DECLARED_FUNCS.try_lock().unwrap().insert(func_name.clone(), (args.len(), ret_typ.clone()));
 		expect(token_ptr, ")");
-		
 
 		let mut has_return : bool = false;
 		expect(token_ptr, "{");
@@ -271,6 +277,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 				args: args,
 				stmts: Some(statements),
 				max_offset: Some(*LVAR_MAX_OFFSET.try_lock().unwrap()),
+				ret_typ: Some(ret_typ),
 				..Default::default()
 			}
 		));
@@ -424,7 +431,7 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "=") {
-		new_binary(Nodekind::AssignNd, node_ptr,  assign(token_ptr), ptr)	
+		assign_op(Nodekind::AssignNd, node_ptr,  assign(token_ptr), ptr)	
 	} else if consume(token_ptr, "+=") {
 		assign_op(Nodekind::AddNd, node_ptr, assign(token_ptr), ptr)
 	} else if consume(token_ptr, "-=") {
@@ -606,6 +613,31 @@ pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
+pub fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	confirm_type(&left);
+	confirm_type(&right);
+	eprintln!("{}", left.borrow());
+	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+
+	if left_is_ptr && right_is_ptr { error_with_node!("ポインタ演算は整数型との加算か、ポインタ同士の引き算のみ可能です。", &right.borrow()); }
+
+	if !left_is_ptr && !right_is_ptr {
+		new_binary(Nodekind::AddNd, left, right, token_ptr)
+	} else {
+		// num + ptr の場合には ptr + num として扱うべく左右を入れ替える
+		if !left_is_ptr && right_is_ptr {
+			let tmp = left;
+			left = right;
+			right = tmp;
+		}
+		let size = right.borrow().typ.as_ref().unwrap().typ.bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+
+		new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr)
+	}
+}
+
 // 生成規則:
 // add = mul ("+" mul | "-" mul)*
 pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
@@ -614,7 +646,7 @@ pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	loop {
 		let ptr = token_ptr.clone();
 		if consume(token_ptr, "+") {
-			node_ptr = new_binary(Nodekind::AddNd, node_ptr, mul(token_ptr), ptr);
+			node_ptr = new_add( node_ptr, mul(token_ptr), ptr);
 
 		} else if consume(token_ptr, "-") {
 			node_ptr = new_binary(Nodekind::SubNd, node_ptr, mul(token_ptr), ptr);
@@ -726,7 +758,7 @@ fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> 
 	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	if !consume(token_ptr, ")") {
 		let arg = assign(token_ptr);
-		// confirm_type(&arg);
+		confirm_type(&arg);
 		args.push(Some(arg));
 
 		loop {
@@ -735,7 +767,7 @@ fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> 
 				break;
 			}
 			let arg = assign(token_ptr);
-			// confirm_type(&arg);
+			confirm_type(&arg);
 			args.push(Some(arg));
 		}
 	}
@@ -760,13 +792,16 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
-			let declared: bool = ARGS_COUNTS.try_lock().unwrap().contains_key(&name);
+			let declared: bool = DECLARED_FUNCS.try_lock().unwrap().contains_key(&name);
 			if declared  {
-				let argc = *ARGS_COUNTS.try_lock().unwrap().get(&name).unwrap();
+				let (argc, ret_typ) = DECLARED_FUNCS.try_lock().unwrap().get(&name).unwrap().clone();
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
+				new_func(name, args, ret_typ, ptr)
+			} else {
+				new_func(name, args, TypeCell::new(Type::Int), ptr)
 			}
-			new_func(name, args, ptr)
 		} else {
+			// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
 			let typ: TypeCell;
 			{
 				let locals = LOCALS.try_lock().unwrap();
@@ -1292,8 +1327,6 @@ pub mod tests {
 				int *p; p = &x; 
 				int **pp; pp = &p;
 				print_helper(z = fib(*&(**pp)));
-				func(getOne(), getTwo());
-				*x = 10;
 			}
 		";
 		test_init(src);

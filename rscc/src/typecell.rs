@@ -9,9 +9,9 @@ pub enum Type {
 }
 
 impl Type {
-	fn bytes(&self) -> usize {
+	pub fn bytes(&self) -> usize {
 		match self {
-			Type::Invalid => { 0 }
+			Type::Invalid => { panic!("cannot extract size of invalid type."); }
 			Type::Int => { 4 }
 			Type::Ptr => { 8 }
 		}
