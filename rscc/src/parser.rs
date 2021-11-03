@@ -173,6 +173,20 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 		}
 		Nodekind::AddNd | Nodekind::SubNd => {
 			// TODO: ポインタ演算のキャスト処理
+			// let mut node = node;
+		}
+		// Nodekind::MulNd => {}
+		// Nodekind::EqNd | Nodekind::NEqNd | Nodekind::GThanNd | Nodekind::GEqNd => {}
+		Nodekind::CommaNd => {
+			// x, y の評価は y になるため、型も y のものを引き継ぐ
+			let mut node = node.borrow_mut();
+			let typ: TypeCell;
+			{
+				typ = node.right.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			let _ = node.typ.insert(
+				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains }
+			);
 		}
 		_ => {}
 	}
