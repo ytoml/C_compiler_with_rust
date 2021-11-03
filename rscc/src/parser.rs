@@ -552,7 +552,7 @@ fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // equality = relational ("==" relational | "!=" relational)?
-pub fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let node_ptr: Rc<RefCell<Node>> = relational(token_ptr);
 	let ptr = token_ptr.clone();
 
@@ -594,7 +594,7 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // shift = add ("<<" add | ">>" add)*
-pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr: Rc<RefCell<Node>> = add(token_ptr);
 
 	loop {
@@ -613,7 +613,7 @@ pub fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-pub fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	confirm_type(&left);
 	confirm_type(&right);
 	eprintln!("{}", left.borrow());
@@ -640,7 +640,7 @@ pub fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_
 
 // 生成規則:
 // add = mul ("+" mul | "-" mul)*
-pub fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr: Rc<RefCell<Node>> = mul(token_ptr);
 
 	loop {
