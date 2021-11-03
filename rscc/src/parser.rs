@@ -185,7 +185,19 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::BitNotNd => {
-
+			// ポインタの bitnot は不可
+			let mut node = node.borrow_mut();
+			let typ: TypeCell;
+			{
+				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			if typ.ptr_end.is_some() {
+				error_with_node!("ポインタのビット反転はできません。", &node);
+			}
+			let _ = node.typ.insert(typ);
+		} 
+		Nodekind::LogNotNd | Nodekind::LogAndNd | Nodekind::LogOrNd => {
+			let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int));
 		}
 		// Nodekind::EqNd | Nodekind::NEqNd | Nodekind::GThanNd | Nodekind::GEqNd => {}
 		Nodekind::CommaNd => {
