@@ -175,11 +175,18 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
 			}
 		}
-		Nodekind::AddNd | Nodekind::SubNd => {
-			// TODO: ポインタ演算のキャスト処理
-			// let mut node = node;
+		Nodekind::AddNd | Nodekind::SubNd | Nodekind::MulNd | Nodekind::DivNd | Nodekind::ModNd |
+		Nodekind::BitAndNd | Nodekind::BitOrNd | Nodekind::BitXorNd => {
+			// 計算式における暗黙のキャストを行う
+			let mut node = node.borrow_mut();
+			let left = node.left.as_ref().unwrap();
+			let right = node.right.as_ref().unwrap();
+			let typ = get_common_type(left, right);
+			let _ = node.typ.insert(typ);
 		}
-		// Nodekind::MulNd => {}
+		Nodekind::BitNotNd => {
+
+		}
 		// Nodekind::EqNd | Nodekind::NEqNd | Nodekind::GThanNd | Nodekind::GEqNd => {}
 		Nodekind::CommaNd => {
 			// x, y の評価は y になるため、型も y のものを引き継ぐ
@@ -199,6 +206,17 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 			let _ = node.typ.insert(typ);
 		}
 		_ => {}
+	}
+}
+
+fn get_common_type(left: &Rc<RefCell<Node>>, right: &Rc<RefCell<Node>>) -> TypeCell {
+	// 現在はポインタか int しかサポートされていないためベタ打ち
+	let _ = right;
+	let left_is_ptr = left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+	if left_is_ptr {
+		left.borrow().typ.clone().unwrap()
+	} else {
+		TypeCell::new(Type::Int)
 	}
 }
 
@@ -464,8 +482,10 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, 
 	confirm_type(&left);
 	confirm_type(&right);
 
-	// プレーンな "=" の場合は単に通常通りのノード作成で良い
+	let typ = left.borrow().typ.as_ref().unwrap().clone();
+	let assign_ = 
 	if kind == Nodekind::AssignNd {
+		// プレーンな "=" の場合は単に通常通りのノード作成で良い
 		new_binary(Nodekind::AssignNd, left,  right, token_ptr)
 	} else {
 		// tmp として通常は認められない無名の変数を使うことで重複を避ける
@@ -482,7 +502,10 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, 
 		);
 
 		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
-	}
+	};
+	let _ = assign_.borrow_mut().typ.insert(typ);
+
+	assign_
 }
 
 // 生成規則:
@@ -616,40 +639,75 @@ fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	confirm_type(&left);
 	confirm_type(&right);
-	eprintln!("{}", left.borrow());
+
 	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 
-	if left_is_ptr && right_is_ptr { error_with_node!("ポインタ演算は整数型との加算か、ポインタ同士の引き算のみ可能です。", &right.borrow()); }
+	if left_is_ptr && right_is_ptr { error_with_token!("ポインタ演算は整数型との加算か、ポインタ同士の引き算のみ可能です。", &token_ptr.borrow()); }
 
 	if !left_is_ptr && !right_is_ptr {
 		new_binary(Nodekind::AddNd, left, right, token_ptr)
 	} else {
 		// num + ptr の場合には ptr + num として扱うべく左右を入れ替える
-		if !left_is_ptr && right_is_ptr {
+		if !left_is_ptr {
 			let tmp = left;
 			left = right;
 			right = tmp;
 		}
-		let size = right.borrow().typ.as_ref().unwrap().typ.bytes() as i32;
-		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
 
-		new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr)
+		let typ = left.borrow().typ.as_ref().unwrap().clone();
+		let size = typ.typ.bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		let add_ = new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr);
+		let _ = add_.borrow_mut().typ.insert(typ);
+		add_
 	}
+}
+
+fn new_sub(left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+	confirm_type(&left);
+	confirm_type(&right);
+	eprintln!("{}", left.borrow());
+	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+
+	let typ;
+	let sub_ = 
+	if !left_is_ptr && !right_is_ptr { 
+		return new_binary(Nodekind::SubNd, left, right, token_ptr);
+
+	} else if left_is_ptr && right_is_ptr {
+		// ptr - ptr はそれが変数何個分のオフセットに相当するかを計算する
+		let size = right.borrow().typ.as_ref().unwrap().typ.bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::SubNd, left, right);
+		typ = TypeCell::new(Type::Int);
+		new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(size), token_ptr)
+
+	} else {
+		// num - ptr は invalid
+		if !left_is_ptr { error_with_token!("整数型の値からポインタを引くことはできません。", &token_ptr.borrow()); }
+
+		typ = left.borrow().typ.as_ref().unwrap().clone();
+		let size = typ.typ.bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		new_binary(Nodekind::SubNd, left, pointer_offset, token_ptr)
+	};
+	let _ = sub_.borrow_mut().typ.insert(typ);
+
+	sub_
 }
 
 // 生成規則:
 // add = mul ("+" mul | "-" mul)*
 fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let mut node_ptr: Rc<RefCell<Node>> = mul(token_ptr);
-
 	loop {
 		let ptr = token_ptr.clone();
 		if consume(token_ptr, "+") {
 			node_ptr = new_add( node_ptr, mul(token_ptr), ptr);
 
 		} else if consume(token_ptr, "-") {
-			node_ptr = new_binary(Nodekind::SubNd, node_ptr, mul(token_ptr), ptr);
+			node_ptr = new_sub(node_ptr, mul(token_ptr), ptr);
 
 		} else {
 			break;
@@ -907,6 +965,8 @@ pub mod tests {
 	#[test]
 	fn bitops() {
 		let src: &str = "
+			int x, z;
+			int* y;
 			2 + (3 + 5) * 6;
 			1 ^ 2 | 2 != 3 / 2;
 			1 + -1 ^ 2;
