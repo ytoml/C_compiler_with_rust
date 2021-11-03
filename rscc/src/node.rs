@@ -31,9 +31,7 @@ pub enum Nodekind {
 	DerefNd,	// アドレスの値を読む(*)
 	EqNd,		// "=="
 	NEqNd,		// "!="
-	GThanNd,	// '>'
-	GEqNd,		// ">="
-	LThanNd,	// '<'
+	LThanNd,	// '<' // '>' や ">=" はパース時に構文木の左右を入れ替えることで調整
 	LEqNd,		// "<="
 	IfNd,		// "if"
 	ForNd,		// "for"

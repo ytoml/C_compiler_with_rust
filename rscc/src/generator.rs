@@ -425,16 +425,6 @@ pub fn gen_expr(node: &Rc<RefCell<Node>>) {
 			*_asm += "	setle al\n";
 			*_asm += "	movzb rax, al\n";
 		}
-		Nodekind::GThanNd => {
-			*_asm += "	cmp rdi, rax\n";
-			*_asm += "	setl al\n";
-			*_asm += "	movzb rax, al\n";
-		}
-		Nodekind::GEqNd => {
-			*_asm += "	cmp rdi, rax\n";
-			*_asm += "	setle al\n";
-			*_asm += "	movzb rax, al\n";
-		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
 			error_with_node!("不正な Nodekind です。", &*(**node).borrow());

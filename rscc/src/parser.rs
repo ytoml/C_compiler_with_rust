@@ -561,10 +561,10 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			node_ptr = new_binary(Nodekind::LEqNd, node_ptr, shift(token_ptr), ptr);
 
 		} else if consume(token_ptr, ">") {
-			node_ptr = new_binary(Nodekind::GThanNd, node_ptr, shift(token_ptr), ptr);
+			node_ptr = new_binary(Nodekind::LThanNd, shift(token_ptr), node_ptr, ptr);
 
 		} else if consume(token_ptr, ">=") {
-			node_ptr = new_binary(Nodekind::GEqNd, node_ptr, shift(token_ptr), ptr);
+			node_ptr = new_binary(Nodekind::LEqNd, shift(token_ptr), node_ptr, ptr);
 
 		} else{
 			break;
