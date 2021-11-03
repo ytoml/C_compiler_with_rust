@@ -195,7 +195,19 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 				error_with_node!("ポインタのビット反転はできません。", &node);
 			}
 			let _ = node.typ.insert(typ);
-		} 
+		}
+		Nodekind::LShiftNd | Nodekind::RShiftNd => {
+			// ポインタの shift は不可
+			let mut node = node.borrow_mut();
+			let typ: TypeCell;
+			{
+				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			if typ.ptr_end.is_some() {
+				error_with_node!("ポインタのシフトはできません。", &node);
+			}
+			let _ = node.typ.insert(typ);
+		}
 		Nodekind::LogNotNd | Nodekind::LogAndNd | Nodekind::LogOrNd => {
 			let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int));
 		}
@@ -494,6 +506,7 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, 
 	confirm_type(&left);
 	confirm_type(&right);
 
+	// この式全体の評価値は left (a += b の a) の型とする
 	let typ = left.borrow().typ.as_ref().unwrap().clone();
 	let assign_ = 
 	if kind == Nodekind::AssignNd {
@@ -507,10 +520,15 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, 
 			tmp_unary!(Nodekind::AddrNd, left)
 		);
 
+		// ポインタ等の演算チェック: *tmp op b に confirm_type を適用
+		let tmp_ = tmp_unary!(Nodekind::DerefNd, tmp_lvar!());
+		let _ = tmp_.borrow_mut().typ.insert(typ.clone());
+		let op_ = new_binary(kind, tmp_, right, token_ptr.clone());
+		confirm_type(&op_);
 		let expr_right = tmp_binary!(
 			Nodekind::AssignNd,
 			tmp_unary!(Nodekind::DerefNd, tmp_lvar!()),
-			tmp_binary!(kind, tmp_unary!(Nodekind::DerefNd, tmp_lvar!()), right)
+			op_
 		);
 
 		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
@@ -679,7 +697,6 @@ fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr:
 fn new_sub(left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	confirm_type(&left);
 	confirm_type(&right);
-	eprintln!("{}", left.borrow());
 	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 
