@@ -370,6 +370,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		let routine: Option<Rc<RefCell<Node>>> = 
 		if consume(token_ptr, ")") {None} else {
 			let routine_ = Some(expr(token_ptr));
+			// confirm_type(&routine_.as_ref().unwrap());
 			expect(token_ptr, ")");
 			routine_
 		};
@@ -385,6 +386,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			tmp_num!(0)
 		} else {
 			let left_: Rc<RefCell<Node>> = expr(token_ptr);
+			confirm_type(&left_);
 			expect(token_ptr, ";");
 			left_
 		};
@@ -451,20 +453,29 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 // a += b; -->  tmp = &a, *tmp = *tmp + b;
 // AssignAddNd 的な Nodekind を導入して generator で add [a], b となるように直接処理する手もある
 fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	// tmp として通常は認められない無名の変数を使うことで重複を避ける
-	let expr_left = tmp_binary!(
-		Nodekind::AssignNd,
-		tmp_lvar!(),
-		tmp_unary!(Nodekind::AddrNd, left)
-	);
+	// 左右の型を確定させておく
+	confirm_type(&left);
+	confirm_type(&right);
 
-	let expr_right = tmp_binary!(
-		Nodekind::AssignNd,
-		tmp_unary!(Nodekind::DerefNd, tmp_lvar!()),
-		tmp_binary!(kind, tmp_unary!(Nodekind::DerefNd, tmp_lvar!()), right)
-	);
+	// プレーンな "=" の場合は単に通常通りのノード作成で良い
+	if kind == Nodekind::AssignNd {
+		new_binary(Nodekind::AssignNd, left,  right, token_ptr)
+	} else {
+		// tmp として通常は認められない無名の変数を使うことで重複を避ける
+		let expr_left = tmp_binary!(
+			Nodekind::AssignNd,
+			tmp_lvar!(),
+			tmp_unary!(Nodekind::AddrNd, left)
+		);
 
-	new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
+		let expr_right = tmp_binary!(
+			Nodekind::AssignNd,
+			tmp_unary!(Nodekind::DerefNd, tmp_lvar!()),
+			tmp_binary!(kind, tmp_unary!(Nodekind::DerefNd, tmp_lvar!()), right)
+		);
+
+		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
+	}
 }
 
 // 生成規則:
@@ -654,9 +665,13 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else if consume(token_ptr, "!") {
 		new_unary(Nodekind::LogNotNd, unary(token_ptr), ptr)
 	} else if consume(token_ptr, "*") {
-		new_unary(Nodekind::DerefNd, unary(token_ptr), ptr)
+		let node_ptr = unary(token_ptr);
+		// confirm_type(&node_ptr);
+		new_unary(Nodekind::DerefNd, node_ptr, ptr)
 	} else if consume(token_ptr, "&") {
-		new_unary(Nodekind::AddrNd, unary(token_ptr), ptr)
+		let node_ptr = unary(token_ptr);
+		// confirm_type(&node_ptr);
+		new_unary(Nodekind::AddrNd, node_ptr, ptr)
 	} else if consume(token_ptr, "+") {
 		// 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
 		new_binary(Nodekind::AddNd, tmp_num!(0), primary(token_ptr), ptr)
@@ -690,17 +705,18 @@ fn tailed(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	}
 }
 
-fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn inc_dec(node: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	let kind = if is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
+	confirm_type(&node);
 
 	if is_prefix {
 		// ++i は (i+=1) として読み替えると良い
-		assign_op(kind, left, tmp_num!(1), token_ptr)
+		assign_op(kind, node, tmp_num!(1), token_ptr)
 	} else {
 		// i++ は (i+=1)-1 として読み替えると良い
 		let opposite_kind = if !is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
 		// この部分木でエラーが起きる際、部分木の根が token を持っている(Some)必要があることに注意
-		new_binary(opposite_kind, assign_op(kind, left, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr) 
+		new_binary(opposite_kind, assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr) 
 	}
 }
 
@@ -709,14 +725,18 @@ fn inc_dec(left: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool, token_ptr: Rc
 fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
 	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
 	if !consume(token_ptr, ")") {
-		args.push(Some(assign(token_ptr)));
+		let arg = assign(token_ptr);
+		// confirm_type(&arg);
+		args.push(Some(arg));
 
 		loop {
 			if !consume(token_ptr, ",") {
 				expect(token_ptr,")"); // 括弧が閉じないような書き方になっているとここで止まるため、if at_eof ~ のようなチェックは不要
 				break;
 			}
-			args.push(Some(assign(token_ptr)));
+			let arg = assign(token_ptr);
+			// confirm_type(&arg);
+			args.push(Some(arg));
 		}
 	}
 	args
