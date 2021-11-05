@@ -1,13 +1,21 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::fmt::{Display, Formatter};
 use std::fmt;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Type {
 	Invalid, // デフォルトや無名ノードに割り当てる
 	Int,
 	Ptr,
+}
+
+impl Type {
+	pub fn bytes(&self) -> usize {
+		match self {
+			Type::Invalid => { panic!("cannot extract size of invalid type."); }
+			Type::Int => { 4 }
+			Type::Ptr => { 8 }
+		}
+	}
 }
 
 impl Display for Type {
@@ -25,50 +33,46 @@ impl Display for Type {
 #[derive(Clone, Debug, Eq)] // PartialEq は別で実装
 pub struct TypeCell {
 	pub typ: Type,
-	pub ptr_to: Option<Rc<RefCell<TypeCell>>>,
+	// ポインタの情報はいくつ繋がっているか及び終端の型で管理 (chains は *...*p の時の * の数)
+	pub ptr_end: Option<Type>,
+	pub chains: usize,
 }
 
 impl TypeCell {
 	pub fn new(typ: Type) -> Self {
-		TypeCell { typ:typ, ptr_to: None }
-	}
-
-	fn get_ptr_chains(&self) -> (usize, Type) {
-		match self.ptr_to.as_ref() {
-			Some(ptr) => {
-				let (p, typ) = ptr.borrow_mut().get_ptr_chains();
-				(p+1, typ)
-			}
-			None => (1, self.typ.clone())
-		}
+		TypeCell { typ: typ, chains: 0, ptr_end: None }
 	}
 }
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell {typ: Type::Invalid, ptr_to: None}
+		TypeCell { typ: Type::Invalid, ptr_end: None, chains: 0 }
 	}
 }
 
 impl Display for TypeCell {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		let s: &str;
-		match self.typ {
-			Type::Invalid => { s = "invalid"; }
-			Type::Int => { s = "int"; }
-			Type::Ptr => {
-				let (p, typ) = self.ptr_to.as_ref().unwrap().borrow_mut().get_ptr_chains();
-				return write!(f, "{}-chained pointer to {}", p, typ);
-			}
+		if  let Some(typ) = &self.ptr_end {
+			write!(f, "{} {}", &typ, "*".repeat(self.chains))
+		} else {
+			write!(f, "{}", &self.typ)
 		}
-		write!(f, "{}", s)
 	}
 }
 
 impl PartialEq for TypeCell {
 	// ポインタが連なっている個数と、最終的に指されている型が両方同じ時にイコールとみなす
 	fn eq(&self, other: &Self) -> bool {
-		self.get_ptr_chains() == other.get_ptr_chains()
+		if let Some(typ) = &self.ptr_end {
+			if let Some(other_typ) = &self.ptr_end {
+				// この時点で両方ポインタなので typ のチェックは飛ばす
+				self.chains == other.chains && typ == other_typ
+			} else {
+				false
+			}
+		} else {
+			self.typ == other.typ
+		}
 	}
 }
 
@@ -85,20 +89,27 @@ mod tests {
 		let mut t2 = TypeCell::new(Type::Int);
 		assert_eq!(t1, t2);
 
-		for _ in 0..10 {
-			let mut ptr =  TypeCell::new(Type::Ptr);
-			let _ = ptr.ptr_to.insert(Rc::new(RefCell::new(t1)));
-			t1 = ptr;
-		}
-
-		for _ in 0..11 {
-			let mut ptr =  TypeCell::new(Type::Ptr);
-			let _ = ptr.ptr_to.insert(Rc::new(RefCell::new(t2)));
-			t2 = ptr;
-		}
-
+		t1 = TypeCell {
+			typ: Type::Ptr,
+			chains: 1,
+			ptr_end: Some(Type::Int),
+		};
 		assert_ne!(t1, t2);
-		assert_eq!(t1, *t2.ptr_to.as_ref().unwrap().as_ref().borrow());
+
+		t2 = TypeCell {
+			typ: Type::Ptr,
+			chains: 2,
+			ptr_end: Some(Type::Int),
+		};
+		assert_ne!(t1, t2);
+
+		t1 =  TypeCell {
+			typ: Type::Ptr,
+			chains: 2,
+			ptr_end: Some(Type::Int),
+		};
+
+		assert_eq!(t1, t2);
 	}
 
 }

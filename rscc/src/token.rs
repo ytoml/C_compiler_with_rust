@@ -8,7 +8,9 @@ use crate::{
 	utils::error_at,
 };
 
-#[derive(Debug, PartialEq)]
+pub type TokenRef = Rc<RefCell<Token>>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tokenkind {
 	DefaultTk,	// Default用のkind
 	HeadTk,		// 先頭にのみ使用するkind
@@ -42,7 +44,7 @@ pub struct Token {
 	pub val: Option<i32>,  
 	pub body: Option<String>,
 	pub len: usize,							// 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
-	pub next: Option<Rc<RefCell<Token>>>,	// Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
+	pub next: Option<TokenRef>,	// Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 
 	// エラーメッセージ用
 	pub file_num: usize,					// ファイルの番号
@@ -155,7 +157,7 @@ impl Display for Token {
 }
 
 // トークンのポインタを読み進める
-pub fn token_ptr_exceed(token_ptr: &mut Rc<RefCell<Token>>) {
+pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 	let tmp_ptr;
 
 	// next が None なら exit

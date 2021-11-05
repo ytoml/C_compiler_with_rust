@@ -1,6 +1,4 @@
 use std::fs::File;
-use std::rc::Rc;
-use std::cell::RefCell;
 use std::io::{BufRead, BufReader};
 
 use clap::Clap;
@@ -17,7 +15,7 @@ mod utils;
 use generator::{gen_expr, ASM};
 use options::Opts;
 use parser::program;
-use token::Token;
+use token::TokenRef;
 use tokenizer::tokenize;
 use globals::{CODES, FILE_NAMES};
 
@@ -32,7 +30,7 @@ fn main() {
 		code_load(reader, path);
 		
 		// トークナイズしてトークンリストを生成したのち、構文木を生成
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		let node_heads = program(&mut token_ptr);
 
 		// 構文木が複数(関数の数)生成されているはずなのでそれぞれについて回す

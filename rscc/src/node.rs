@@ -3,11 +3,13 @@ use std::fmt::{Formatter, Display, Result};
 use std::rc::Rc;
 
 use crate::{
-	token::{Token, error_tok},
+	token::{error_tok, TokenRef},
 	typecell::TypeCell,
 };
 
-#[derive(Debug, PartialEq)]
+pub type NodeRef = Rc<RefCell<Node>>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Nodekind {
 	DefaultNd,	// defalut
 	AddNd,		// '+'
@@ -31,9 +33,7 @@ pub enum Nodekind {
 	DerefNd,	// アドレスの値を読む(*)
 	EqNd,		// "=="
 	NEqNd,		// "!="
-	GThanNd,	// '>'
-	GEqNd,		// ">="
-	LThanNd,	// '<'
+	LThanNd,	// '<' // '>' や ">=" はパース時に構文木の左右を入れ替えることで調整
 	LEqNd,		// "<="
 	IfNd,		// "if"
 	ForNd,		// "for"
@@ -47,7 +47,7 @@ pub enum Nodekind {
 
 pub struct Node {
 	pub kind: Nodekind, // Nodeの種類
-	pub token: Option<Rc<RefCell<Token>>>, // 対応する Token (エラーメッセージに必要)
+	pub token: Option<TokenRef>, // 対応する Token (エラーメッセージに必要)
 	pub typ: Option<TypeCell>, 
 
 	// プロパティとなる数値
@@ -55,34 +55,35 @@ pub struct Node {
 	pub offset: Option<usize>,// ベースポインタからのオフセット(ローカル変数時のみ)
 
 	// 通常ノード(計算式評価)用の左右ノード
-	pub left: Option<Rc<RefCell<Node>>>,
-	pub right: Option<Rc<RefCell<Node>>>,
+	pub left: Option<NodeRef>,
+	pub right: Option<NodeRef>,
 
 	// for (init; enter; routine) branch, if (enter) branch else els, while(enter) branch 
-	pub init: Option<Rc<RefCell<Node>>>,
-	pub enter: Option<Rc<RefCell<Node>>>, 
-	pub routine: Option<Rc<RefCell<Node>>>, 
-	pub branch: Option<Rc<RefCell<Node>>>,
-	pub els: Option<Rc<RefCell<Node>>>,
+	pub init: Option<NodeRef>,
+	pub enter: Option<NodeRef>, 
+	pub routine: Option<NodeRef>, 
+	pub branch: Option<NodeRef>,
+	pub els: Option<NodeRef>,
 
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
-	pub children: Vec<Option<Rc<RefCell<Node>>>>,
+	pub children: Vec<Option<NodeRef>>,
 
 	// func の引数を保存する 
-	pub args: Vec<Option<Rc<RefCell<Node>>>>,
+	pub args: Vec<Option<NodeRef>>,
 
 	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
 	pub name: Option<String>,
 
 	// 関数宣言時に使用
-	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
-	pub max_offset: Option<usize>
+	pub stmts: Option<Vec<NodeRef>>,
+	pub max_offset: Option<usize>,
+	pub ret_typ: Option<TypeCell>,
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None}
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None, ret_typ: None }
 	}
 }
 
@@ -127,6 +128,7 @@ impl Display for Node {
 
 		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
 		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
+		if let Some(e) = self.ret_typ.as_ref() {s = format!("{}return type: {}\n", s, e);}
 
 		write!(f, "{}", s)
 	}
