@@ -3,9 +3,11 @@ use std::fmt::{Formatter, Display, Result};
 use std::rc::Rc;
 
 use crate::{
-	token::{Token, error_tok},
+	token::{error_tok, TokenRef},
 	typecell::TypeCell,
 };
+
+pub type NodeRef = Rc<RefCell<Node>>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Nodekind {
@@ -45,7 +47,7 @@ pub enum Nodekind {
 
 pub struct Node {
 	pub kind: Nodekind, // Nodeの種類
-	pub token: Option<Rc<RefCell<Token>>>, // 対応する Token (エラーメッセージに必要)
+	pub token: Option<TokenRef>, // 対応する Token (エラーメッセージに必要)
 	pub typ: Option<TypeCell>, 
 
 	// プロパティとなる数値
@@ -53,27 +55,27 @@ pub struct Node {
 	pub offset: Option<usize>,// ベースポインタからのオフセット(ローカル変数時のみ)
 
 	// 通常ノード(計算式評価)用の左右ノード
-	pub left: Option<Rc<RefCell<Node>>>,
-	pub right: Option<Rc<RefCell<Node>>>,
+	pub left: Option<NodeRef>,
+	pub right: Option<NodeRef>,
 
 	// for (init; enter; routine) branch, if (enter) branch else els, while(enter) branch 
-	pub init: Option<Rc<RefCell<Node>>>,
-	pub enter: Option<Rc<RefCell<Node>>>, 
-	pub routine: Option<Rc<RefCell<Node>>>, 
-	pub branch: Option<Rc<RefCell<Node>>>,
-	pub els: Option<Rc<RefCell<Node>>>,
+	pub init: Option<NodeRef>,
+	pub enter: Option<NodeRef>, 
+	pub routine: Option<NodeRef>, 
+	pub branch: Option<NodeRef>,
+	pub els: Option<NodeRef>,
 
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
-	pub children: Vec<Option<Rc<RefCell<Node>>>>,
+	pub children: Vec<Option<NodeRef>>,
 
 	// func の引数を保存する 
-	pub args: Vec<Option<Rc<RefCell<Node>>>>,
+	pub args: Vec<Option<NodeRef>>,
 
 	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
 	pub name: Option<String>,
 
 	// 関数宣言時に使用
-	pub stmts: Option<Vec<Rc<RefCell<Node>>>>,
+	pub stmts: Option<Vec<NodeRef>>,
 	pub max_offset: Option<usize>,
 	pub ret_typ: Option<TypeCell>,
 }

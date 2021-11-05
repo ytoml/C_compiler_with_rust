@@ -9,16 +9,16 @@ use once_cell::sync::Lazy;
 use crate::{
 	error_with_token,
 	globals::CODES,
-	token::{Token, Tokenkind, token_ptr_exceed},
+	token::{Token, Tokenkind, TokenRef, token_ptr_exceed},
 	typecell::{Type, TypeCell},
 	utils::{strtol, is_digit, error_at},
 };
 
 // 入力文字列のトークナイズ
-pub fn tokenize(file_num: usize) -> Rc<RefCell<Token>> {
+pub fn tokenize(file_num: usize) -> TokenRef {
 	// Rcを使って読み進める
-	let mut token_ptr: Rc<RefCell<Token>> = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
-	let mut token_head_ptr: Rc<RefCell<Token>> = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
+	let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
+	let mut token_head_ptr: TokenRef = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
 	let mut err_profile: (bool, usize, usize) = (false, 0, 0);
 	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
 	{
@@ -245,7 +245,7 @@ fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
 /* ------------------------------------------------- トークン処理用関数(parserからの呼び出しを含むためpubが必要) ------------------------------------------------- */
 
 // 次のトークンが数字であることを期待して次のトークンを読む関数
-pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
+pub fn expect_number(token_ptr: &mut TokenRef) -> i32 {
 	if (**token_ptr).borrow().kind != Tokenkind::NumTk {
 		error_with_token!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", &*token_ptr.borrow(),(**token_ptr).borrow().body.as_ref().unwrap());
 	}
@@ -256,7 +256,7 @@ pub fn expect_number(token_ptr: &mut Rc<RefCell<Token>>) -> i32 {
 }
 
 // 次のトークンが識別子(変数など)であることを期待して次のトークンを読む関数
-pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> String {
+pub fn expect_ident(token_ptr: &mut TokenRef) -> String {
 	if (**token_ptr).borrow().kind != Tokenkind::IdentTk {
 		error_with_token!("識別子を期待した位置で\"{}\"が発見されました。", &*token_ptr.borrow(), (**token_ptr).borrow().body.as_ref().unwrap());
 	}
@@ -267,14 +267,14 @@ pub fn expect_ident(token_ptr: &mut Rc<RefCell<Token>>) -> String {
 }
 
 //  予約済みトークンを期待し、(文字列で)指定して読む関数(失敗するとexitする)
-pub fn expect(token_ptr: &mut Rc<RefCell<Token>>, op: &str) {
+pub fn expect(token_ptr: &mut TokenRef, op: &str) {
 	if (**token_ptr).borrow().kind != Tokenkind::ReservedTk || (**token_ptr).borrow().body.as_ref().unwrap() != op {
 		error_with_token!("\"{}\"を期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), op, (**token_ptr).borrow().body.as_ref().unwrap());
 	}
 	token_ptr_exceed(token_ptr);
 }
 
-pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> TypeCell {
+pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
 	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(**token_ptr).borrow().body.as_ref().unwrap().as_str()) {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
@@ -307,7 +307,7 @@ pub fn expect_type(token_ptr: &mut Rc<RefCell<Token>>) -> TypeCell {
 }
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
-pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
+pub fn consume(token_ptr: &mut TokenRef, op: &str) -> bool {
 	if (*token_ptr).borrow().kind != Tokenkind::ReservedTk || (*token_ptr).borrow().body.as_ref().unwrap() != op {
 		false
 	} else {
@@ -317,7 +317,7 @@ pub fn consume(token_ptr: &mut Rc<RefCell<Token>>, op: &str) -> bool {
 }
 
 // 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
-pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool {
+pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
 	if (*token_ptr).borrow().kind != kind {
 		false
 	} else {
@@ -326,7 +326,7 @@ pub fn consume_kind(token_ptr: &mut Rc<RefCell<Token>>, kind: Tokenkind) -> bool
 	}
 }
 
-pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> Option<TypeCell> {
+pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(*token_ptr).borrow().body.as_ref().unwrap().as_str()) {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
@@ -362,7 +362,7 @@ pub fn consume_type(token_ptr: &mut Rc<RefCell<Token>>) -> Option<TypeCell> {
 }
 
 
-pub fn consume_ident(token_ptr: &mut Rc<RefCell<Token>>) -> Option<String> {
+pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
 	if (*token_ptr).borrow().kind == Tokenkind::IdentTk {
 		let body = (**token_ptr).borrow_mut().body.as_ref().unwrap().clone();
 		token_ptr_exceed(token_ptr);
@@ -375,7 +375,7 @@ pub fn consume_ident(token_ptr: &mut Rc<RefCell<Token>>) -> Option<String> {
 }
 
 // EOFかどうかを判断する関数
-pub fn at_eof(token_ptr: &Rc<RefCell<Token>>) -> bool{
+pub fn at_eof(token_ptr: &TokenRef) -> bool{
 	(*token_ptr).borrow().kind == Tokenkind::EOFTk
 }
 
@@ -406,7 +406,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -427,7 +427,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -450,7 +450,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -470,7 +470,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -490,7 +490,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -513,7 +513,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -536,7 +536,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);
@@ -567,7 +567,7 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr: Rc<RefCell<Token>> = tokenize(0);
+		let mut token_ptr: TokenRef = tokenize(0);
 		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
 			println!("{}", (*token_ptr).borrow());
 			token_ptr_exceed(&mut token_ptr);

@@ -7,8 +7,8 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 use crate::{
-	node::{Node, Nodekind},
-	token::{Token, Tokenkind},
+	node::{Node, Nodekind, NodeRef},
+	token::{Tokenkind, TokenRef},
 	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
 	typecell::{Type, TypeCell},
 	exit_eprintln, error_with_token, error_with_node
@@ -23,11 +23,11 @@ static DECLARED_FUNCS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::n
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 // 2つ子を持つ汎用ノード
-fn _binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
+fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), right: Some(right), .. Default::default()}))
 }
 
-fn new_binary(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_binary(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	_binary(kind, left, right, Some(token_ptr))
 }
 
@@ -38,11 +38,11 @@ macro_rules! tmp_binary {
 }
 
 // 1つ子を持つ汎用ノード
-fn _unary(kind: Nodekind, left: Rc<RefCell<Node>>, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
+fn _unary(kind: Nodekind, left: NodeRef, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), .. Default::default()}))
 }
 
-fn new_unary(kind: Nodekind, left: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_unary(kind: Nodekind, left: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	_unary(kind, left, Some(token_ptr))
 }
 
@@ -53,11 +53,11 @@ macro_rules! tmp_unary {
 }
 
 // 数字に対応するノード
-fn _num(val: i32, token: Option<Rc<RefCell<Token>>>) -> Rc<RefCell<Node>> {
+fn _num(val: i32, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: Nodekind::NumNd, token: token, val: Some(val), .. Default::default()}))
 }
 
-fn new_num(val: i32, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_num(val: i32, token_ptr: TokenRef) -> NodeRef {
 	_num(val, Some(token_ptr))
 }
 
@@ -68,7 +68,7 @@ macro_rules! tmp_num {
 }
 
 // 左辺値(今のうちはローカル変数)に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
-fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option<TypeCell>) -> Rc<RefCell<Node>> {
+fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>) -> NodeRef {
 	let name: String = name.into();
 	let offset;
 
@@ -99,7 +99,7 @@ fn _lvar(name: impl Into<String>, token: Option<Rc<RefCell<Token>>>, typ: Option
 	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
 }
 
-fn new_lvar(name: impl Into<String>, token_ptr: Rc<RefCell<Token>>, typ: TypeCell) -> Rc<RefCell<Node>> {
+fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell) -> NodeRef {
 	_lvar(name, Some(token_ptr), Some(typ))
 }
 
@@ -110,17 +110,17 @@ macro_rules! tmp_lvar {
 }
 
 // ブロックのノード
-fn new_block(children: Vec<Option<Rc<RefCell<Node>>>>) -> Rc<RefCell<Node>> {
+fn new_block(children: Vec<Option<NodeRef>>) -> NodeRef {
 	Rc::new(RefCell::new(Node { kind: Nodekind::BlockNd, children: children, ..Default::default()}))
 }
 
 // 制御構文のためのノード
 fn new_ctrl(kind: Nodekind,
-			init: Option<Rc<RefCell<Node>>>,
-			enter: Option<Rc<RefCell<Node>>>,
-			routine: Option<Rc<RefCell<Node>>>,
-			branch: Option<Rc<RefCell<Node>>>,
-			els: Option<Rc<RefCell<Node>>>) -> Rc<RefCell<Node>> {
+			init: Option<NodeRef>,
+			enter: Option<NodeRef>,
+			routine: Option<NodeRef>,
+			branch: Option<NodeRef>,
+			els: Option<NodeRef>) -> NodeRef {
 	if ![Nodekind::IfNd, Nodekind::ForNd, Nodekind::WhileNd].contains(&kind){
 		exit_eprintln!("new_ctrl: 制御構文ではありません。");
 	}
@@ -128,13 +128,13 @@ fn new_ctrl(kind: Nodekind,
 }
 
 // 関数呼び出しのノード
-fn new_func(name: String, args: Vec<Option<Rc<RefCell<Node>>>>, ret_typ: TypeCell, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_func(name: String, args: Vec<Option<NodeRef>>, ret_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
 }
 
 // TODO
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
-fn confirm_type(node: &Rc<RefCell<Node>>) {
+fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
 
 	if let Some(n) = &node.borrow().left { confirm_type(n); }
@@ -233,7 +233,7 @@ fn confirm_type(node: &Rc<RefCell<Node>>) {
 	}
 }
 
-fn get_common_type(left: &Rc<RefCell<Node>>, right: &Rc<RefCell<Node>>) -> TypeCell {
+fn get_common_type(left: &NodeRef, right: &NodeRef) -> TypeCell {
 	// 現在はポインタか int しかサポートされていないためベタ打ち
 	let _ = right;
 	let left_is_ptr = left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
@@ -250,8 +250,8 @@ fn get_common_type(left: &Rc<RefCell<Node>>, right: &Rc<RefCell<Node>>) -> TypeC
 
 // 生成規則:
 // func-args = type ident ("," type ident)* | null
-fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
-	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
+fn func_args(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
+	let mut args: Vec<Option<NodeRef>> = vec![];
 	let mut argc: usize = 0;
 	if let Some(typ) = consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
 		let ptr = token_ptr.clone();
@@ -282,12 +282,12 @@ fn func_args(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>
 
 // 生成規則: 
 // program = (type ident "(" func-args ")" "{" stmt* "}")*
-pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-	let mut globals : Vec<Rc<RefCell<Node>>> = Vec::new();
+pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
+	let mut globals : Vec<NodeRef> = Vec::new();
 
 	while !at_eof(token_ptr) {
 		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
-		let mut statements : Vec<Rc<RefCell<Node>>> = Vec::new();
+		let mut statements : Vec<NodeRef> = Vec::new();
 
 		let ret_typ = expect_type(token_ptr); // 型宣言の読み込み
 		let ptr =  token_ptr.clone();
@@ -296,7 +296,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 			error_with_token!("{}: 重複した関数宣言です。", &*ptr.borrow(), func_name);
 		}
 		expect(token_ptr, "(");
-		let args: Vec<Option<Rc<RefCell<Node>>>> = func_args(token_ptr);
+		let args: Vec<Option<NodeRef>> = func_args(token_ptr);
 		DECLARED_FUNCS.try_lock().unwrap().insert(func_name.clone(), (args.len(), ret_typ.clone()));
 		expect(token_ptr, ")");
 
@@ -335,7 +335,7 @@ pub fn program(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
 
 // 生成規則:
 // declare = ident ("," ident)* ";"
-fn declare(token_ptr: &mut Rc<RefCell<Token>>, typ: TypeCell) -> Rc<RefCell<Node>> {
+fn declare(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
 	let mut node_ptr = new_lvar(name, ptr, typ.clone());
@@ -361,7 +361,7 @@ fn declare(token_ptr: &mut Rc<RefCell<Token>>, typ: TypeCell) -> Rc<RefCell<Node
 //		| "while" "(" expr ")" stmt
 //		| "for" "(" expr? ";" expr? ";" expr? ")" stmt
 //		| "return" expr? ";"
-fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, ";") {
@@ -369,7 +369,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else if let Some(typ) = consume_type(token_ptr) {
 		declare(token_ptr, typ)
 	} else if consume(token_ptr, "{") {
-		let mut children: Vec<Option<Rc<RefCell<Node>>>> = vec![];
+		let mut children: Vec<Option<NodeRef>> = vec![];
 		loop {
 			if !consume(token_ptr, "}") {
 				if at_eof(token_ptr) {exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。");}
@@ -402,21 +402,21 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else if consume(token_ptr, "for") {
 		expect(token_ptr, "(");
 		// consumeできた場合exprが何も書かれていないことに注意
-		let init: Option<Rc<RefCell<Node>>> =
+		let init: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
 			let init_ = Some(expr(token_ptr));
 			expect(token_ptr, ";");
 			init_
 		};
 
-		let enter: Option<Rc<RefCell<Node>>> =
+		let enter: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
 			let enter_ = Some(expr(token_ptr));
 			expect(token_ptr, ";");
 			enter_
 		};
 
-		let routine: Option<Rc<RefCell<Node>>> = 
+		let routine: Option<NodeRef> = 
 		if consume(token_ptr, ")") {None} else {
 			let routine_ = Some(expr(token_ptr));
 			// confirm_type(&routine_.as_ref().unwrap());
@@ -424,17 +424,17 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 			routine_
 		};
 
-		let branch: Option<Rc<RefCell<Node>>> = Some(stmt(token_ptr));
+		let branch: Option<NodeRef> = Some(stmt(token_ptr));
 		
 		new_ctrl(Nodekind::ForNd, init, enter, routine, branch, None)
 
 	} else if consume_kind(token_ptr, Tokenkind::ReturnTk) {
 		// exprなしのパターン: 実質NumNd 0があるのと同じと捉えれば良い
-		let left: Rc<RefCell<Node>> =  
+		let left: NodeRef =  
 		if consume(token_ptr, ";") {
 			tmp_num!(0)
 		} else {
-			let left_: Rc<RefCell<Node>> = expr(token_ptr);
+			let left_: NodeRef = expr(token_ptr);
 			confirm_type(&left_);
 			expect(token_ptr, ";");
 			left_
@@ -443,7 +443,7 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 		new_unary(Nodekind::ReturnNd, left, ptr)
 
 	} else {
-		let node_ptr: Rc<RefCell<Node>> = expr(token_ptr);
+		let node_ptr: NodeRef = expr(token_ptr);
 		expect(token_ptr, ";");
 		node_ptr
 	}
@@ -451,8 +451,8 @@ fn stmt(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // expr = assign ("," expr)? 
-pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let node_ptr: Rc<RefCell<Node>> = assign(token_ptr);
+pub fn expr(token_ptr: &mut TokenRef) -> NodeRef {
+	let node_ptr: NodeRef = assign(token_ptr);
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, ",") {
@@ -468,8 +468,8 @@ pub fn expr(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 // assign-op = "="
 //			| "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
 //			| "<<=" | ">>="
-fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let node_ptr: Rc<RefCell<Node>> = logor(token_ptr);
+fn assign(token_ptr: &mut TokenRef) -> NodeRef {
+	let node_ptr: NodeRef = logor(token_ptr);
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "=") {
@@ -501,7 +501,7 @@ fn assign(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // a += b; -->  tmp = &a, *tmp = *tmp + b;
 // AssignAddNd 的な Nodekind を導入して generator で add [a], b となるように直接処理する手もある
-fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	// 左右の型を確定させておく
 	confirm_type(&left);
 	confirm_type(&right);
@@ -540,8 +540,8 @@ fn assign_op(kind: Nodekind, left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, 
 
 // 生成規則:
 // logor = logand ("||" logand)*
-fn logor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = logand(token_ptr);
+fn logor(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = logand(token_ptr);
 	loop {
 		let ptr = token_ptr.clone();
 		if !consume(token_ptr, "||") { break; }
@@ -553,8 +553,8 @@ fn logor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // logand = bitor ("&&" bitor)*
-fn logand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = bitor(token_ptr);
+fn logand(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = bitor(token_ptr);
 	loop {
 		let ptr = token_ptr.clone();
 		if !consume(token_ptr, "&&") { break; }
@@ -566,8 +566,8 @@ fn logand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // bitor = bitxor ("|" bitxor)*
-fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = bitxor(token_ptr);
+fn bitor(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = bitxor(token_ptr);
 	loop{
 		let ptr = token_ptr.clone();
 		if !consume(token_ptr, "|") { break; }
@@ -579,8 +579,8 @@ fn bitor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // bitxor = bitand ("^" bitand)*
-fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = bitand(token_ptr);
+fn bitxor(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = bitand(token_ptr);
 	loop{
 		let ptr = token_ptr.clone();
 		if !consume(token_ptr, "^") { break; }
@@ -592,8 +592,8 @@ fn bitxor(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // bitand = equality ("&" equality)*
-fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = equality(token_ptr);
+fn bitand(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = equality(token_ptr);
 	loop{
 		let ptr = token_ptr.clone();
 		if !consume(token_ptr, "&") { break; }
@@ -605,8 +605,8 @@ fn bitand(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // equality = relational ("==" relational | "!=" relational)?
-fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let node_ptr: Rc<RefCell<Node>> = relational(token_ptr);
+fn equality(token_ptr: &mut TokenRef) -> NodeRef {
+	let node_ptr: NodeRef = relational(token_ptr);
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "==") {
@@ -620,8 +620,8 @@ fn equality(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
-fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = shift(token_ptr);
+fn relational(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = shift(token_ptr);
 
 	loop {
 		let ptr = token_ptr.clone();
@@ -647,8 +647,8 @@ fn relational(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // shift = add ("<<" add | ">>" add)*
-fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = add(token_ptr);
+fn shift(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = add(token_ptr);
 
 	loop {
 		let ptr = token_ptr.clone();
@@ -666,7 +666,7 @@ fn shift(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	node_ptr
 }
 
-fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	confirm_type(&left);
 	confirm_type(&right);
 
@@ -694,7 +694,7 @@ fn new_add(mut left: Rc<RefCell<Node>>, mut right: Rc<RefCell<Node>>, token_ptr:
 	}
 }
 
-fn new_sub(left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	confirm_type(&left);
 	confirm_type(&right);
 	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
@@ -728,8 +728,8 @@ fn new_sub(left: Rc<RefCell<Node>>, right: Rc<RefCell<Node>>, token_ptr: Rc<RefC
 
 // 生成規則:
 // add = mul ("+" mul | "-" mul)*
-fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = mul(token_ptr);
+fn add(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = mul(token_ptr);
 	loop {
 		let ptr = token_ptr.clone();
 		if consume(token_ptr, "+") {
@@ -748,8 +748,8 @@ fn add(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 
 // 生成規則:
 // mul = unary ("*" unary | "/" unary | "%" unary)*
-fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let mut node_ptr: Rc<RefCell<Node>> = unary(token_ptr);
+fn mul(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut node_ptr: NodeRef = unary(token_ptr);
 	loop {
 		let ptr = token_ptr.clone();
 		if consume(token_ptr, "*") {
@@ -776,7 +776,7 @@ fn mul(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 //		| ("!" | "~")? unary
 //		| ("*" | "&")? unary 
 //		| ("++" | "--")? unary 
-fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "~") {
@@ -809,8 +809,8 @@ fn unary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 // 生成規則:
 // tailed = primary (primary-tail)?
 // primary-tail = "++" | "--"
-fn tailed(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
-	let node_ptr: Rc<RefCell<Node>> = primary(token_ptr);
+fn tailed(token_ptr: &mut TokenRef) -> NodeRef {
+	let node_ptr: NodeRef = primary(token_ptr);
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "++") {
@@ -824,7 +824,7 @@ fn tailed(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	}
 }
 
-fn inc_dec(node: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool, token_ptr: Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn inc_dec(node: NodeRef, is_inc: bool, is_prefix: bool, token_ptr: TokenRef) -> NodeRef {
 	let kind = if is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
 	confirm_type(&node);
 
@@ -841,8 +841,8 @@ fn inc_dec(node: Rc<RefCell<Node>>, is_inc: bool, is_prefix: bool, token_ptr: Rc
 
 // 生成規則:
 // params = assign ("," assign)* | null
-fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> {
-	let mut args: Vec<Option<Rc<RefCell<Node>>>> = vec![];
+fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
+	let mut args: Vec<Option<NodeRef>> = vec![];
 	if !consume(token_ptr, ")") {
 		let arg = assign(token_ptr);
 		confirm_type(&arg);
@@ -865,11 +865,11 @@ fn params(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Option<Rc<RefCell<Node>>>> 
 // primary = num
 //			| ident ( "(" params ")" )?
 //			| "(" expr ")"
-fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
+fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "(") {
-		let node_ptr: Rc<RefCell<Node>> = expr(token_ptr);
+		let node_ptr: NodeRef = expr(token_ptr);
 		expect(token_ptr, ")");
 
 		node_ptr
@@ -877,7 +877,7 @@ fn primary(token_ptr: &mut Rc<RefCell<Token>>) -> Rc<RefCell<Node>> {
 	} else if let Some(name) = consume_ident(token_ptr) {
 
 		if consume(token_ptr, "(") {
-			let args:Vec<Option<Rc<RefCell<Node>>>> = params(token_ptr);
+			let args:Vec<Option<NodeRef>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			let declared: bool = DECLARED_FUNCS.try_lock().unwrap().contains_key(&name);
 			if declared  {
@@ -921,7 +921,7 @@ pub mod tests {
 		CODES.try_lock().unwrap().push(code);
 	}
 
-	fn search_tree(tree: &Rc<RefCell<Node>>) {
+	fn search_tree(tree: &NodeRef) {
 		let node: &Node = &*(*tree).borrow();
 		println!("{}", node);
 
@@ -945,8 +945,8 @@ pub mod tests {
 		}
 	}
 
-	pub fn parse_stmts(token_ptr: &mut Rc<RefCell<Token>>) -> Vec<Rc<RefCell<Node>>> {
-		let mut statements :Vec<Rc<RefCell<Node>>> = Vec::new();
+	pub fn parse_stmts(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
+		let mut statements :Vec<NodeRef> = Vec::new();
 		while !at_eof(token_ptr) {
 			statements.push(stmt(token_ptr));
 		}

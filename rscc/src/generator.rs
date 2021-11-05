@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
@@ -7,7 +5,7 @@ use once_cell::sync::Lazy;
 use crate::{
 	error_with_node,
 	exit_eprintln,
-	node::{Node, Nodekind},
+	node::{Nodekind, NodeRef},
 	typecell::Type
 };
 
@@ -30,7 +28,7 @@ fn get_count() -> u32 {
 	*count
 }
 
-pub fn gen_expr(node: &Rc<RefCell<Node>>) {
+pub fn gen_expr(node: &NodeRef) {
 	match (**node).borrow().kind {
 		Nodekind::FuncDecNd => {
 			{
@@ -435,7 +433,7 @@ pub fn gen_expr(node: &Rc<RefCell<Node>>) {
 }
 
 // アドレスを生成する関数(ポインタでない普通の変数への代入等でも使用)
-fn gen_addr(node: &Rc<RefCell<Node>>) {
+fn gen_addr(node: &NodeRef) {
 	match (**node).borrow().kind {
 		Nodekind::LvarNd => {
 			// 変数に対応するアドレスをスタックにプッシュする
@@ -456,7 +454,7 @@ fn gen_addr(node: &Rc<RefCell<Node>>) {
 	}
 }
 
-fn check_can_deref(node: &Rc<RefCell<Node>>) {
+fn check_can_deref(node: &NodeRef) {
 	// *expr において expr が単なる変数(すなわち node.left が LvarNd であれば、その Type が Ptr でない場合にはエラーを吐く)
 	// これは int *p = &x; **p = 10; みたいなパターンを防げないことに注意
 	let left = &(**node).borrow().left;
@@ -470,7 +468,7 @@ fn check_can_deref(node: &Rc<RefCell<Node>>) {
 }
 
 // 関数呼び出し時の引数の処理を行う関数
-fn push_args(args: &Vec<Option<Rc<RefCell<Node>>>>) {
+fn push_args(args: &Vec<Option<NodeRef>>) {
 	let argc =  args.len();
 	if argc > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
 
