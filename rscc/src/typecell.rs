@@ -53,7 +53,7 @@ impl Default for TypeCell {
 impl Display for TypeCell {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		if  let Some(typ) = &self.ptr_end {
-			write!(f, "{}-chained pointer to {}", &self.chains, &typ)
+			write!(f, "{} {}", &typ, "*".repeat(self.chains))
 		} else {
 			write!(f, "{}", &self.typ)
 		}

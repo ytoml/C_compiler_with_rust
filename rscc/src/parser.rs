@@ -723,7 +723,7 @@ fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 
 	} else if left_is_ptr && right_is_ptr {
 		// ptr - ptr はそれが変数何個分のオフセットに相当するかを計算する
-		if left_typ != right_typ { error_with_token!("違う型へのポインタ同士の演算はサポートされません({}, {})。", &token_ptr.borrow(), left_typ, right_typ);}
+		if left_typ != right_typ { error_with_token!("違う型へのポインタ同士の演算はサポートされません。: \"{}\", \"{}\"", &token_ptr.borrow(), left_typ, right_typ);}
 
 		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
 		let size = typ.bytes() as i32;
