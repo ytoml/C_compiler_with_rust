@@ -1,4 +1,4 @@
-#! /bin/zsh
+#!/bin/zsh
 
 MOUNT_PATH=$(pwd)
 ASM_SRC=$1
