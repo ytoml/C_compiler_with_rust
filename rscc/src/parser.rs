@@ -167,7 +167,7 @@ fn confirm_type(node: &NodeRef) {
 			}
 			if let Some(end) = &typ.ptr_end {
 				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければポインタになることに注意
-				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), Type::Ptr) } else { (None, typ.typ) };
+				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), Type::Ptr) } else { (None, *end) };
 				let _ = node.typ.insert(
 					TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1 }
 				);
@@ -175,9 +175,16 @@ fn confirm_type(node: &NodeRef) {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
 			}
 		}
-		Nodekind::AddNd | Nodekind::SubNd | Nodekind::MulNd | Nodekind::DivNd | Nodekind::ModNd |
-		Nodekind::BitAndNd | Nodekind::BitOrNd | Nodekind::BitXorNd => {
-			// 計算式における暗黙のキャストを行う
+		Nodekind::AssignNd => {
+			// 暗黙のキャストを行う
+			let mut node = node.borrow_mut();
+			let left = node.left.as_ref().unwrap();
+			let right = node.right.as_ref().unwrap();
+			let typ = get_common_type(left, right);
+			let _ = node.typ.insert(typ);
+		}
+		Nodekind::AddNd | Nodekind::SubNd  => {
+			// 暗黙のキャストを行う
 			let mut node = node.borrow_mut();
 			let left = node.left.as_ref().unwrap();
 			let right = node.right.as_ref().unwrap();
@@ -196,22 +203,25 @@ fn confirm_type(node: &NodeRef) {
 			}
 			let _ = node.typ.insert(typ);
 		}
+		Nodekind::MulNd | Nodekind::DivNd | Nodekind::ModNd |
+		Nodekind::BitAndNd | Nodekind::BitOrNd | Nodekind::BitXorNd |
 		Nodekind::LShiftNd | Nodekind::RShiftNd => {
-			// ポインタの shift は不可
 			let mut node = node.borrow_mut();
-			let typ: TypeCell;
-			{
-				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
-			}
+			let left = node.left.as_ref().unwrap();
+			let right = node.right.as_ref().unwrap();
+			let typ= get_common_type(left, right);
 			if typ.ptr_end.is_some() {
-				error_with_node!("ポインタのシフトはできません。", &node);
+				// FYI: この辺の仕様はコンパイラによって違うかも？
+				error_with_node!("ポインタに対して行えない計算です。", &node);
 			}
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::LogNotNd | Nodekind::LogAndNd | Nodekind::LogOrNd => {
 			let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int));
 		}
-		// Nodekind::EqNd | Nodekind::NEqNd | Nodekind::GThanNd | Nodekind::GEqNd => {}
+		Nodekind::EqNd | Nodekind::NEqNd | Nodekind::LThanNd | Nodekind::LEqNd => {
+			let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int));
+		}
 		Nodekind::CommaNd => {
 			// x, y の評価は y になるため、型も y のものを引き継ぐ
 			let mut node = node.borrow_mut();
@@ -235,10 +245,12 @@ fn confirm_type(node: &NodeRef) {
 
 fn get_common_type(left: &NodeRef, right: &NodeRef) -> TypeCell {
 	// 現在はポインタか int しかサポートされていないためベタ打ち
-	let _ = right;
 	let left_is_ptr = left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 	if left_is_ptr {
 		left.borrow().typ.clone().unwrap()
+	} else if right_is_ptr {
+		right.borrow().typ.clone().unwrap()
 	} else {
 		TypeCell::new(Type::Int)
 	}
@@ -304,7 +316,9 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 		expect(token_ptr, "{");
 		while !consume(token_ptr, "}") {
 			has_return |= (**token_ptr).borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
-			statements.push(stmt(token_ptr));
+			let stmt_ = stmt(token_ptr);
+			confirm_type(&stmt_);
+			statements.push(stmt_);
 		}
 
 		if !has_return {
@@ -685,11 +699,12 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 			right = tmp;
 		}
 
-		let typ = left.borrow().typ.as_ref().unwrap().clone();
-		let size = typ.typ.bytes() as i32;
+		let ptr_cell = left.borrow().typ.as_ref().unwrap().clone();
+		let typ = if ptr_cell.chains > 1 { Type::Ptr } else { ptr_cell.ptr_end.unwrap() };
+		let size = typ.bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
 		let add_ = new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr);
-		let _ = add_.borrow_mut().typ.insert(typ);
+		let _ = add_.borrow_mut().typ.insert(ptr_cell);
 		add_
 	}
 }
@@ -697,31 +712,34 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	confirm_type(&left);
 	confirm_type(&right);
-	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
-	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
+	let left_typ = left.borrow().typ.as_ref().unwrap().clone();
+	let left_is_ptr= left_typ.ptr_end.is_some();
+	let right_typ = right.borrow().typ.as_ref().unwrap().clone();
+	let right_is_ptr = right_typ.ptr_end.is_some();
 
-	let typ;
-	let sub_ = 
+	let (sub_, type_cell) = 
 	if !left_is_ptr && !right_is_ptr { 
 		return new_binary(Nodekind::SubNd, left, right, token_ptr);
 
 	} else if left_is_ptr && right_is_ptr {
 		// ptr - ptr はそれが変数何個分のオフセットに相当するかを計算する
-		let size = right.borrow().typ.as_ref().unwrap().typ.bytes() as i32;
+		if left_typ != right_typ { error_with_token!("違う型へのポインタ同士の演算はサポートされません({}, {})。", &token_ptr.borrow(), left_typ, right_typ);}
+
+		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
+		let size = typ.bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::SubNd, left, right);
-		typ = TypeCell::new(Type::Int);
-		new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(size), token_ptr)
+		(new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(size), token_ptr), TypeCell::new(Type::Int))
 
 	} else {
 		// num - ptr は invalid
 		if !left_is_ptr { error_with_token!("整数型の値からポインタを引くことはできません。", &token_ptr.borrow()); }
 
-		typ = left.borrow().typ.as_ref().unwrap().clone();
-		let size = typ.typ.bytes() as i32;
+		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
+		let size = typ.bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
-		new_binary(Nodekind::SubNd, left, pointer_offset, token_ptr)
+		(new_binary(Nodekind::SubNd, left, pointer_offset, token_ptr), left_typ)
 	};
-	let _ = sub_.borrow_mut().typ.insert(typ);
+	let _ = sub_.borrow_mut().typ.insert(type_cell);
 
 	sub_
 }
