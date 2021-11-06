@@ -790,24 +790,52 @@ fn mul(token_ptr: &mut TokenRef) -> NodeRef {
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
 // unary = tailed 
-//		| ("+" | "-")? unary
-//		| ("!" | "~")? unary
+//		| ("sizeof")? ( "(" (type | expr) ")" | unary)
+//		| ("~" | "!")? unary
 //		| ("*" | "&")? unary 
+//		| ("+" | "-")? unary
 //		| ("++" | "--")? unary 
 fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
 
-	if consume(token_ptr, "~") {
+	if consume(token_ptr, "sizeof") {
+		// 型名を使用する場合は括弧が必要なので sizeof type になっていないか先にチェックする
+		let ptr_ = token_ptr.clone();
+		if let Some(typ) = consume_type(token_ptr) {
+			error_with_token!("型名を使用した sizeof 演算子の使用では、 \"(\" と \")\" で囲う必要があります。 -> \"({})\"", &ptr_.borrow(), typ);
+		}
+
+		let typ: Type = if consume(token_ptr, "(") {
+			let typ_: Type =  if let Some(typ) = consume_type(token_ptr) {
+				typ.typ
+			} else {
+				let exp = expr(token_ptr);
+				confirm_type(&exp);
+				let exp_ = exp.borrow();
+				exp_.typ.as_ref().unwrap().typ
+			};
+			expect(token_ptr, ")");
+			typ_
+		} else {
+			let una = unary(token_ptr);
+			confirm_type(&una);
+			let una_ = una.borrow();
+			una_.typ.as_ref().unwrap().typ
+		};
+
+		new_num(typ.bytes() as i32,ptr)
+
+	} else if consume(token_ptr, "~") {
 		new_unary(Nodekind::BitNotNd, unary(token_ptr), ptr)
 	} else if consume(token_ptr, "!") {
 		new_unary(Nodekind::LogNotNd, unary(token_ptr), ptr)
 	} else if consume(token_ptr, "*") {
 		let node_ptr = unary(token_ptr);
-		// confirm_type(&node_ptr);
+		confirm_type(&node_ptr);
 		new_unary(Nodekind::DerefNd, node_ptr, ptr)
 	} else if consume(token_ptr, "&") {
 		let node_ptr = unary(token_ptr);
-		// confirm_type(&node_ptr);
+		confirm_type(&node_ptr);
 		new_unary(Nodekind::AddrNd, node_ptr, ptr)
 	} else if consume(token_ptr, "+") {
 		// 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
@@ -1323,6 +1351,37 @@ pub mod tests {
 			x = 10;
 			x += 1;
 			x <<= 1;
+		";
+		test_init(src);
+		
+		let mut token_ptr = tokenize(0);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn sizeof() {
+		let src: &str = "
+			int x, y, z;
+			x = 0; y = 0; z = 0;
+			int *p; p = &x;
+			int *pp; pp = &p;
+
+			sizeof(int);
+			sizeof(int **);
+			sizeof(0);
+			sizeof(x);
+			sizeof x;
+			sizeof ++x;
+			sizeof ++p;
+			sizeof(x+y);
+			sizeof x + y * z;
+			sizeof(x && x);
 		";
 		test_init(src);
 		

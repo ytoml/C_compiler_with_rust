@@ -12,9 +12,10 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事のstep19まで実装しており、
+現在、上記記事のstep20まで実装しており、
 - 基本的な単項、二項演算
 	- `+=` のような演算代入や前置/後置のインクリメント/デクリメントにも対応
+	- `sizeof` にも対応していますが、現在整数型を `int` しかサポートしていないため、 `int` として扱われます。
 - int 型の変数とそれらへのポインタ(ポインタへのポインタを含む)
 	- ポインタ演算に対応しています。例えば `int x = 10; int *y = &x; int *z = y + 2;` とした場合、`z` は `x` の格納されているアドレスから8大きいアドレスを指します。
 		- ただし、現在の実装上すべての変数を8の倍数アドレスでアラインメントしているため、int 型の変数 `x` に対して `&x+1` が前の変数のアドレスを指さないことに注意してください。
@@ -61,7 +62,16 @@ int main() {
 	x = (++x) + y;
 	int *p; p = &x; 
 	int **pp; pp = &p;
+	*p += 9;
 	print_helper(z = fib(*&(**pp)));
+	print_helper(*&*&*&**&*pp);
+	print_helper(sizeof (x+y));
+	print_helper(sizeof ++x);
+	print_helper(sizeof &x + x);
+	print_helper(sizeof(int**));
+	print_helper(sizeof(x && x));
+	print_helper(sizeof(*p));
+
 	return k;
 }
 ```

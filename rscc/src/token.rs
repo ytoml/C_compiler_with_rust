@@ -130,9 +130,8 @@ impl Token {
 impl Display for Token {
 	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
 		let mut s = format!("{}\n", "-".to_string().repeat(40));
-		s = format!("{}Tokenkind: {:?}\n", s, self.kind);
-		s = format!("{}line_num: {:?}\n", s, self.line_num);
-		s = format!("{}line_offset: {:?}\n", s, self.line_offset);
+		s = format!("{}kind: {}\n", s, self.kind);
+		s = format!("{}pos: [{}, {}]\n", s, self.line_num, self.line_offset);
 
 		if let Some(e) = self.body.as_ref() {
 			s = format!("{}body: {}\n", s, e);
@@ -143,13 +142,13 @@ impl Display for Token {
 		if let Some(e) = self.val.as_ref() {
 			s = format!("{}val: {}\n", s, e);
 		} else {
-			s = format!("{}val: not exist\n", s);
+			s = format!("{}val: -\n", s);
 		}
 
 		if let Some(e) = self.next.as_ref() {
-			s = format!("{}next: exist(kind:{:?})\n", s, (**e).borrow().kind);
+			s = format!("{}next: -> {:?}\n", s, (**e).borrow().kind);
 		} else {
-			s = format!("{}next: not exist\n", s);
+			s = format!("{}next: -\n", s);
 		}
 
 		writeln!(f, "{}", s)
