@@ -790,7 +790,7 @@ fn mul(token_ptr: &mut TokenRef) -> NodeRef {
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
 // unary = tailed 
-//		| ("sizeof")? ( "(" type ")" | unary)
+//		| ("sizeof")? ( "(" (type | expr) ")" | unary)
 //		| ("~" | "!")? unary
 //		| ("*" | "&")? unary 
 //		| ("+" | "-")? unary
@@ -799,23 +799,31 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
 
 	if consume(token_ptr, "sizeof") {
-		// TODO: この実装のままだと size(x+y) のような構文で必要以上に括弧を consume/expect してしまい構文解析が失敗するので fix する
-		// 例えば、 sizeof x + x -> sizeof(x) + x のようになることにも注意
-		let wrapped = consume(token_ptr, "(");
-		let ptr = token_ptr.clone();
-		let size: i32;
+		// 型名を使用する場合は括弧が必要なので sizeof type になっていないか先にチェックする
+		let ptr_ = token_ptr.clone();
 		if let Some(typ) = consume_type(token_ptr) {
-			if !wrapped { error_with_token!("型名を使用した sizeof 演算子の使用では、 \"(\" と \")\" で囲う必要があります。 -> \"({})\"", &ptr.borrow(), typ); }
-			size = typ.typ.bytes() as i32;
+			error_with_token!("型名を使用した sizeof 演算子の使用では、 \"(\" と \")\" で囲う必要があります。 -> \"({})\"", &ptr_.borrow(), typ);
+		}
+
+		let typ: Type = if consume(token_ptr, "(") {
+			let typ_: Type =  if let Some(typ) = consume_type(token_ptr) {
+				typ.typ
+			} else {
+				let exp = expr(token_ptr);
+				confirm_type(&exp);
+				let exp_ = exp.borrow();
+				exp_.typ.as_ref().unwrap().typ
+			};
+			expect(token_ptr, ")");
+			typ_
 		} else {
 			let una = unary(token_ptr);
 			confirm_type(&una);
-			size = una.borrow().typ.as_ref().unwrap().typ.bytes() as i32;
-		}
-		let node_ptr = new_num(size, ptr);
-		if wrapped { expect(token_ptr, ")"); }
+			let una_ = una.borrow();
+			una_.typ.as_ref().unwrap().typ
+		};
 
-		node_ptr
+		new_num(typ.bytes() as i32,ptr)
 
 	} else if consume(token_ptr, "~") {
 		new_unary(Nodekind::BitNotNd, unary(token_ptr), ptr)
@@ -1369,8 +1377,11 @@ pub mod tests {
 			sizeof(0);
 			sizeof(x);
 			sizeof x;
+			sizeof ++x;
+			sizeof ++p;
 			sizeof(x+y);
-			
+			sizeof x + y * z;
+			sizeof(x && x);
 		";
 		test_init(src);
 		
