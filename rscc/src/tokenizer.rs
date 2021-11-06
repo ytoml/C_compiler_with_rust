@@ -161,6 +161,15 @@ fn can_follow_reserved(string: &Vec<char>, index: usize) -> bool {
 fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<String> {
 
 	// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
+	let lim = *index+6;
+	if lim <= len {
+		let slice: String = String::from_iter(string[*index..lim].iter());
+		if slice == "sizeof" && can_follow_reserved(string,lim) {
+			*index = lim;
+			return Some(slice);
+		}
+	}
+
 	let lim = *index+5;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
@@ -170,7 +179,6 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 		}
 	}
 
-	// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
 	let lim = *index + 4;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
@@ -180,7 +188,6 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 		}
 	}
 
-	// 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
 	let lim = *index + 3;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
@@ -564,6 +571,25 @@ mod tests {
 			x--;
 			++x;
 			--x;
+		";
+		test_init(src);
+
+		let mut token_ptr: TokenRef = tokenize(0);
+		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
+			println!("{}", (*token_ptr).borrow());
+			token_ptr_exceed(&mut token_ptr);
+		}
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
+		println!("{}", (*token_ptr).borrow());
+	}
+
+	#[test]
+	fn sizeof(){
+		let src: &str ="
+			sizeof x;
+			sizeofx;
+			sizeof 1;
+			sizeof(x+y);
 		";
 		test_init(src);
 
