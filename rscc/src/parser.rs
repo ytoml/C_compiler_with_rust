@@ -156,7 +156,7 @@ fn confirm_type(node: &NodeRef) {
 			}
 			let ptr_end = if typ.typ == Type::Ptr { typ.ptr_end.clone() } else { Some(typ.typ) };
 			let _ = node.typ.insert(
-				TypeCell { typ: Type::Ptr, ptr_end: ptr_end, chains: typ.chains+1 }
+				TypeCell { typ: Type::Ptr, ptr_end: ptr_end, chains: typ.chains+1, ..Default::default() }
 			);
 		}
 		Nodekind::DerefNd => {
@@ -169,7 +169,7 @@ fn confirm_type(node: &NodeRef) {
 				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければポインタになることに注意
 				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), Type::Ptr) } else { (None, *end) };
 				let _ = node.typ.insert(
-					TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1 }
+					TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1, ..Default::default() }
 				);
 			} else {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
@@ -230,7 +230,7 @@ fn confirm_type(node: &NodeRef) {
 				typ = node.right.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
 			let _ = node.typ.insert(
-				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains }
+				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains, ..Default::default() }
 			);
 		}
 		Nodekind::FuncNd => {

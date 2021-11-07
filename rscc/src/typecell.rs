@@ -6,6 +6,7 @@ pub enum Type {
 	Invalid, // デフォルトや無名ノードに割り当てる
 	Int,
 	Ptr,
+	Array,
 }
 
 impl Type {
@@ -14,6 +15,7 @@ impl Type {
 			Type::Invalid => { panic!("cannot extract size of invalid type."); }
 			Type::Int => { 4 }
 			Type::Ptr => { 8 }
+			Type::Array => { panic!("cannot infer size of array from only itself"); }
 		}
 	}
 }
@@ -25,6 +27,7 @@ impl Display for Type {
 			Type::Invalid => { s = "invalid"; }
 			Type::Int => { s = "int"; }
 			Type::Ptr => { s = "pointer"; }
+			Type::Array => { s = "array"; }
 		}
 		write!(f, "{}", s)
 	}
@@ -36,17 +39,19 @@ pub struct TypeCell {
 	// ポインタの情報はいくつ繋がっているか及び終端の型で管理 (chains は *...*p の時の * の数)
 	pub ptr_end: Option<Type>,
 	pub chains: usize,
+
+	pub array_size: Option<usize>,
 }
 
 impl TypeCell {
 	pub fn new(typ: Type) -> Self {
-		TypeCell { typ: typ, chains: 0, ptr_end: None }
+		TypeCell { typ: typ, ptr_end: None, chains: 0, array_size: None}
 	}
 }
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_end: None, chains: 0 }
+		TypeCell { typ: Type::Invalid, ptr_end: None, chains: 0, array_size: None}
 	}
 }
 
@@ -91,22 +96,25 @@ mod tests {
 
 		t1 = TypeCell {
 			typ: Type::Ptr,
-			chains: 1,
 			ptr_end: Some(Type::Int),
+			chains: 1,
+			array_size: None,
 		};
 		assert_ne!(t1, t2);
 
 		t2 = TypeCell {
 			typ: Type::Ptr,
-			chains: 2,
 			ptr_end: Some(Type::Int),
+			chains: 2,
+			array_size: None
 		};
 		assert_ne!(t1, t2);
 
 		t1 =  TypeCell {
 			typ: Type::Ptr,
-			chains: 2,
 			ptr_end: Some(Type::Int),
+			chains: 2,
+			array_size: None
 		};
 
 		assert_eq!(t1, t2);

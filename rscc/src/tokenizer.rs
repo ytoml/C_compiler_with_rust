@@ -299,8 +299,9 @@ pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
 		if chains > 0 {
 			TypeCell {
 				typ: Type::Ptr,
-				chains: chains,
 				ptr_end: Some(end_type),
+				chains: chains,
+				..Default::default()
 			}
 		} else {
 			TypeCell {
@@ -351,8 +352,9 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 		let cell = if chains > 0 {
 			TypeCell {
 				typ: Type::Ptr,
-				chains: chains,
 				ptr_end: Some(end_type),
+				chains: chains,
+				..Default::default()
 			}
 		} else {
 			TypeCell {
