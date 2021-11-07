@@ -105,7 +105,7 @@ static BI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
 ]));
 static UNI_RESERVED: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 	';', ',',
-	'(', ')', '{', '}',
+	'(', ')', '{', '}', '[', ']',
 	'+', '-', '*', '/', '%', '&', '|', '^',
 	'!', '~', 
 	'=',
@@ -592,6 +592,23 @@ mod tests {
 			sizeofx;
 			sizeof 1;
 			sizeof(x+y);
+		";
+		test_init(src);
+
+		let mut token_ptr: TokenRef = tokenize(0);
+		while (*token_ptr).borrow().kind != Tokenkind::EOFTk {
+			println!("{}", (*token_ptr).borrow());
+			token_ptr_exceed(&mut token_ptr);
+		}
+		assert_eq!((*token_ptr).borrow().kind, Tokenkind::EOFTk);
+		println!("{}", (*token_ptr).borrow());
+	}
+
+	#[test]
+	fn array(){
+		let src: &str ="
+			int x[20];
+			x[5] = 20;
 		";
 		test_init(src);
 
