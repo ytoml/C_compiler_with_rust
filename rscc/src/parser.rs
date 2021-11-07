@@ -132,7 +132,6 @@ fn new_func(name: String, args: Vec<Option<NodeRef>>, ret_typ: TypeCell, token_p
 	Rc::new(RefCell::new(Node{ kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
 }
 
-// TODO
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
@@ -348,7 +347,8 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 // 生成規則:
-// declare = ident ("," ident)* ";"
+// declare = var ("," var)* ";"
+// var = ident ("[" num "]")?
 fn declare(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
@@ -358,6 +358,13 @@ fn declare(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 		if !consume(token_ptr, ",") { break; }
 		let ptr = token_ptr.clone();
 		let name = expect_ident(token_ptr);
+
+		// TODO: array の宣言
+		if consume(token_ptr, "[") {
+			let size = expect_number(token_ptr);
+			expect_ident(token_ptr);
+		}
+
 		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, new_lvar(name, ptr, typ.clone()), ptr_com);
 	}
 	expect(token_ptr,";");
@@ -909,7 +916,7 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 
 // 生成規則: 
 // primary = num
-//			| ident ( "(" params ")" )?
+//			| ident ( "(" params ")" | "[" expr "]")?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
@@ -942,6 +949,15 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
 				typ = locals.get(&name).as_ref().unwrap().1.clone();
 			}
+
+			if consume(token_ptr, "[") {
+				let index = expr(token_ptr);
+				// TODO: ポインタへのキャスト
+
+				expect(token_ptr,"]");
+			}
+
+
 			new_lvar(name, ptr, typ.clone())
 		}
 
