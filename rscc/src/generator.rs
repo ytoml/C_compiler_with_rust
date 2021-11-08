@@ -6,7 +6,6 @@ use crate::{
 	error_with_node,
 	exit_eprintln,
 	node::{Nodekind, NodeRef},
-	typecell::Type
 };
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
@@ -168,7 +167,6 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::DerefNd => {
-			check_can_deref(node);
 			// gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
 			gen_expr((**node).borrow().left.as_ref().unwrap());
 			let mut _asm = ASM.try_lock().unwrap();
@@ -444,27 +442,12 @@ fn gen_addr(node: &NodeRef) {
 		}
 		Nodekind::DerefNd => {
 			// *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
-			// 今はここが計算式になることをサポートしない(以下の _ => {} での左辺値エラーにたどり着くはず)
-			check_can_deref(node);
 			gen_expr((**node).borrow().left.as_ref().unwrap());
 		}
 		_ => {
 			error_with_node!("左辺値が変数ではありません。", &*(**node).borrow());
 		}
 	}
-}
-
-fn check_can_deref(node: &NodeRef) {
-	// *expr において expr が単なる変数(すなわち node.left が LvarNd であれば、その Type が Ptr でない場合にはエラーを吐く)
-	// これは int *p = &x; **p = 10; みたいなパターンを防げないことに注意
-	let left = &(**node).borrow().left;
-	if let Some(typ) = (**left.as_ref().unwrap()).borrow().typ.as_ref() {
-		if typ.typ != Type::Ptr {
-			error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &(**left.as_ref().unwrap()).borrow(), typ.typ);
-		}
-	}
-
-	()
 }
 
 // 関数呼び出し時の引数の処理を行う関数
