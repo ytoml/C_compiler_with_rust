@@ -362,7 +362,7 @@ fn decl(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 // 本来は配列も初期化できるべきだが、今はサポートしない
-// vardec = ident ( "=" expr | [" num "]")?
+// vardec = ident ( "=" expr | [" array-suffix)?
 fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
@@ -372,24 +372,31 @@ fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		// 少し紛らわしいが assign_op で型チェックもできるためここでも利用
 		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ), expr(token_ptr), ptr_)
 	} else {
-		let mut size = vec![];
-		
 		// suffix(token_ptr) とかする方がいいかも
-		while consume(token_ptr, "[") {
-			// TODO: 後ろから処理できないといけない
-			let ptr_err = token_ptr.clone();
-			if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
-			typ = typ.array(expect_number(token_ptr) as usize);
-			expect(token_ptr, "]");
+		if consume(token_ptr, "[") {
+			typ = array_suffix(token_ptr, typ);
 		}
 
-		if size.len() > 0 {
-			new_array(name, ptr, typ, size)
-		} else {
-			new_lvar(name, ptr, typ)
-		}
+		new_lvar(name, ptr, typ)
 	}
 }
+
+// 配列の次元を後ろから処理したい
+// 生成規則:
+// array-suffix = num "]" ("[" array-suffix)?
+fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
+	let ptr_err = token_ptr.clone();
+	let size = expect_number(token_ptr) as usize;
+	if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
+	expect(token_ptr, "]");
+
+	if consume(token_ptr, "[") {
+		typ = array_suffix(token_ptr, typ);
+	}
+
+	typ.array(size)
+}
+
 
 fn new_array(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, size: Vec<usize>) -> NodeRef {
 	// let array_typ = TypeCell { typ: Type::Array, ptr_end: Some(typ), chains: size.len(), array_size: Some(size) };
@@ -1427,6 +1434,25 @@ pub mod tests {
 			sizeof(x+y);
 			sizeof x + y * z;
 			sizeof(x && x);
+		";
+		test_init(src);
+		
+		let mut token_ptr = tokenize(0);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
+	fn array() {
+		let src: &str = "
+			int x[20];
+			int z[10][20];
+			int *p[10][20][30];
 		";
 		test_init(src);
 		

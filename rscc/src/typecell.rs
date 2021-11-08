@@ -57,6 +57,16 @@ impl TypeCell {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
 		TypeCell { typ: Type::Array, ptr_end: None, chains: 0, array_of: array_of, array_size: Some(size) }
 	}
+
+	pub fn array_dim(&self) -> (Vec<usize>, Self) {
+		if let Some(element) = &self.array_of {
+			let (mut dim, typ) = (*element).borrow().array_dim();
+			dim.insert(0, self.array_size.unwrap());
+			(dim, typ)
+		} else {
+			(vec![], self.clone())
+		}
+	}
 }
 
 impl Default for TypeCell {
@@ -67,11 +77,21 @@ impl Default for TypeCell {
 
 impl Display for TypeCell {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		if  let Some(typ) = &self.ptr_end {
-			write!(f, "{} {}", &typ, "*".repeat(self.chains))
+		if let Some(_) = &self.array_of {
+			let (dim, typ) = self.array_dim();
+			let mut s = format!("array of {}, dim = ", typ);
+			for n in dim {
+				s = format!("{}[{}]", s, n);
+			}
+			write!(f, "{}", s)
 		} else {
-			write!(f, "{}", &self.typ)
+			if  let Some(typ) = &self.ptr_end {
+				write!(f, "{} {}", &typ, "*".repeat(self.chains))
+			} else {
+				write!(f, "{}", &self.typ)
+			}
 		}
+
 	}
 }
 
