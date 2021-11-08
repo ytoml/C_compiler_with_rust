@@ -1,5 +1,9 @@
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::fmt;
+use std::rc::Rc;
+
+pub type TypeCellRef = Rc<RefCell<TypeCell>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Type {
@@ -40,18 +44,24 @@ pub struct TypeCell {
 	pub ptr_end: Option<Type>,
 	pub chains: usize,
 
+	pub array_of: Option<TypeCellRef>,
 	pub array_size: Option<usize>,
 }
 
 impl TypeCell {
 	pub fn new(typ: Type) -> Self {
-		TypeCell { typ: typ, ptr_end: None, chains: 0, array_size: None}
+		TypeCell { typ: typ, ptr_end: None, chains: 0, array_of: None, array_size: None}
+	}
+
+	pub fn array(&self, size: usize) -> Self {
+		let array_of = Some(Rc::new(RefCell::new(self.clone())));
+		TypeCell { typ: Type::Array, ptr_end: None, chains: 0, array_of: array_of, array_size: Some(size) }
 	}
 }
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_end: None, chains: 0, array_size: None}
+		TypeCell { typ: Type::Invalid, ptr_end: None, chains: 0, array_of: None, array_size: None}
 	}
 }
 
@@ -98,7 +108,7 @@ mod tests {
 			typ: Type::Ptr,
 			ptr_end: Some(Type::Int),
 			chains: 1,
-			array_size: None,
+			..Default::default()
 		};
 		assert_ne!(t1, t2);
 
@@ -106,7 +116,7 @@ mod tests {
 			typ: Type::Ptr,
 			ptr_end: Some(Type::Int),
 			chains: 2,
-			array_size: None
+			..Default::default()
 		};
 		assert_ne!(t1, t2);
 
@@ -114,7 +124,7 @@ mod tests {
 			typ: Type::Ptr,
 			ptr_end: Some(Type::Int),
 			chains: 2,
-			array_size: None
+			..Default::default()
 		};
 
 		assert_eq!(t1, t2);

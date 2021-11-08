@@ -347,7 +347,7 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 // 生成規則:
-// declare = vardec ("," vardec)* ";"
+// decl = vardec ("," vardec)* ";"
 fn decl(token_ptr: &mut TokenRef) -> NodeRef {
 	let typ = expect_type(token_ptr);
 	let mut node_ptr = vardec(token_ptr, typ.clone());
@@ -363,7 +363,7 @@ fn decl(token_ptr: &mut TokenRef) -> NodeRef {
 
 // 本来は配列も初期化できるべきだが、今はサポートしない
 // vardec = ident ( "=" expr | [" num "]")?
-fn vardec(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
+fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
 
@@ -372,16 +372,35 @@ fn vardec(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 		// 少し紛らわしいが assign_op で型チェックもできるためここでも利用
 		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ), expr(token_ptr), ptr_)
 	} else {
-		let chains = 0;
+		let mut size = vec![];
+		
+		// suffix(token_ptr) とかする方がいいかも
 		while consume(token_ptr, "[") {
-			let size = expect_number(token_ptr);
-			// TODO: 配列の処理
+			// TODO: 後ろから処理できないといけない
+			let ptr_err = token_ptr.clone();
+			if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
+			typ = typ.array(expect_number(token_ptr) as usize);
 			expect(token_ptr, "]");
 		}
-		new_lvar(name, ptr, typ)
+
+		if size.len() > 0 {
+			new_array(name, ptr, typ, size)
+		} else {
+			new_lvar(name, ptr, typ)
+		}
 	}
 }
 
+fn new_array(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, size: Vec<usize>) -> NodeRef {
+	// let array_typ = TypeCell { typ: Type::Array, ptr_end: Some(typ), chains: size.len(), array_size: Some(size) };
+	Rc::new(RefCell::new(
+		Node {
+			// name: Some(name.into()),
+			// token: Some(token_ptr),
+			// typ: Some(typ),
+			..Default::default()}
+	))
+}
 
 // 生成規則:
 // stmt = expr? ";"
