@@ -370,6 +370,10 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	}
 }
 
+pub fn is_type(token_ptr: &mut TokenRef) -> bool {
+	(**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(token_ptr).borrow().body.as_ref().unwrap().as_str()) 
+}
+
 
 pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
 	if (*token_ptr).borrow().kind == Tokenkind::IdentTk {

@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 use crate::{
 	node::{Node, Nodekind, NodeRef},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_type},
 	typecell::{Type, TypeCell},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -347,35 +347,45 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 // 生成規則:
-// declare = var ("," var)* ";"
-// var = ident ("[" num "]")?
-fn declare(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
-	let ptr = token_ptr.clone();
-	let name = expect_ident(token_ptr);
-	let mut node_ptr = new_lvar(name, ptr, typ.clone());
+// declare = vardec ("," vardec)* ";"
+fn decl(token_ptr: &mut TokenRef) -> NodeRef {
+	let typ = expect_type(token_ptr);
+	let mut node_ptr = vardec(token_ptr, typ.clone());
 	loop {
-		let ptr_com = token_ptr.clone();
+		let ptr_comma = token_ptr.clone();
 		if !consume(token_ptr, ",") { break; }
-		let ptr = token_ptr.clone();
-		let name = expect_ident(token_ptr);
-
-		// TODO: array の宣言
-		if consume(token_ptr, "[") {
-			let size = expect_number(token_ptr);
-			expect_ident(token_ptr);
-		}
-
-		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, new_lvar(name, ptr, typ.clone()), ptr_com);
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, vardec(token_ptr, typ.clone()), ptr_comma)
 	}
 	expect(token_ptr,";");
 	
 	node_ptr
 }
 
+// 本来は配列も初期化できるべきだが、今はサポートしない
+// vardec = ident ( "=" expr | [" num "]")?
+fn vardec(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
+	let ptr = token_ptr.clone();
+	let name = expect_ident(token_ptr);
+
+	let ptr_ = token_ptr.clone();
+	if consume(token_ptr, "=") {
+		// 少し紛らわしいが assign_op で型チェックもできるためここでも利用
+		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ), expr(token_ptr), ptr_)
+	} else {
+		let chains = 0;
+		while consume(token_ptr, "[") {
+			let size = expect_number(token_ptr);
+			// TODO: 配列の処理
+			expect(token_ptr, "]");
+		}
+		new_lvar(name, ptr, typ)
+	}
+}
+
 
 // 生成規則:
 // stmt = expr? ";"
-//		| type declare
+//		| decl
 //		| "{" stmt* "}" 
 //		| "if" "(" expr ")" stmt ("else" stmt)?
 //		| ...(今はelse ifは実装しない)
@@ -387,8 +397,8 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
-	} else if let Some(typ) = consume_type(token_ptr) {
-		declare(token_ptr, typ)
+	} else if is_type(token_ptr) {
+		decl(token_ptr)
 	} else if consume(token_ptr, "{") {
 		let mut children: Vec<Option<NodeRef>> = vec![];
 		loop {
