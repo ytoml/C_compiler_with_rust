@@ -53,9 +53,13 @@ impl TypeCell {
 		TypeCell { typ: typ, ptr_end: None, chains: 0, array_of: None, array_size: None}
 	}
 
+	// 配列は & と sizeof 以外に対してはポインタとして扱う
+	// なので、ポインタと同じく ptr_end と chains も持たせておく(chains = dim(array) + chains(element))
 	pub fn array(&self, size: usize) -> Self {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
-		TypeCell { typ: Type::Array, ptr_end: None, chains: 0, array_of: array_of, array_size: Some(size) }
+		let ptr_end = self.ptr_end.clone();
+		let chains = self.chains + 1;
+		TypeCell { typ: Type::Array, ptr_end: ptr_end, chains: chains, array_of: array_of, array_size: Some(size) }
 	}
 
 	pub fn array_dim(&self) -> (Vec<usize>, Self) {
