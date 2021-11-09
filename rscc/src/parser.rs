@@ -81,7 +81,9 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
-			*LVAR_MAX_OFFSET.try_lock().unwrap() += 8; 
+			*LVAR_MAX_OFFSET.try_lock().unwrap() +=  
+			// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
+			if let Some(typ_) = typ.clone() { typ_.bytes() } else { 8 };
 			offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
 			not_found = true;
 		}

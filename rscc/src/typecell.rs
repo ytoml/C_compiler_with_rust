@@ -71,6 +71,17 @@ impl TypeCell {
 			(vec![], self.clone())
 		}
 	}
+
+	pub fn bytes(&self) -> usize {
+		match self.typ {
+			Type::Array => {
+				let (dim, typ) = self.array_dim();
+				typ.bytes() * dim.iter().sum::<usize>()
+			}
+			_ => { self.typ.bytes() }
+		}
+		
+	}
 }
 
 impl Default for TypeCell {
