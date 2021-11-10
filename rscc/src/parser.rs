@@ -729,6 +729,7 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 	confirm_type(&left);
 	confirm_type(&right);
 
+	// それぞれ配列の場合でも true になるが、それで良い
 	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 
@@ -755,11 +756,15 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 }
 
 fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
+	eprintln!("{}", left.borrow().typ.as_ref().unwrap()); // DEBUG
+	eprintln!("{}", right.borrow().typ.as_ref().unwrap()); // DEBUG
 	confirm_type(&left);
 	confirm_type(&right);
 	let left_typ = left.borrow().typ.as_ref().unwrap().clone();
-	let left_is_ptr= left_typ.ptr_end.is_some();
 	let right_typ = right.borrow().typ.as_ref().unwrap().clone();
+
+	// それぞれ配列の場合でも true になるが、それで良い
+	let left_is_ptr= left_typ.ptr_end.is_some();
 	let right_is_ptr = right_typ.ptr_end.is_some();
 
 	let (sub_, type_cell) = 
@@ -988,12 +993,11 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				typ = locals.get(&name).as_ref().unwrap().1.clone();
 			}
 
-			if consume(token_ptr, "[") {
-				let index = expr(token_ptr);
-				// TODO: ポインタへのキャスト
-
-				expect(token_ptr,"]");
-			}
+			// 添字による配列アクセスは step22 で実装
+			// while consume(token_ptr, "[") {
+			// 	let index = expr(token_ptr);
+			// 	expect(token_ptr,"]");
+			// }
 
 
 			new_lvar(name, ptr, typ.clone())
@@ -1453,8 +1457,11 @@ pub mod tests {
 	fn array() {
 		let src: &str = "
 			int x[20];
-			int z[10][20];
+			int y[10][20];
 			int *p[10][20][30];
+			int *q;
+			x - q;
+			x + 10;
 		";
 		test_init(src);
 		

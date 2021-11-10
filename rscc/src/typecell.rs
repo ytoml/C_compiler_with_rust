@@ -57,7 +57,7 @@ impl TypeCell {
 	// なので、ポインタと同じく ptr_end と chains も持たせておく(chains = dim(array) + chains(element))
 	pub fn array(&self, size: usize) -> Self {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
-		let ptr_end = self.ptr_end.clone();
+		let ptr_end = Some(if let Some(end) = self.ptr_end { end } else { self.typ });
 		let chains = self.chains + 1;
 		TypeCell { typ: Type::Array, ptr_end: ptr_end, chains: chains, array_of: array_of, array_size: Some(size) }
 	}
@@ -76,11 +76,10 @@ impl TypeCell {
 		match self.typ {
 			Type::Array => {
 				let (dim, typ) = self.array_dim();
-				typ.bytes() * dim.iter().sum::<usize>()
+				typ.bytes() * dim.iter().product::<usize>()
 			}
 			_ => { self.typ.bytes() }
 		}
-		
 	}
 }
 
@@ -94,14 +93,14 @@ impl Display for TypeCell {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		if let Some(_) = &self.array_of {
 			let (dim, typ) = self.array_dim();
-			let mut s = format!("array of {}, dim = ", typ);
+			let mut s = format!("{} ", typ);
 			for n in dim {
 				s = format!("{}[{}]", s, n);
 			}
 			write!(f, "{}", s)
 		} else {
 			if  let Some(typ) = &self.ptr_end {
-				write!(f, "{} {}", &typ, "*".repeat(self.chains))
+				write!(f, "{}{}", &typ, "*".repeat(self.chains))
 			} else {
 				write!(f, "{}", &self.typ)
 			}
@@ -112,6 +111,7 @@ impl Display for TypeCell {
 
 impl PartialEq for TypeCell {
 	// ポインタが連なっている個数と、最終的に指されている型が両方同じ時にイコールとみなす
+	// これは、配列とポインタを暗黙的に等価とみなすことにもなる
 	fn eq(&self, other: &Self) -> bool {
 		if let Some(typ) = &self.ptr_end {
 			if let Some(other_typ) = &self.ptr_end {
