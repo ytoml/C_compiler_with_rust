@@ -405,18 +405,6 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 	typ.array(size)
 }
 
-
-fn new_array(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, size: Vec<usize>) -> NodeRef {
-	// let array_typ = TypeCell { typ: Type::Array, ptr_end: Some(typ), chains: size.len(), array_size: Some(size) };
-	Rc::new(RefCell::new(
-		Node {
-			// name: Some(name.into()),
-			// token: Some(token_ptr),
-			// typ: Some(typ),
-			..Default::default()}
-	))
-}
-
 // 生成規則:
 // stmt = expr? ";"
 //		| decl
