@@ -2,11 +2,7 @@ use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
-use crate::{
-	error_with_node,
-	exit_eprintln,
-	node::{Nodekind, NodeRef},
-};
+use crate::{error_with_node, exit_eprintln, node::{Nodekind, NodeRef}, typecell::Type};
 
 pub static ASM: Lazy<Mutex<String>> = Lazy::new(
 	|| Mutex::new(
@@ -160,10 +156,15 @@ pub fn gen_expr(node: &NodeRef) {
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			gen_addr(node);
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n"; // gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
-			*_asm += "	mov rax, [rax]\n";
-			*_asm += "	push rax\n";
+
+			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使う
+			let is_tmp = node.borrow().typ.is_none();
+			if !is_tmp && node.borrow().typ.clone().unwrap().typ != Type::Array {
+				let mut _asm = ASM.try_lock().unwrap();
+				*_asm += "	pop rax\n"; // gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
+				*_asm += "	mov rax, [rax]\n";
+				*_asm += "	push rax\n";
+			}
 			return;
 		}
 		Nodekind::DerefNd => {
