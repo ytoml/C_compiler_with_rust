@@ -72,11 +72,15 @@ impl TypeCell {
 		}
 	}
 
+	pub fn get_array_element(&self) -> Self {
+		(*self.array_of.clone().unwrap().borrow()).clone()
+	}
+
 	pub fn bytes(&self) -> usize {
 		match self.typ {
 			Type::Array => {
 				let (dim, typ) = self.array_dim();
-				typ.bytes() * dim.iter().product::<usize>()
+				typ.typ.bytes() * dim.iter().product::<usize>()
 			}
 			_ => { self.typ.bytes() }
 		}

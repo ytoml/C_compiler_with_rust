@@ -166,11 +166,17 @@ fn confirm_type(node: &NodeRef) {
 			{
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
+
 			if let Some(end) = &typ.ptr_end {
-				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければポインタになることに注意
-				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), Type::Ptr) } else { (None, *end) };
+				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければ配列 or ポインタになることに注意
+				// 配列かポインタかを継承するために typ.typ を使う
+				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), typ.typ) } else { (None, *end) };
 				let _ = node.typ.insert(
-					TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1, ..Default::default() }
+					if new_typ == Type::Array {
+						typ.get_array_element()
+					} else {
+						TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1, ..Default::default() }
+					}
 				);
 			} else {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
@@ -756,8 +762,6 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 }
 
 fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
-	eprintln!("{}", left.borrow().typ.as_ref().unwrap()); // DEBUG
-	eprintln!("{}", right.borrow().typ.as_ref().unwrap()); // DEBUG
 	confirm_type(&left);
 	confirm_type(&right);
 	let left_typ = left.borrow().typ.as_ref().unwrap().clone();
@@ -855,14 +859,14 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 			error_with_token!("型名を使用した sizeof 演算子の使用では、 \"(\" と \")\" で囲う必要があります。 -> \"({})\"", &ptr_.borrow(), typ);
 		}
 
-		let typ: Type = if consume(token_ptr, "(") {
-			let typ_: Type =  if let Some(typ) = consume_type(token_ptr) {
-				typ.typ
+		let typ: TypeCell = if consume(token_ptr, "(") {
+			let typ_: TypeCell =  if let Some(t) = consume_type(token_ptr) {
+				t
 			} else {
 				let exp = expr(token_ptr);
 				confirm_type(&exp);
 				let exp_ = exp.borrow();
-				exp_.typ.as_ref().unwrap().typ
+				exp_.typ.as_ref().unwrap().clone()
 			};
 			expect(token_ptr, ")");
 			typ_
@@ -870,9 +874,10 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 			let una = unary(token_ptr);
 			confirm_type(&una);
 			let una_ = una.borrow();
-			una_.typ.as_ref().unwrap().typ
+			una_.typ.as_ref().unwrap().clone()
 		};
 
+		// TypeCell.bytes() を使うことで配列サイズもそのまま扱える
 		new_num(typ.bytes() as i32,ptr)
 
 	} else if consume(token_ptr, "~") {
@@ -1460,8 +1465,12 @@ pub mod tests {
 			int y[10][20];
 			int *p[10][20][30];
 			int *q;
+			sizeof(*y);
+			sizeof(x);
 			x - q;
 			x + 10;
+			y - &q;
+			**p - y;
 		";
 		test_init(src);
 		
