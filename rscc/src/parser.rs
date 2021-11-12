@@ -22,6 +22,15 @@ static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mu
 static DECLARED_FUNCS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
+macro_rules! align {
+	($addr:expr, $base:expr) => {
+		if $base.count_ones() != 1 || $base <= 1 { panic!("invalid alignment basis: {}", $base); }
+		$addr += $base - 1; 
+		$addr &= !($base - 1)
+	};
+}
+
+
 // 2つ子を持つ汎用ノード
 fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), right: Some(right), .. Default::default()}))
@@ -81,10 +90,17 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
-			*LVAR_MAX_OFFSET.try_lock().unwrap() +=  
+			let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
 			// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
-			if let Some(typ_) = typ.clone() { typ_.bytes() } else { 8 };
-			offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
+			// 8バイト変数を扱う時にはアラインメントを行う
+			let (diff, should_align) = if let Some(typ_) = typ.clone() {
+				(typ_.bytes(), typ_.typ == Type::Array && typ_.ptr_end.unwrap().bytes() == 8 || typ_.typ.bytes() == 8)
+			} else {
+				(8, true)
+			};
+			*max_offset += diff;
+			if should_align { align!(*max_offset, 16usize); }
+			offset = *max_offset;
 			not_found = true;
 		}
 	}
