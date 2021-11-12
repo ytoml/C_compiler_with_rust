@@ -155,9 +155,8 @@ fn confirm_type(node: &NodeRef) {
 				}
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
-			let ptr_end = if typ.typ == Type::Ptr { typ.ptr_end.clone() } else { Some(typ.typ) };
 			let _ = node.typ.insert(
-				TypeCell { typ: Type::Ptr, ptr_end: ptr_end, chains: typ.chains+1, ..Default::default() }
+				typ.make_ptr_to()
 			);
 		}
 		Nodekind::DerefNd => {
@@ -167,17 +166,10 @@ fn confirm_type(node: &NodeRef) {
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
 
-			if let Some(end) = &typ.ptr_end {
+			if let Some(_) = &typ.ptr_end {
 				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければ配列 or ポインタになることに注意
 				// 配列かポインタかを継承するために typ.typ を使う
-				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), typ.typ) } else { (None, *end) };
-				let _ = node.typ.insert(
-					if new_typ == Type::Array {
-						typ.get_array_element()
-					} else {
-						TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1, ..Default::default() }
-					}
-				);
+				let _ = node.typ.insert( typ.make_deref() );
 			} else {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
 			}
@@ -402,7 +394,7 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 		typ = array_suffix(token_ptr, typ);
 	}
 
-	typ.to_array(size)
+	typ.make_array_of(size)
 }
 
 // 生成規則:
@@ -1459,6 +1451,7 @@ pub mod tests {
 			x + 10;
 			y - &q;
 			**p - y;
+			&p - 10;
 		";
 		test_init(src);
 		

@@ -55,29 +55,36 @@ impl TypeCell {
 		TypeCell { typ: typ, ..Default::default()}
 	}
 
+	pub fn make_ptr_to(&self) -> Self {
+		let ptr_to = Some(Rc::new(RefCell::new(self.clone())));
+		let ptr_end = Some(if let Some(end) = self.ptr_end { end } else { self.typ });
+		let chains = self.chains + 1;
+		TypeCell { typ: Type::Ptr, ptr_to: ptr_to, ptr_end: ptr_end, chains: chains, ..Default::default() }
+	}
+
 	// 配列は & と sizeof 以外に対してはポインタとして扱う
 	// なので、ポインタと同じく ptr_end と chains も持たせておく(chains = dim(array) + chains(element))
-	pub fn to_array(&self, size: usize) -> Self {
+	pub fn make_array_of(&self, size: usize) -> Self {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
-		let ptr_end = Some(if let Some(end) = self.ptr_end { end } else { self.typ });
+		let ptr_end = if self.typ == Type::Array { self.ptr_end.clone() } else { Some(self.typ) };
 		let chains = self.chains + 1;
 		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: Some(size) }
 	}
 
 	// 配列の次元と最小要素の型情報を取得
 	pub fn array_dim(&self) -> (Vec<usize>, Self) {
-		if let Some(size) = &self.array_size {
+		if let Some(size) = self.array_size {
 			let element = self.ptr_to.clone(); // array_size が Some ならば必ず ptr_to も Some
 			let (mut dim, typ) = (element.as_ref().unwrap()).borrow().array_dim();
-			dim.insert(0, *size);
+			dim.insert(0, size);
 			(dim, typ)
 		} else {
 			(vec![], self.clone())
 		}
 	}
 
-	pub fn get_array_element(&self) -> Self {
-		if self.typ != Type::Array { panic!("not able to extract element from non-array"); } 
+	pub fn make_deref(&self) -> Self {
+		if ![Type::Array, Type::Ptr].contains(&self.typ) { panic!("not able to extract element from non-array"); } 
 		(*self.ptr_to.clone().unwrap().borrow()).clone()
 	}
 
@@ -90,6 +97,22 @@ impl TypeCell {
 			_ => { self.typ.bytes() }
 		}
 	}
+
+	fn get_type_string(&self, s: impl Into<String>) -> String {
+		let s = s.into();
+		if let Some(deref) = &self.ptr_to {
+			let string = if let Some(size) = self.array_size {
+				format!("{}[{}]", s, size)
+			} else if deref.borrow().typ == Type::Array {
+				format!("({}*)", s)
+			} else {
+				format!("*{}", s)
+			};
+			(*deref).borrow().get_type_string(string)
+		} else {
+			format!("{} {}", self.typ, s)
+		}
+	}
 }
 
 impl Default for TypeCell {
@@ -100,21 +123,7 @@ impl Default for TypeCell {
 
 impl Display for TypeCell {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		if let Some(_) = &self.array_size {
-			let (dim, typ) = self.array_dim();
-			let mut s = format!("{} ", typ);
-			for n in dim {
-				s = format!("{}[{}]", s, n);
-			}
-			write!(f, "{}", s)
-		} else {
-			if  let Some(typ) = &self.ptr_end {
-				write!(f, "{}{}", &typ, "*".repeat(self.chains))
-			} else {
-				write!(f, "{}", &self.typ)
-			}
-		}
-
+		write!(f, "{}", self.get_type_string(""))
 	}
 }
 

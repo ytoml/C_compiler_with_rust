@@ -286,29 +286,18 @@ pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
 		let ptr = token_ptr.clone();
 		token_ptr_exceed(token_ptr);
 
-		let end_type: Type = match ptr.borrow().body.as_ref().unwrap().as_str() {
+		let base: Type = match ptr.borrow().body.as_ref().unwrap().as_str() {
 			"int" => { Type::Int }
 			_ => { panic!("invalid type annotation is now treated as type."); }
 		};
 
-		let mut chains = 0;
+		let mut cell = TypeCell::new(base);
+
 		while consume(token_ptr, "*") {
-			chains += 1;
+			cell = cell.make_ptr_to();	
 		}
 
-		if chains > 0 {
-			TypeCell {
-				typ: Type::Ptr,
-				ptr_end: Some(end_type),
-				chains: chains,
-				..Default::default()
-			}
-		} else {
-			TypeCell {
-				typ: end_type,
-				..Default::default()
-			}
-		}
+		cell	
 	} else {
 		error_with_token!("型の指定が必要です。", &*token_ptr.borrow());
 	}
@@ -336,35 +325,7 @@ pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
 
 pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	if (**token_ptr).borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(*token_ptr).borrow().body.as_ref().unwrap().as_str()) {
-		let ptr = token_ptr.clone();
-		token_ptr_exceed(token_ptr);
-
-		let end_type: Type = match ptr.borrow().body.as_ref().unwrap().as_str() {
-			"int" => { Type::Int }
-			_ => { panic!("invalid type annotation is now treated as type."); }
-		};
-
-		let mut chains = 0;
-		while consume(token_ptr, "*") {
-			chains += 1;
-		}
-
-		let cell = if chains > 0 {
-			TypeCell {
-				typ: Type::Ptr,
-				ptr_end: Some(end_type),
-				chains: chains,
-				..Default::default()
-			}
-		} else {
-			TypeCell {
-				typ: end_type,
-				..Default::default()
-			}
-		};
-
-		Some(cell)
-
+		Some(expect_type(token_ptr))
 	} else {
 		None
 	}
