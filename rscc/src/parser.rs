@@ -402,7 +402,7 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 		typ = array_suffix(token_ptr, typ);
 	}
 
-	typ.array(size)
+	typ.to_array(size)
 }
 
 // 生成規則:

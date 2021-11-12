@@ -40,32 +40,36 @@ impl Display for Type {
 #[derive(Clone, Debug, Eq)] // PartialEq は別で実装
 pub struct TypeCell {
 	pub typ: Type,
-	// ポインタの情報はいくつ繋がっているか及び終端の型で管理 (chains は *...*p の時の * の数)
+	// ポインタの情報はいくつ繋がっているか及び終端の型で管理 (chains は int *...*p; の時の * の数 + 配列の次元)
+	// ポインタと配列を透過的に扱うために、配列の場合も ptr_to を持つ: ただし、ポインタの場合は ptr_end は Type::Ptr にならないが、配列の場合はあり得る
+	// 配列の場合は、加えて array_size を持つ
+
+	pub ptr_to: Option<TypeCellRef>,
 	pub ptr_end: Option<Type>,
 	pub chains: usize,
-
-	pub array_of: Option<TypeCellRef>,
 	pub array_size: Option<usize>,
 }
 
 impl TypeCell {
 	pub fn new(typ: Type) -> Self {
-		TypeCell { typ: typ, ptr_end: None, chains: 0, array_of: None, array_size: None}
+		TypeCell { typ: typ, ..Default::default()}
 	}
 
 	// 配列は & と sizeof 以外に対してはポインタとして扱う
 	// なので、ポインタと同じく ptr_end と chains も持たせておく(chains = dim(array) + chains(element))
-	pub fn array(&self, size: usize) -> Self {
+	pub fn to_array(&self, size: usize) -> Self {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
 		let ptr_end = Some(if let Some(end) = self.ptr_end { end } else { self.typ });
 		let chains = self.chains + 1;
-		TypeCell { typ: Type::Array, ptr_end: ptr_end, chains: chains, array_of: array_of, array_size: Some(size) }
+		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: Some(size) }
 	}
 
+	// 配列の次元と最小要素の型情報を取得
 	pub fn array_dim(&self) -> (Vec<usize>, Self) {
-		if let Some(element) = &self.array_of {
-			let (mut dim, typ) = (*element).borrow().array_dim();
-			dim.insert(0, self.array_size.unwrap());
+		if let Some(size) = &self.array_size {
+			let element = self.ptr_to.clone(); // array_size が Some ならば必ず ptr_to も Some
+			let (mut dim, typ) = (element.as_ref().unwrap()).borrow().array_dim();
+			dim.insert(0, *size);
 			(dim, typ)
 		} else {
 			(vec![], self.clone())
@@ -73,7 +77,8 @@ impl TypeCell {
 	}
 
 	pub fn get_array_element(&self) -> Self {
-		(*self.array_of.clone().unwrap().borrow()).clone()
+		if self.typ != Type::Array { panic!("not able to extract element from non-array"); } 
+		(*self.ptr_to.clone().unwrap().borrow()).clone()
 	}
 
 	pub fn bytes(&self) -> usize {
@@ -89,13 +94,13 @@ impl TypeCell {
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_end: None, chains: 0, array_of: None, array_size: None}
+		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None}
 	}
 }
 
 impl Display for TypeCell {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		if let Some(_) = &self.array_of {
+		if let Some(_) = &self.array_size {
 			let (dim, typ) = self.array_dim();
 			let mut s = format!("{} ", typ);
 			for n in dim {
