@@ -104,13 +104,13 @@ impl TypeCell {
 			let string = if let Some(size) = self.array_size {
 				format!("{}[{}]", s, size)
 			} else if deref.borrow().typ == Type::Array {
-				format!("({}*)", s)
+				format!(" ({}*)", s)
 			} else {
 				format!("*{}", s)
 			};
 			(*deref).borrow().get_type_string(string)
 		} else {
-			format!("{} {}", self.typ, s)
+			format!("{}{}", self.typ, s)
 		}
 	}
 }

@@ -155,9 +155,7 @@ fn confirm_type(node: &NodeRef) {
 				}
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
-			let _ = node.typ.insert(
-				typ.make_ptr_to()
-			);
+			let _ = node.typ.insert( typ.make_ptr_to() );
 		}
 		Nodekind::DerefNd => {
 			let mut node = node.borrow_mut();
@@ -1445,13 +1443,14 @@ pub mod tests {
 			int y[10][20];
 			int *p[10][20][30];
 			int *q;
+			int z;
 			sizeof(*y);
 			sizeof(x);
 			x - q;
 			x + 10;
 			y - &q;
 			**p - y;
-			&p - 10;
+			&p - z;
 		";
 		test_init(src);
 		
