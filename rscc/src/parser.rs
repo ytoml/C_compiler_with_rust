@@ -1035,7 +1035,9 @@ pub mod tests {
 	pub fn parse_stmts(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 		let mut statements :Vec<NodeRef> = Vec::new();
 		while !at_eof(token_ptr) {
-			statements.push(stmt(token_ptr));
+			let stmt_ = stmt(token_ptr);
+			confirm_type(&stmt_);
+			statements.push(stmt_);
 		}
 		statements
 	}
@@ -1451,6 +1453,8 @@ pub mod tests {
 			y - &q;
 			**p - y;
 			&p - z;
+			****p;
+			*****&p;
 		";
 		test_init(src);
 		
