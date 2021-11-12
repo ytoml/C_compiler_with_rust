@@ -16,6 +16,21 @@ static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
 
 static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]));
 
+macro_rules! operate {
+	($operator:expr) => {
+		*ASM.try_lock().unwrap() += format!("\t{}\n", $operator).as_str()
+	};
+	
+	($operator:expr, $operand1:expr) => {
+		*ASM.try_lock().unwrap() += format!("\t{} {}\n", $operator, $operand1).as_str()
+	};
+	
+	($operator:expr, $operand1:expr, $operand2:expr) => {
+		*ASM.try_lock().unwrap() += format!("\t{} {}, {}\n", $operator, $operand1, $operand2).as_str()
+	};
+}
+
+
 // CTR_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
 fn get_count() -> u32 {
 	let mut count = CTR_COUNT.try_lock().unwrap();
@@ -355,72 +370,81 @@ pub fn gen_expr(node: &NodeRef) {
 		_ => {}// 他のパターンなら、ここでは何もしない
 	} 
 
-	gen_expr((**node).borrow().left.as_ref().unwrap());
-	gen_expr((**node).borrow().right.as_ref().unwrap());
+	let left = (*node).borrow().left.clone().unwrap();
+	let right = (*node).borrow().right.clone().unwrap();
+	gen_expr(&left);
+	gen_expr(&right);
 
-	let mut _asm = ASM.try_lock().unwrap();
-	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&(**node).borrow().kind) {
-		*_asm += "	pop rcx\n";
+	// long や long long などが実装されるまではポインタなら8バイト、そうでなければ4バイトのレジスタを使うことにする
+	let (ax, di, dx, cq) = if left.borrow().typ.as_ref().unwrap().ptr_end.is_some() {
+		("rax", "rdi", "rdx", "cqo") 
 	} else {
-		*_asm += "	pop rdi\n";
+		("eax", "edi", "edx", "cdq") 
+	};
+
+
+	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&(**node).borrow().kind) {
+		operate!("pop", "rcx");
+	} else {
+		operate!("pop", "rdi");
 	}
-	*_asm += "	pop rax\n";
+	operate!("pop", "rax");
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
 	match (**node).borrow().kind {
 		Nodekind::AddNd => {
-			*_asm += "	add rax, rdi\n";
+			operate!("add", ax, di);
 		}
 		Nodekind::SubNd => {
-			*_asm += "	sub rax, rdi\n";
+			operate!("sub", ax, di);
 		}
 		Nodekind::MulNd => {
-			*_asm += "	imul rax, rdi\n";
+			operate!("imul", ax, di);
 		}
 		Nodekind::DivNd  => {
-			*_asm += "	cqo\n"; // rax -> rdx:rax に拡張(ただの 0 fill)
-			*_asm += "	idiv rdi\n"; // rdi で割る: rax が商で rdx が剰余になる
+			operate!(cq); // rax -> rdx:rax に拡張(ただの 0 fill)
+			operate!("idiv", di); // rdi で割る: rax が商で rdx が剰余になる
 		}
 		Nodekind::ModNd  => {
-			*_asm += "	cqo\n";
-			*_asm += "	idiv rdi\n";
-			*_asm += "	push rdx\n";
+			operate!(cq);
+			operate!("idiv", di);
+			operate!("push", dx);
 			return;
 		}
 		Nodekind::LShiftNd => {
-			*_asm += "	sal rax, cl\n";
+			operate!("sal", ax, "cl");
 		}
 		Nodekind::RShiftNd => {
-			*_asm += "	sar rax, cl\n";
+			operate!("sar", ax, "cl");
 		}
 		Nodekind::BitAndNd => {
-			*_asm += "	and rax, rdi\n";
+			operate!("and", ax, di);
 		}
 		Nodekind::BitOrNd => {
-			*_asm += "	or rax, rdi\n";
+			operate!("or", ax, di);
 		}
 		Nodekind::BitXorNd => {
-			*_asm += "	xor rax, rdi\n";
+			operate!("xor", ax, di);
 		}
 		Nodekind::EqNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	sete al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("sete", "al");
+			operate!("movzb", "rax", "al");
 		}
 		Nodekind::NEqNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	setne al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("setne", "al");
+			operate!("movzb", "rax", "al");
 		}
 		Nodekind::LThanNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	setl al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("setl", "al");
+			operate!("movzb", "rax", "al");
 		}
 		Nodekind::LEqNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	setle al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("setle", "al");
+			operate!("movzb", "rax", "al");
 		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
@@ -428,7 +452,7 @@ pub fn gen_expr(node: &NodeRef) {
 		}
 	}
 
-	*_asm += "	push rax\n";
+	operate!("push", "rax");
 }
 
 // アドレスを生成する関数(ポインタでない普通の変数への代入等でも使用)

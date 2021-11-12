@@ -734,6 +734,7 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 		let size = typ.bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
 		let add_ = new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr);
+		confirm_type(&add_);
 		let _ = add_.borrow_mut().typ.insert(ptr_cell);
 		add_
 	}
@@ -760,6 +761,7 @@ fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
 		let size = typ.bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::SubNd, left, right);
+		confirm_type(&pointer_offset);
 		(new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(size), token_ptr), TypeCell::new(Type::Int))
 
 	} else {
@@ -769,6 +771,7 @@ fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
 		let size = typ.bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		confirm_type(&pointer_offset);
 		(new_binary(Nodekind::SubNd, left, pointer_offset, token_ptr), left_typ)
 	};
 	let _ = sub_.borrow_mut().typ.insert(type_cell);
