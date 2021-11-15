@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader};
 
 use clap::Clap;
 
+mod asm;
 mod generator;
 mod globals;
 mod node;
