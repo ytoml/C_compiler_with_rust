@@ -184,16 +184,21 @@ pub fn gen_expr(node: &NodeRef) {
 		}
 		Nodekind::DerefNd => {
 			// gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n"; 
-			*_asm += "	mov rax, [rax]\n";
-			*_asm += "	push rax\n";
+			// 配列との整合をとるために *& の場合に打ち消す必要がある
+			let left = (*node).borrow().left.clone().unwrap();
+			if left.borrow().kind == Nodekind::AddrNd {
+				gen_addr(left.borrow().left.as_ref().unwrap());
+			} else {
+				gen_expr((**node).borrow().left.as_ref().unwrap());
+				let mut _asm = ASM.try_lock().unwrap();
+				*_asm += "	pop rax\n"; 
+				*_asm += "	mov rax, [rax]\n";
+				*_asm += "	push rax\n";
+			}
 			return;
 		}
 		Nodekind::AddrNd => {
 			// gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、そのままでOK
-			// 生成規則上は Deref も Addr と同様に複数つけられる(&&var)ことになっているが、本当はそんなことないので、ここで gen_addr を使うことで担保する
 			gen_addr((**node).borrow().left.as_ref().unwrap());
 			return;
 		}

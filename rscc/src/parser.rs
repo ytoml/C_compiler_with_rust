@@ -63,7 +63,13 @@ macro_rules! tmp_unary {
 
 // 数字に対応するノード
 fn _num(val: i32, token: Option<TokenRef>) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::NumNd, token: token, val: Some(val), .. Default::default()}))
+	Rc::new(RefCell::new(Node{
+		kind: Nodekind::NumNd,
+		token: token,
+		typ: Some(TypeCell::new(Type::Int)),
+		val: Some(val),
+		.. Default::default()
+	}))
 }
 
 fn new_num(val: i32, token_ptr: TokenRef) -> NodeRef {
