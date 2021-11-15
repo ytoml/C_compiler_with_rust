@@ -94,7 +94,9 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 			// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
 			// 8バイト変数を扱う時にはアラインメントを行う
 			let (diff, should_align) = if let Some(typ_) = typ.clone() {
-				(typ_.bytes(), typ_.typ == Type::Array && typ_.ptr_end.unwrap().bytes() == 8 || typ_.typ.bytes() == 8)
+				(
+					typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
+				)
 			} else {
 				(8, true)
 			};

@@ -172,9 +172,9 @@ pub fn gen_expr(node: &NodeRef) {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			gen_addr(node);
 
-			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使う
+			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使うことにしてスルー
 			let is_tmp = node.borrow().typ.is_none();
-			if !is_tmp && node.borrow().typ.clone().unwrap().typ != Type::Array {
+			if is_tmp || node.borrow().typ.clone().unwrap().typ != Type::Array {
 				let mut _asm = ASM.try_lock().unwrap();
 				*_asm += "	pop rax\n"; // gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
 				*_asm += "	mov rax, [rax]\n";
