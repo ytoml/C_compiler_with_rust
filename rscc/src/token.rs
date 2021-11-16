@@ -106,7 +106,7 @@ impl Token {
 			Tokenkind::ReturnTk => {
 				Token {
 					kind: kind, 
-					body: Some("This is return Token.".to_string()),
+					body: Some("return".to_string()),
 					len: 6,
 					file_num: file_num,
 					line_num: line_num,
@@ -117,7 +117,7 @@ impl Token {
 			Tokenkind::EOFTk => {
 				Token {
 					kind: kind, 
-					body: Some("This is EOF Token.".to_string()),
+					body: Some("token of EOF".to_string()),
 					.. Default::default()
 				}
 			},
