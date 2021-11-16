@@ -592,14 +592,14 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 		);
 
 		let op = match kind {
-			Nodekind::AddNd => { new_add(tmp_deref, right, token_ptr.clone()) }
-			Nodekind::SubNd => { new_sub(tmp_deref, right, token_ptr.clone()) }
-			_ => { new_binary(kind, tmp_deref, right, token_ptr.clone()) }
+			Nodekind::AddNd => { new_add(tmp_deref.clone(), right, token_ptr.clone()) }
+			Nodekind::SubNd => { new_sub(tmp_deref.clone(), right, token_ptr.clone()) }
+			_ => { new_binary(kind, tmp_deref.clone(), right, token_ptr.clone()) }
 		};
 
 		let expr_right = tmp_binary!(
 			Nodekind::AssignNd,
-			tmp_lvar,
+			tmp_deref,
 			op
 		);
 
