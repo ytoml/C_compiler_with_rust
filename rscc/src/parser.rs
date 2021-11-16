@@ -107,7 +107,7 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 				(8, true)
 			};
 			*max_offset += diff;
-			if should_align { align!(*max_offset, 16usize); }
+			if should_align { align!(*max_offset, 8usize); }
 			offset = *max_offset;
 			not_found = true;
 		}
@@ -603,6 +603,8 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 			op
 		);
 
+		confirm_type(&expr_left);
+		confirm_type(&expr_right);
 		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
 	};
 	let _ = assign_.borrow_mut().typ.insert(typ);
@@ -944,9 +946,12 @@ fn inc_dec(node: NodeRef, is_inc: bool, is_prefix: bool, token_ptr: TokenRef) ->
 		assign_op(kind, node, tmp_num!(1), token_ptr)
 	} else {
 		// i++ は (i+=1)-1 として読み替えると良い
-		let opposite_kind = if !is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
+		if is_inc {
+			new_sub(assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr)
+		} else {
+			new_add(assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr)
+		}
 		// この部分木でエラーが起きる際、部分木の根が token を持っている(Some)必要があることに注意
-		new_binary(opposite_kind, assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr) 
 	}
 }
 

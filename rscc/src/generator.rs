@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 
 use crate::{
 	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, operate,
-	asm::reg_ax,
+	asm::{reg_ax, reg_di},
 	node::{Nodekind, NodeRef},
 	typecell::Type
 };
@@ -158,10 +158,9 @@ pub fn gen_expr(node: &NodeRef) {
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
 			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使うことにしてスルー
-			let is_tmp = node.borrow().typ.is_none();
 			let typ = node.borrow().typ.clone();
-			if is_tmp || typ.clone().unwrap().typ != Type::Array {
-				let bytes = if is_tmp { 8 } else { typ.unwrap().bytes() };
+			if typ.clone().unwrap().typ != Type::Array {
+				let bytes = typ.unwrap().bytes();
 				let offset = node.borrow().offset.unwrap();
 				let ax = reg_ax(bytes);
 				
@@ -215,9 +214,11 @@ pub fn gen_expr(node: &NodeRef) {
 			gen_expr((**node).borrow().right.as_ref().unwrap());
 
 			// 上記gen_expr2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
+			let typ = node.borrow().typ.clone().unwrap();
+			let bytes = if typ.typ == Type::Array { 8 } else { typ.bytes() };
 			operate!("pop", "rdi");
 			operate!("pop", "rax");
-			mov_to!(8, "rax", "rdi");
+			mov_to!(bytes, "rax", reg_di(bytes));
 			operate!("push", "rdi"); // 連続代入可能なように、評価値として代入した値をpushする
 			return;
 		}

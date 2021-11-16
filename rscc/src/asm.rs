@@ -10,13 +10,13 @@ pub fn reg_ax(size: usize) -> &'static str {
 	}
 }
 
-// pub fn reg_dx(size: usize) -> &'static str {
-// 	match size {
-// 		4 => { "edx" }
-// 		8 => { "rdx" }
-// 		_ => { panic!("{}", UNSUPPORTED_REG_SIZE); }
-// 	}
-// }
+pub fn reg_di(size: usize) -> &'static str {
+	match size {
+		4 => { "edi" }
+		8 => { "rdi" }
+		_ => { panic!("{}", UNSUPPORTED_REG_SIZE); }
+	}
+}
 
 pub fn word_ptr(size: usize) -> &'static str {
 	match size {
