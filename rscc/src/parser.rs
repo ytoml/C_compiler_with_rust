@@ -991,10 +991,10 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 				new_func(name, args, ret_typ, ptr)
 			} else {
+				// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
 				new_func(name, args, TypeCell::new(Type::Int), ptr)
 			}
 		} else {
-			// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
 			let typ: TypeCell;
 			{
 				let locals = LOCALS.try_lock().unwrap();

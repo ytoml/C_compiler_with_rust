@@ -3,7 +3,8 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 use crate::{
-	asm_write, error_with_node, exit_eprintln, mov, mov_to, mov_from, operate,
+	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, operate,
+	asm::reg_ax,
 	node::{Nodekind, NodeRef},
 	typecell::Type
 };
@@ -48,7 +49,8 @@ pub fn gen_expr(node: &NodeRef) {
 				for (ix, arg) in (&(**node).borrow().args).iter().enumerate() {
 					mov!("rax", "rbp");
 					operate!("sub", "rax", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap());
-					mov_to!("rax", ARGS_REGISTERS.try_lock().unwrap()[ix]);
+					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
+					mov_to!(size, "rax", ARGS_REGISTERS.try_lock().unwrap()[ix]);
 				}
 			}
 			
@@ -148,15 +150,21 @@ pub fn gen_expr(node: &NodeRef) {
 		}
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
-			gen_addr(node);
-
 			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使うことにしてスルー
 			let is_tmp = node.borrow().typ.is_none();
-			if is_tmp || node.borrow().typ.clone().unwrap().typ != Type::Array {
-				operate!("pop", "rax"); // gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
-				mov_from!("rax", "rax");
+			let typ = node.borrow().typ.clone();
+			if is_tmp || typ.clone().unwrap().typ != Type::Array {
+				let bytes = typ.unwrap().bytes();
+				let offset = node.borrow().offset.unwrap();
+				let ax = reg_ax(bytes);
+				
+				mov_from!(bytes, ax, "rbp", offset);
+				if bytes != 8 { operate!("cdqe"); } // rax で push するために、 eax ならば符号拡張が必要
 				operate!("push", "rax");
+			} else {
+				gen_addr(node);
 			}
+
 			return;
 		}
 		Nodekind::DerefNd => {
@@ -168,7 +176,7 @@ pub fn gen_expr(node: &NodeRef) {
 			} else {
 				gen_expr((**node).borrow().left.as_ref().unwrap());
 				operate!("pop", "rax");
-				mov_from!("rax", "rax");
+				mov_from!(8, "rax", "rax");
 				operate!("push", "rax");
 			}
 			return;
@@ -201,7 +209,7 @@ pub fn gen_expr(node: &NodeRef) {
 			// 上記gen_expr2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
 			operate!("pop", "rdi");
 			operate!("pop", "rax");
-			mov_to!("rax", "rdi");
+			mov_to!(8, "rax", "rdi");
 			operate!("push", "rdi"); // 連続代入可能なように、評価値として代入した値をpushする
 			return;
 		}
@@ -416,8 +424,8 @@ fn gen_addr(node: &NodeRef) {
 	match (**node).borrow().kind {
 		Nodekind::LvarNd => {
 			// 変数に対応するアドレスをスタックにプッシュする
-			mov!("rax", "rbp");
-			operate!("sub", "rax", (**node).borrow().offset.unwrap());
+			let offset = node.borrow().offset.unwrap();
+			lea!("rax", "rbp", offset);
 			operate!("push", "rax");
 		}
 		Nodekind::DerefNd => {

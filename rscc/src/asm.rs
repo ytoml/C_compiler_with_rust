@@ -18,6 +18,14 @@ pub fn reg_dx(size: usize) -> &'static str {
 	}
 }
 
+pub fn word_ptr(size: usize) -> &'static str {
+	match size {
+		4 => { "DWORD PTR" }
+		8 => { "QWORD PTR" }
+		_ => { panic!("{}", UNSUPPORTED_REG_SIZE); }
+	}
+}
+
 #[macro_export]
 macro_rules! operate {
 	($operator:expr) => {
@@ -35,23 +43,31 @@ macro_rules! operate {
 
 #[macro_export]
 macro_rules! mov_to {
-	($operand1:expr, $operand2:expr) => {
-		*ASM.try_lock().unwrap() += format!("\tmov [{}], {}\n", $operand1, $operand2).as_str()
+	($size:expr, $operand1:expr, $operand2:expr) => {
+		use crate::asm::word_ptr;
+		let _word = word_ptr($size);
+		*ASM.try_lock().unwrap() += format!("\tmov {} [{}], {}\n", _word, $operand1, $operand2).as_str()
 	};
 
-	($operand1:expr, $operand2:expr, $offset:expr) => {
-		*ASM.try_lock().unwrap() += format!("\tmov [{} - {}], {}\n", $operand1, $offset, $operand2).as_str()
+	($size:expr, $operand1:expr, $operand2:expr, $offset:expr) => {
+		use crate::asm::word_ptr;
+		let _word = word_ptr($size);
+		*ASM.try_lock().unwrap() += format!("\tmov {} [{}-{}], {}\n", _word, $operand1, $offset, $operand2).as_str()
 	};
 }
 
 #[macro_export]
 macro_rules! mov_from {
-	($operand1:expr, $operand2:expr) => {
-		*ASM.try_lock().unwrap() += format!("\tmov {}, [{}]\n", $operand1, $operand2).as_str()
+	($size:expr, $operand1:expr, $operand2:expr) => {
+		use crate::asm::word_ptr;
+		let _word = word_ptr($size);
+		*ASM.try_lock().unwrap() += format!("\tmov {}, {} [{}]\n", $operand1, _word, $operand2).as_str()
 	};
 
-	($operand1:expr, $operand2:expr, $offset:expr) => {
-		*ASM.try_lock().unwrap() += format!("\tmov {}, [{} - {}]\n", $operand1, $operand2, $offset).as_str()
+	($size:expr, $operand1:expr, $operand2:expr, $offset:expr) => {
+		use crate::asm::word_ptr;
+		let _word = word_ptr($size);
+		*ASM.try_lock().unwrap() += format!("\tmov {}, {} [{}-{}]\n", $operand1, _word,$operand2, $offset).as_str()
 	};
 }
 
@@ -59,6 +75,17 @@ macro_rules! mov_from {
 macro_rules! mov {
 	($operand1:expr, $operand2:expr) => {
 		*ASM.try_lock().unwrap() += format!("\tmov {}, {}\n", $operand1, $operand2).as_str()
+	};
+}
+
+#[macro_export]
+macro_rules! lea {
+	($operand1:expr, $operand2:expr) => {
+		*ASM.try_lock().unwrap() += format!("\tlea {}, [{}]\n", $operand1, $operand2).as_str()
+	};
+
+	($operand1:expr, $operand2:expr, $offset:expr) => {
+		*ASM.try_lock().unwrap() += format!("\tlea {}, [{}-{}]\n", $operand1, $operand2, $offset).as_str()
 	};
 }
 
