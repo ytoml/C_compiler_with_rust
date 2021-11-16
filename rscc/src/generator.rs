@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
@@ -19,7 +20,12 @@ static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
 	|| Mutex::new(0)
 );
 
-static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]));
+static ARGS_REGISTERS: Lazy<Mutex<HashMap<usize, Vec<&str>>>> = Lazy::new(|| {
+	let mut map = HashMap::new();
+	let _ = map.insert(4, vec!["edi", "esi", "edx", "rcx", "r8d", "r9d"]);
+	let _ = map.insert(8, vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]);
+	Mutex::new(map)
+});
 
 
 
@@ -47,10 +53,11 @@ pub fn gen_expr(node: &NodeRef) {
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
 				if (**node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
 				for (ix, arg) in (&(**node).borrow().args).iter().enumerate() {
-					mov!("rax", "rbp");
-					operate!("sub", "rax", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap());
+					let offset = *(*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap();
 					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
-					mov_to!(size, "rax", ARGS_REGISTERS.try_lock().unwrap()[ix]);
+					let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
+
+					mov_to!(size, "rbp", arg_reg, offset);
 				}
 			}
 			
@@ -154,12 +161,13 @@ pub fn gen_expr(node: &NodeRef) {
 			let is_tmp = node.borrow().typ.is_none();
 			let typ = node.borrow().typ.clone();
 			if is_tmp || typ.clone().unwrap().typ != Type::Array {
-				let bytes = typ.unwrap().bytes();
+				let bytes = if is_tmp { 8 } else { typ.unwrap().bytes() };
 				let offset = node.borrow().offset.unwrap();
 				let ax = reg_ax(bytes);
 				
 				mov_from!(bytes, ax, "rbp", offset);
-				if bytes != 8 { operate!("cdqe"); } // rax で push するために、 eax ならば符号拡張が必要
+				// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
+				if bytes == 4 { operate!("cdqe"); } 
 				operate!("push", "rax");
 			} else {
 				gen_addr(node);
@@ -172,9 +180,9 @@ pub fn gen_expr(node: &NodeRef) {
 			// 配列との整合をとるために *& の場合に打ち消す必要がある
 			let left = (*node).borrow().left.clone().unwrap();
 			if left.borrow().kind == Nodekind::AddrNd {
-				gen_addr(left.borrow().left.as_ref().unwrap());
+				gen_expr(left.borrow().left.as_ref().unwrap());
 			} else {
-				gen_expr((**node).borrow().left.as_ref().unwrap());
+				gen_expr(&left);
 				operate!("pop", "rax");
 				mov_from!(8, "rax", "rax");
 				operate!("push", "rax");
@@ -450,7 +458,13 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 	}
 
 	for i in 0..argc {
-		operate!("pop", (*ARGS_REGISTERS.try_lock().unwrap())[i]);
+		let bytes = args[i].as_ref().unwrap().borrow().typ.clone().unwrap().bytes();
+		let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&bytes).unwrap()[i];
+		let ax = reg_ax(bytes);
+		operate!("pop", "rax");
+		// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
+		if bytes == 4 { operate!("cdqe"); }
+		mov!(arg_reg, ax);
 	}
 }
 
