@@ -582,7 +582,7 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 	} else {
 		// tmp として通常は認められない無名の変数を使うことで重複を避ける
 		let tmp_lvar = tmp_lvar!();
-		let _ = tmp_lvar.borrow_mut().typ.insert(typ.clone());
+		let _ = tmp_lvar.borrow_mut().typ.insert(typ.make_ptr_to());
 		let tmp_deref = tmp_unary!(Nodekind::DerefNd, tmp_lvar.clone());
 
 		let expr_left = tmp_binary!(
