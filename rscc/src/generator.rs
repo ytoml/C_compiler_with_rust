@@ -458,7 +458,8 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 	}
 
 	for i in 0..argc {
-		let bytes = args[i].as_ref().unwrap().borrow().typ.clone().unwrap().bytes();
+		let typ = args[i].as_ref().unwrap().borrow().typ.clone().unwrap();
+		let bytes = if typ.typ == Type::Array { 8 } else { typ.bytes() };
 		let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&bytes).unwrap()[i];
 		let ax = reg_ax(bytes);
 		operate!("pop", "rax");

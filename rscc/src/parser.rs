@@ -581,21 +581,26 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 		new_binary(Nodekind::AssignNd, left,  right, token_ptr)
 	} else {
 		// tmp として通常は認められない無名の変数を使うことで重複を避ける
+		let tmp_lvar = tmp_lvar!();
+		let _ = tmp_lvar.borrow_mut().typ.insert(typ.clone());
+		let tmp_deref = tmp_unary!(Nodekind::DerefNd, tmp_lvar.clone());
+
 		let expr_left = tmp_binary!(
 			Nodekind::AssignNd,
-			tmp_lvar!(),
+			tmp_lvar.clone(),
 			tmp_unary!(Nodekind::AddrNd, left)
 		);
 
-		// ポインタ等の演算チェック: *tmp op b に confirm_type を適用
-		let tmp_ = tmp_unary!(Nodekind::DerefNd, tmp_lvar!());
-		let _ = tmp_.borrow_mut().typ.insert(typ.clone());
-		let op_ = new_binary(kind, tmp_, right, token_ptr.clone());
-		confirm_type(&op_);
+		let op = match kind {
+			Nodekind::AddNd => { new_add(tmp_deref, right, token_ptr.clone()) }
+			Nodekind::SubNd => { new_sub(tmp_deref, right, token_ptr.clone()) }
+			_ => { new_binary(kind, tmp_deref, right, token_ptr.clone()) }
+		};
+
 		let expr_right = tmp_binary!(
 			Nodekind::AssignNd,
-			tmp_unary!(Nodekind::DerefNd, tmp_lvar!()),
-			op_
+			tmp_lvar,
+			op
 		);
 
 		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
@@ -1161,6 +1166,8 @@ pub mod tests {
 			--i;
 			i++;
 			i--;
+			int *p;
+			++*p;
 		";
 		test_init(src);
 		

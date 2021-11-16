@@ -97,7 +97,11 @@ impl Display for Node {
 		if let Some(e) = self.typ.as_ref() {s = format!("{}type: {}\n", s, e);}
 		if let Some(e) = self.token.as_ref() {
 			let tok = (*e).borrow();
-			s = format!("{}token: [{}, {}]\n", s, tok.line_num, tok.line_offset);
+			if let Some(body) = tok.body.clone() {
+				s = format!("{}token: \"{}\" [{}, {}]\n", s, body, tok.line_num, tok.line_offset);
+			} else {
+				s = format!("{}token: [{}, {}]\n", s, tok.line_num, tok.line_offset);
+			}
 		}
 		if let Some(e) = self.val.as_ref() {s = format!("{}val: {}\n", s, e);}
 		if let Some(e) = self.name.as_ref() {s = format!("{}name: {}\n", s, e);}
