@@ -201,6 +201,10 @@ fn confirm_type(node: &NodeRef) {
 			let mut node = node.borrow_mut();
 			let left = node.left.as_ref().unwrap();
 			let right = node.right.as_ref().unwrap();
+			let left_typ = left.borrow().typ.clone().unwrap();
+			if left_typ.typ == Type::Array {
+				error_with_node!("左辺値は代入可能な型である必要がありますが、配列型\"{}\"が指定されています。", &left.borrow(), left_typ);
+			}
 			let typ = get_common_type(left, right);
 			let _ = node.typ.insert(typ);
 		}
@@ -574,13 +578,13 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 	confirm_type(&right);
 
 	// この式全体の評価値は left (a += b の a) の型とする
-	let typ = left.borrow().typ.as_ref().unwrap().clone();
 	let assign_ = 
 	if kind == Nodekind::AssignNd {
 		// プレーンな "=" の場合は単に通常通りのノード作成で良い
 		new_binary(Nodekind::AssignNd, left,  right, token_ptr)
 	} else {
 		// tmp として通常は認められない無名の変数を使うことで重複を避ける
+		let typ = left.borrow().typ.as_ref().unwrap().clone();
 		let tmp_lvar = tmp_lvar!();
 		let _ = tmp_lvar.borrow_mut().typ.insert(typ.make_ptr_to());
 		let tmp_deref = tmp_unary!(Nodekind::DerefNd, tmp_lvar.clone());
@@ -607,7 +611,7 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 		confirm_type(&expr_right);
 		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
 	};
-	let _ = assign_.borrow_mut().typ.insert(typ);
+	confirm_type(&assign_);
 
 	assign_
 }
@@ -1011,13 +1015,13 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				typ = locals.get(&name).as_ref().unwrap().1.clone();
 			}
 
-			let mut node_ptr = new_lvar(name, ptr, typ.clone());
+			let mut node_ptr = new_lvar(name, ptr.clone(), typ.clone());
 
 			// TODO: 添字による配列アクセス ... X[10] -> *(X+10)
 			while consume(token_ptr, "[") {
-				let ptr = token_ptr.clone();
+				let index_ptr = token_ptr.clone();
 				let index = expr(token_ptr);
-				node_ptr = tmp_unary!(Nodekind::DerefNd, new_add(node_ptr, index, ptr));
+				node_ptr = new_unary(Nodekind::DerefNd, new_add(node_ptr, index, index_ptr), ptr.clone());
 				expect(token_ptr,"]");
 			}
 
@@ -1568,6 +1572,27 @@ pub mod tests {
 		}
 	}
 
+	#[test]
+	fn array_access() {
+		let src: &str = "
+		int main() {
+			int X[10][10][10];
+			X[0][0][0] = 10;
+			return ***X;
+		}
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
 	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする
 	#[test]
 	fn wip() {
@@ -1607,7 +1632,7 @@ pub mod tests {
 			int *p; p = &x; 
 			int **pp; pp = &p;
 			*p += 9;
-			int X[10][20][40];
+			int X[10][10][10];
 			print_helper(z = fib(*&(**pp)));
 			print_helper(*&*&*&**&*pp);
 			print_helper(sizeof (x+y));
@@ -1616,15 +1641,20 @@ pub mod tests {
 			print_helper(sizeof(int**));
 			print_helper(sizeof(x && x));
 			print_helper(sizeof(*p));
-			print_helper(sizeof *X);
+			print_helper(sizeof &X);
 			print_helper(sizeof X);
-			print_helper16(***X);
-			print_helper16(X+2);
-			print_helper16(*(*X+2));
-			print_helper16(*(*(*X+2)+9));
+			print_helper(sizeof *X);
+			print_helper(sizeof **X);
+			print_helper(sizeof ***X);
+			print_helper(X);
+			print_helper(&X+1);
+			print_helper(X+1);
+			print_helper(*X+1);
+			print_helper(**X+1);
+			print_helper(***X);
 		
 			return k;
-		}
+		}	
 		";
 		test_init(src);
 
