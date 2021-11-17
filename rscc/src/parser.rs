@@ -760,10 +760,10 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 			right = tmp;
 		}
 
+		// 配列の場合、サイズを考慮する必要があることに注意
 		let ptr_cell = left.borrow().typ.as_ref().unwrap().clone();
-		let typ = if ptr_cell.chains > 1 { Type::Ptr } else { ptr_cell.ptr_end.unwrap() };
-		let size = typ.bytes() as i32;
-		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		let bytes = ptr_cell.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(bytes), right);
 		let add_ = new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr);
 		confirm_type(&add_);
 		let _ = add_.borrow_mut().typ.insert(ptr_cell);
@@ -789,19 +789,17 @@ fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 		// ptr - ptr はそれが変数何個分のオフセットに相当するかを計算する
 		if left_typ != right_typ { error_with_token!("違う型へのポインタ同士の演算はサポートされません。: \"{}\", \"{}\"", &token_ptr.borrow(), left_typ, right_typ);}
 
-		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
-		let size = typ.bytes() as i32;
+		let bytes = left_typ.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::SubNd, left, right);
 		confirm_type(&pointer_offset);
-		(new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(size), token_ptr), TypeCell::new(Type::Int))
+		(new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(bytes), token_ptr), TypeCell::new(Type::Int))
 
 	} else {
 		// num - ptr は invalid
 		if !left_is_ptr { error_with_token!("整数型の値からポインタを引くことはできません。", &token_ptr.borrow()); }
 
-		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
-		let size = typ.bytes() as i32;
-		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		let bytes = left_typ.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(bytes), right);
 		confirm_type(&pointer_offset);
 		(new_binary(Nodekind::SubNd, left, pointer_offset, token_ptr), left_typ)
 	};
