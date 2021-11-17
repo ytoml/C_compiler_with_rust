@@ -318,7 +318,7 @@ fn func_args(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 }
 
 // 生成規則: 
-// program = (type ident "(" func-args ")" "{" stmt* "}")*
+// program = global*
 pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	let mut globals : Vec<NodeRef> = Vec::new();
 
@@ -370,6 +370,13 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	}
 	
 	globals
+}
+
+// 生成規則:
+// global = type ident global-suffix
+// global-suffix = "(" func-args ")" "{" stmt* "}" | ("[" num "]")* ";"
+fn global(token_ptr: &mut TokenRef) -> NodeRef {
+	tmp_num!(0)
 }
 
 // 生成規則:
@@ -1017,7 +1024,6 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 
 			let mut node_ptr = new_lvar(name, ptr.clone(), typ.clone());
 
-			// TODO: 添字による配列アクセス ... X[10] -> *(X+10)
 			while consume(token_ptr, "[") {
 				let index_ptr = token_ptr.clone();
 				let index = expr(token_ptr);
