@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 use crate::{
 	node::{Node, Nodekind, NodeRef},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, at_eof},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_type},
 	typecell::{Type, TypeCell},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -21,6 +21,15 @@ use crate::{
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static DECLARED_FUNCS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+
+macro_rules! align {
+	($addr:expr, $base:expr) => {
+		if $base.count_ones() != 1 || $base <= 1 { panic!("invalid alignment basis: {}", $base); }
+		$addr += $base - 1; 
+		$addr &= !($base - 1)
+	};
+}
+
 
 // 2つ子を持つ汎用ノード
 fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
@@ -54,7 +63,13 @@ macro_rules! tmp_unary {
 
 // 数字に対応するノード
 fn _num(val: i32, token: Option<TokenRef>) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::NumNd, token: token, val: Some(val), .. Default::default()}))
+	Rc::new(RefCell::new(Node{
+		kind: Nodekind::NumNd,
+		token: token,
+		typ: Some(TypeCell::new(Type::Int)),
+		val: Some(val),
+		.. Default::default()
+	}))
 }
 
 fn new_num(val: i32, token_ptr: TokenRef) -> NodeRef {
@@ -81,8 +96,19 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 		}, 
 		// 見つからなければオフセットの最大値を伸ばす
 		None => {
-			*LVAR_MAX_OFFSET.try_lock().unwrap() += 8; 
-			offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
+			let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
+			// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
+			// 8バイト変数を扱う時にはアラインメントを行う
+			let (diff, should_align) = if let Some(typ_) = typ.clone() {
+				(
+					typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
+				)
+			} else {
+				(8, true)
+			};
+			*max_offset += diff;
+			if should_align { align!(*max_offset, 8usize); }
+			offset = *max_offset;
 			not_found = true;
 		}
 	}
@@ -132,7 +158,6 @@ fn new_func(name: String, args: Vec<Option<NodeRef>>, ret_typ: TypeCell, token_p
 	Rc::new(RefCell::new(Node{ kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
 }
 
-// TODO
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
@@ -154,10 +179,7 @@ fn confirm_type(node: &NodeRef) {
 				}
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
-			let ptr_end = if typ.typ == Type::Ptr { typ.ptr_end.clone() } else { Some(typ.typ) };
-			let _ = node.typ.insert(
-				TypeCell { typ: Type::Ptr, ptr_end: ptr_end, chains: typ.chains+1 }
-			);
+			let _ = node.typ.insert( typ.make_ptr_to() );
 		}
 		Nodekind::DerefNd => {
 			let mut node = node.borrow_mut();
@@ -165,12 +187,11 @@ fn confirm_type(node: &NodeRef) {
 			{
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
-			if let Some(end) = &typ.ptr_end {
-				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければポインタになることに注意
-				let (ptr_end, new_typ) = if typ.chains > 1 { (Some(*end), Type::Ptr) } else { (None, *end) };
-				let _ = node.typ.insert(
-					TypeCell { typ: new_typ, ptr_end: ptr_end, chains: typ.chains-1 }
-				);
+
+			if let Some(_) = &typ.ptr_end {
+				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければ配列 or ポインタになることに注意
+				// 配列かポインタかを継承するために typ.typ を使う
+				let _ = node.typ.insert( typ.make_deref() );
 			} else {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
 			}
@@ -230,7 +251,7 @@ fn confirm_type(node: &NodeRef) {
 				typ = node.right.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
 			let _ = node.typ.insert(
-				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains }
+				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains, ..Default::default() }
 			);
 		}
 		Nodekind::FuncNd => {
@@ -315,7 +336,7 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 		let mut has_return : bool = false;
 		expect(token_ptr, "{");
 		while !consume(token_ptr, "}") {
-			has_return |= (**token_ptr).borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
 			let stmt_ = stmt(token_ptr);
 			confirm_type(&stmt_);
 			statements.push(stmt_);
@@ -348,27 +369,59 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 // 生成規則:
-// declare = ident ("," ident)* ";"
-fn declare(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
-	let ptr = token_ptr.clone();
-	let name = expect_ident(token_ptr);
-	let mut node_ptr = new_lvar(name, ptr, typ.clone());
+// decl = vardec ("," vardec)* ";"
+fn decl(token_ptr: &mut TokenRef) -> NodeRef {
+	let typ = expect_type(token_ptr);
+	let mut node_ptr = vardec(token_ptr, typ.clone());
 	loop {
-		let ptr_com = token_ptr.clone();
+		let ptr_comma = token_ptr.clone();
 		if !consume(token_ptr, ",") { break; }
-		let ptr = token_ptr.clone();
-		let name = expect_ident(token_ptr);
-		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, new_lvar(name, ptr, typ.clone()), ptr_com);
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, vardec(token_ptr, typ.clone()), ptr_comma)
 	}
 	expect(token_ptr,";");
 	
 	node_ptr
 }
 
+// 本来は配列も初期化できるべきだが、今はサポートしない
+// vardec = ident ( "=" expr | [" array-suffix)?
+fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+	let ptr = token_ptr.clone();
+	let name = expect_ident(token_ptr);
+
+	let ptr_ = token_ptr.clone();
+	if consume(token_ptr, "=") {
+		// 少し紛らわしいが assign_op で型チェックもできるためここでも利用
+		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ), expr(token_ptr), ptr_)
+	} else {
+		// suffix(token_ptr) とかする方がいいかも
+		if consume(token_ptr, "[") {
+			typ = array_suffix(token_ptr, typ);
+		}
+
+		new_lvar(name, ptr, typ)
+	}
+}
+
+// 配列の次元を後ろから処理したい
+// 生成規則:
+// array-suffix = num "]" ("[" array-suffix)?
+fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
+	let ptr_err = token_ptr.clone();
+	let size = expect_number(token_ptr) as usize;
+	if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
+	expect(token_ptr, "]");
+
+	if consume(token_ptr, "[") {
+		typ = array_suffix(token_ptr, typ);
+	}
+
+	typ.make_array_of(size)
+}
 
 // 生成規則:
 // stmt = expr? ";"
-//		| type declare
+//		| decl
 //		| "{" stmt* "}" 
 //		| "if" "(" expr ")" stmt ("else" stmt)?
 //		| ...(今はelse ifは実装しない)
@@ -380,8 +433,8 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
-	} else if let Some(typ) = consume_type(token_ptr) {
-		declare(token_ptr, typ)
+	} else if is_type(token_ptr) {
+		decl(token_ptr)
 	} else if consume(token_ptr, "{") {
 		let mut children: Vec<Option<NodeRef>> = vec![];
 		loop {
@@ -528,23 +581,30 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef)
 		new_binary(Nodekind::AssignNd, left,  right, token_ptr)
 	} else {
 		// tmp として通常は認められない無名の変数を使うことで重複を避ける
+		let tmp_lvar = tmp_lvar!();
+		let _ = tmp_lvar.borrow_mut().typ.insert(typ.make_ptr_to());
+		let tmp_deref = tmp_unary!(Nodekind::DerefNd, tmp_lvar.clone());
+
 		let expr_left = tmp_binary!(
 			Nodekind::AssignNd,
-			tmp_lvar!(),
+			tmp_lvar.clone(),
 			tmp_unary!(Nodekind::AddrNd, left)
 		);
 
-		// ポインタ等の演算チェック: *tmp op b に confirm_type を適用
-		let tmp_ = tmp_unary!(Nodekind::DerefNd, tmp_lvar!());
-		let _ = tmp_.borrow_mut().typ.insert(typ.clone());
-		let op_ = new_binary(kind, tmp_, right, token_ptr.clone());
-		confirm_type(&op_);
+		let op = match kind {
+			Nodekind::AddNd => { new_add(tmp_deref.clone(), right, token_ptr.clone()) }
+			Nodekind::SubNd => { new_sub(tmp_deref.clone(), right, token_ptr.clone()) }
+			_ => { new_binary(kind, tmp_deref.clone(), right, token_ptr.clone()) }
+		};
+
 		let expr_right = tmp_binary!(
 			Nodekind::AssignNd,
-			tmp_unary!(Nodekind::DerefNd, tmp_lvar!()),
-			op_
+			tmp_deref,
+			op
 		);
 
+		confirm_type(&expr_left);
+		confirm_type(&expr_right);
 		new_binary(Nodekind::CommaNd, expr_left, expr_right, token_ptr)
 	};
 	let _ = assign_.borrow_mut().typ.insert(typ);
@@ -684,6 +744,7 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 	confirm_type(&left);
 	confirm_type(&right);
 
+	// それぞれ配列の場合でも true になるが、それで良い
 	let left_is_ptr= left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
 
@@ -699,11 +760,12 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token_ptr: TokenRef) -> NodeRe
 			right = tmp;
 		}
 
+		// 配列の場合、サイズを考慮する必要があることに注意
 		let ptr_cell = left.borrow().typ.as_ref().unwrap().clone();
-		let typ = if ptr_cell.chains > 1 { Type::Ptr } else { ptr_cell.ptr_end.unwrap() };
-		let size = typ.bytes() as i32;
-		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		let bytes = ptr_cell.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(bytes), right);
 		let add_ = new_binary(Nodekind::AddNd, left, pointer_offset, token_ptr);
+		confirm_type(&add_);
 		let _ = add_.borrow_mut().typ.insert(ptr_cell);
 		add_
 	}
@@ -713,8 +775,10 @@ fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	confirm_type(&left);
 	confirm_type(&right);
 	let left_typ = left.borrow().typ.as_ref().unwrap().clone();
-	let left_is_ptr= left_typ.ptr_end.is_some();
 	let right_typ = right.borrow().typ.as_ref().unwrap().clone();
+
+	// それぞれ配列の場合でも true になるが、それで良い
+	let left_is_ptr= left_typ.ptr_end.is_some();
 	let right_is_ptr = right_typ.ptr_end.is_some();
 
 	let (sub_, type_cell) = 
@@ -725,18 +789,18 @@ fn new_sub(left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 		// ptr - ptr はそれが変数何個分のオフセットに相当するかを計算する
 		if left_typ != right_typ { error_with_token!("違う型へのポインタ同士の演算はサポートされません。: \"{}\", \"{}\"", &token_ptr.borrow(), left_typ, right_typ);}
 
-		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
-		let size = typ.bytes() as i32;
+		let bytes = left_typ.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
 		let pointer_offset = tmp_binary!(Nodekind::SubNd, left, right);
-		(new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(size), token_ptr), TypeCell::new(Type::Int))
+		confirm_type(&pointer_offset);
+		(new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(bytes), token_ptr), TypeCell::new(Type::Int))
 
 	} else {
 		// num - ptr は invalid
 		if !left_is_ptr { error_with_token!("整数型の値からポインタを引くことはできません。", &token_ptr.borrow()); }
 
-		let typ = if left_typ.chains > 1 { Type::Ptr } else { left_typ.ptr_end.unwrap() };
-		let size = typ.bytes() as i32;
-		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(size), right);
+		let bytes = left_typ.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
+		let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(bytes), right);
+		confirm_type(&pointer_offset);
 		(new_binary(Nodekind::SubNd, left, pointer_offset, token_ptr), left_typ)
 	};
 	let _ = sub_.borrow_mut().typ.insert(type_cell);
@@ -805,14 +869,14 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 			error_with_token!("型名を使用した sizeof 演算子の使用では、 \"(\" と \")\" で囲う必要があります。 -> \"({})\"", &ptr_.borrow(), typ);
 		}
 
-		let typ: Type = if consume(token_ptr, "(") {
-			let typ_: Type =  if let Some(typ) = consume_type(token_ptr) {
-				typ.typ
+		let typ: TypeCell = if consume(token_ptr, "(") {
+			let typ_: TypeCell =  if let Some(t) = consume_type(token_ptr) {
+				t
 			} else {
 				let exp = expr(token_ptr);
 				confirm_type(&exp);
 				let exp_ = exp.borrow();
-				exp_.typ.as_ref().unwrap().typ
+				exp_.typ.as_ref().unwrap().clone()
 			};
 			expect(token_ptr, ")");
 			typ_
@@ -820,9 +884,10 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 			let una = unary(token_ptr);
 			confirm_type(&una);
 			let una_ = una.borrow();
-			una_.typ.as_ref().unwrap().typ
+			una_.typ.as_ref().unwrap().clone()
 		};
 
+		// TypeCell.bytes() を使うことで配列サイズもそのまま扱える
 		new_num(typ.bytes() as i32,ptr)
 
 	} else if consume(token_ptr, "~") {
@@ -879,9 +944,12 @@ fn inc_dec(node: NodeRef, is_inc: bool, is_prefix: bool, token_ptr: TokenRef) ->
 		assign_op(kind, node, tmp_num!(1), token_ptr)
 	} else {
 		// i++ は (i+=1)-1 として読み替えると良い
-		let opposite_kind = if !is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
+		if is_inc {
+			new_sub(assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr)
+		} else {
+			new_add(assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr)
+		}
 		// この部分木でエラーが起きる際、部分木の根が token を持っている(Some)必要があることに注意
-		new_binary(opposite_kind, assign_op(kind, node, tmp_num!(1), token_ptr.clone()), tmp_num!(1), token_ptr) 
 	}
 }
 
@@ -909,7 +977,7 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 
 // 生成規則: 
 // primary = num
-//			| ident ( "(" params ")" )?
+//			| ident ( "(" params ")" | "[" expr "]")?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
@@ -931,10 +999,10 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 				new_func(name, args, ret_typ, ptr)
 			} else {
+				// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
 				new_func(name, args, TypeCell::new(Type::Int), ptr)
 			}
 		} else {
-			// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
 			let typ: TypeCell;
 			{
 				let locals = LOCALS.try_lock().unwrap();
@@ -942,6 +1010,14 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
 				typ = locals.get(&name).as_ref().unwrap().1.clone();
 			}
+
+			// 添字による配列アクセスは step22 で実装
+			// while consume(token_ptr, "[") {
+			// 	let index = expr(token_ptr);
+			// 	expect(token_ptr,"]");
+			// }
+
+
 			new_lvar(name, ptr, typ.clone())
 		}
 
@@ -994,7 +1070,9 @@ pub mod tests {
 	pub fn parse_stmts(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 		let mut statements :Vec<NodeRef> = Vec::new();
 		while !at_eof(token_ptr) {
-			statements.push(stmt(token_ptr));
+			let stmt_ = stmt(token_ptr);
+			confirm_type(&stmt_);
+			statements.push(stmt_);
 		}
 		statements
 	}
@@ -1091,6 +1169,8 @@ pub mod tests {
 			--i;
 			i++;
 			i--;
+			int *p;
+			++*p;
 		";
 		test_init(src);
 		
@@ -1396,6 +1476,36 @@ pub mod tests {
 	}
 
 	#[test]
+	fn array() {
+		let src: &str = "
+			int x[20];
+			int y[10][20];
+			int *p[10][20][30];
+			int *q;
+			int z;
+			sizeof(*y);
+			sizeof(x);
+			x - q;
+			x + 10;
+			y - &q;
+			**p - y;
+			&p - z;
+			****p;
+			*****&p;
+		";
+		test_init(src);
+		
+		let mut token_ptr = tokenize(0);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
+	}
+
+	#[test]
 	fn declare() {
 		let src: &str = "
 			func(int x, int y) {
@@ -1458,42 +1568,59 @@ pub mod tests {
 	#[test]
 	fn wip() {
 		let src: &str = "
-			int func(int x, int y) {
-				print_helper(x+y);
-				return x + y;
+		int func(int x, int y) {
+			print_helper(x+y);
+			return x + y;
+		}
+		
+		int fib(int N) {
+			if (N <= 2) return 1;
+			return fib(N-1) + fib(N-2);
+		}
+		
+		int main() {
+			int i; i = 0;
+			int j; j = 0;
+			int k; k = 1;
+			int sum; sum = 0;
+			for (; i < 10; i+=i+1, j++) {
+				sum++;
 			}
-			
-			int fib(int N) {
-				if (N <= 2) return 1;
-				return fib(N-1) + fib(N-2);
+			print_helper(j);
+			print_helper(k);
+			while (j > 0, 0) {
+				j /= 2;
+				k <<= 1;
 			}
-			
-			int main() {
-				int i; i = 0;
-				int j; j = 0;
-				int k; k = 1;
-				int sum; sum = 0;
-				for (; i < 10; i+=i+1, j++) {
-					sum++;
-				}
-				print_helper(j);
-				print_helper(k);
-				while (j > 0, 0) {
-					j /= 2;
-					k <<= 1;
-				}
-				if (1 && !(k/2)) k--;
-				else k = -1;
-			
-				int x, y, z;
-				func(x=1, (y=1, z=~1));
-			
-				x = 15 & 10;
-				x = (++x) + y;
-				int *p; p = &x; 
-				int **pp; pp = &p;
-				print_helper(z = fib(*&(**pp)));
-			}
+			if (1 && !(k/2)) k--;
+			else k = -1;
+		
+			int x, y, z;
+			func(x=1, (y=1, z=~1));
+		
+			x = 15 & 10;
+			x = (++x) + y;
+			int *p; p = &x; 
+			int **pp; pp = &p;
+			*p += 9;
+			int X[10][20][40];
+			print_helper(z = fib(*&(**pp)));
+			print_helper(*&*&*&**&*pp);
+			print_helper(sizeof (x+y));
+			print_helper(sizeof ++x);
+			print_helper(sizeof &x + x);
+			print_helper(sizeof(int**));
+			print_helper(sizeof(x && x));
+			print_helper(sizeof(*p));
+			print_helper(sizeof *X);
+			print_helper(sizeof X);
+			print_helper16(***X);
+			print_helper16(X+2);
+			print_helper16(*(*X+2));
+			print_helper16(*(*(*X+2)+9));
+		
+			return k;
+		}
 		";
 		test_init(src);
 

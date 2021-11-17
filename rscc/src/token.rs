@@ -106,7 +106,7 @@ impl Token {
 			Tokenkind::ReturnTk => {
 				Token {
 					kind: kind, 
-					body: Some("This is return Token.".to_string()),
+					body: Some("return".to_string()),
 					len: 6,
 					file_num: file_num,
 					line_num: line_num,
@@ -117,7 +117,7 @@ impl Token {
 			Tokenkind::EOFTk => {
 				Token {
 					kind: kind, 
-					body: Some("This is EOF Token.".to_string()),
+					body: Some("token of EOF".to_string()),
 					.. Default::default()
 				}
 			},
@@ -160,12 +160,12 @@ pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 	let tmp_ptr;
 
 	// next が None なら exit
-	match (**token_ptr).borrow().next.as_ref() {
+	match token_ptr.borrow().next.as_ref() {
 		Some(ptr) => {
 			tmp_ptr = ptr.clone();
 		},
 		None => {
-			exit_eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", (**token_ptr).borrow().kind);
+			exit_eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", token_ptr.borrow().kind);
 		}
 	}
 	*token_ptr = tmp_ptr;

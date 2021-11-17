@@ -1,10 +1,11 @@
 use std::sync::Mutex;
+use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
 
 use crate::{
-	error_with_node,
-	exit_eprintln,
+	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, operate,
+	asm::{reg_ax, reg_di},
 	node::{Nodekind, NodeRef},
 	typecell::Type
 };
@@ -19,7 +20,14 @@ static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
 	|| Mutex::new(0)
 );
 
-static ARGS_REGISTERS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]));
+static ARGS_REGISTERS: Lazy<Mutex<HashMap<usize, Vec<&str>>>> = Lazy::new(|| {
+	let mut map = HashMap::new();
+	let _ = map.insert(4, vec!["edi", "esi", "edx", "rcx", "r8d", "r9d"]);
+	let _ = map.insert(8, vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]);
+	Mutex::new(map)
+});
+
+
 
 // CTR_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
 fn get_count() -> u32 {
@@ -29,43 +37,42 @@ fn get_count() -> u32 {
 }
 
 pub fn gen_expr(node: &NodeRef) {
-	match (**node).borrow().kind {
+	match node.borrow().kind {
 		Nodekind::FuncDecNd => {
 			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += format!("{}:\n", (**node).borrow().name.as_ref().unwrap()).as_str();
+				asm_write!("{}:\n", node.borrow().name.as_ref().unwrap());
 			
 				// プロローグ(変数の格納領域の確保)
-				*_asm += "	push rbp\n";
-				*_asm += "	mov rbp, rsp\n";
-				let pull = (**node).borrow().max_offset.unwrap();
+				operate!("push", "rbp");
+				mov!("rbp", "rsp");
+				let pull = node.borrow().max_offset.unwrap();
 				if pull > 0 {
-					*_asm += format!("	sub rsp, {}\n", (**node).borrow().max_offset.unwrap()).as_str() ;
+					operate!("sub", "rsp", pull);
 				}
 
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-				if (**node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
-				for (ix, arg) in (&(**node).borrow().args).iter().enumerate() {
-					*_asm += "	mov rax, rbp\n";
-					*_asm += format!("	sub rax, {}\n", (*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap()).as_str();
-					*_asm += format!("	mov [rax], {}\n", ARGS_REGISTERS.try_lock().unwrap()[ix]).as_str();
+				if node.borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+				for (ix, arg) in (&node.borrow().args).iter().enumerate() {
+					let offset = *(*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap();
+					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
+					let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
+
+					mov_to!(size, "rbp", arg_reg, offset);
 				}
 			}
 			
 			// 関数内の文の処理
-			let s = (**node).borrow().stmts.as_ref().unwrap().len();
-			for (ix, stmt_) in (**node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
+			let s = node.borrow().stmts.as_ref().unwrap().len();
+			for (ix, stmt_) in node.borrow().stmts.as_ref().unwrap().iter().enumerate() {
 				gen_expr(stmt_);
-				if ix != s - 1 {*ASM.try_lock().unwrap() += "	pop rax\n";}
+				if ix != s - 1 { operate!("pop", "rax"); }
 			}
 
 			// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
 			return;
 		}
 		Nodekind::NumNd => {
-			// NumNdの時点でunwrapでき
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += format!("	push {}\n", (**node).borrow().val.as_ref().unwrap()).as_str();
+			operate!("push", node.borrow().val.unwrap());
 			return;
 		}
 		Nodekind::LogAndNd => {
@@ -74,31 +81,27 @@ pub fn gen_expr(node: &NodeRef) {
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
 			// && の左側 (short circuit であることに注意)
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += "	pop rax\n";
-				*_asm += "	cmp rax, 0\n";
-				*_asm += format!("	je {}\n", f_anchor).as_str(); // 0 なら false ゆえ残りの式の評価はせずに飛ぶ 
-			}
+			gen_expr(node.borrow().left.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0);
+			operate!("je", f_anchor); // 0 なら false ゆえ残りの式の評価はせずに飛ぶ 
 
 			// && の右側
-			gen_expr((**node).borrow().right.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n";
-			*_asm += "	cmp rax, 0\n";
-			*_asm += format!("	je {}\n", f_anchor).as_str();
+			gen_expr(node.borrow().right.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0);
+			operate!("je", f_anchor);
 
 			// true の場合、 rax に 1 をセットして end
-			*_asm += "	mov rax, 1\n";
-			*_asm += format!("	jmp {}\n", e_anchor).as_str();
+			mov!("rax", 1);
+			operate!("jmp", e_anchor);
 
-			*_asm += format!("{}:\n", f_anchor).as_str();
-			*_asm += "	mov rax, 0\n";
+			asm_write!("{}:\n", f_anchor);
+			mov!("rax", 0);
 
-			*_asm += format!("{}:\n", e_anchor).as_str();
-			// *_asm += "	cdqe\n"; // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
-			*_asm += "	push rax\n";
+			asm_write!("{}:\n", e_anchor);
+			// operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
+			operate!("push", "rax");
 
 			return;
 		}
@@ -108,128 +111,138 @@ pub fn gen_expr(node: &NodeRef) {
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
 			// && の左側 (short circuit であることに注意)
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += "	pop rax\n";
-				*_asm += "	cmp rax, 0\n";
-				*_asm += format!("	jne {}\n", t_anchor).as_str(); // 0 なら false ゆえ残りの式の評価はせずに飛ぶ 
-			}
+			gen_expr(node.borrow().left.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0);
+			operate!("jne", t_anchor); // 0 なら false ゆえ残りの式の評価はせずに飛ぶ 
 
 			// && の右側
-			gen_expr((**node).borrow().right.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n";
-			*_asm += "	cmp rax, 0\n";
-			*_asm += format!("	jne {}\n", t_anchor).as_str();
+			gen_expr(node.borrow().right.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0);
+			operate!("jne", t_anchor); 
 
 			// false の場合、 rax に 0 をセットして end
-			*_asm += "	mov rax, 1\n";
-			*_asm += format!("	jmp {}\n", e_anchor).as_str();
+			mov!("rax", 1);
+			operate!("jmp", e_anchor);
 
-			*_asm += format!("{}:\n", t_anchor).as_str();
-			*_asm += "	mov rax, 1\n";
+			asm_write!("{}:\n", t_anchor);
+			mov!("rax", 1);
 
-			*_asm += format!("{}:\n", e_anchor).as_str();
-			// *_asm += "	cdqe\n"; // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
-			*_asm += "	push rax\n";
+			asm_write!("{}:\n", e_anchor);
+			// operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
+			operate!("push", "rax");
 
 			return;
 		}
 		Nodekind::LogNotNd => {
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n";
+			gen_expr(node.borrow().left.as_ref().unwrap());
+			operate!("pop", "rax");
 
 			// rax が 0 なら 1, そうでないなら 0 にすれば良い
-			*_asm += "	cmp rax, 0\n";
-			*_asm += "	sete al\n";
-			*_asm += "	movzb rax, al\n";
-			*_asm += "	push rax\n";
+			operate!("cmp", "rax", 0);
+			operate!("sete", "al");
+			operate!("movzb", "rax", "al");
+			operate!("push", "rax");
 
 			return;
 		}
 		Nodekind::BitNotNd => {
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n";
-			*_asm += "	not rax\n";
-			*_asm += "	push rax\n";
+			gen_expr(node.borrow().left.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("not", "rax");
+			operate!("push", "rax");
 
 			return;
 		}
 		Nodekind::LvarNd => {
 			// 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
-			gen_addr(node);
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n"; // gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、popで取れる
-			*_asm += "	mov rax, [rax]\n";
-			*_asm += "	push rax\n";
+			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使うことにしてスルー
+			let typ = node.borrow().typ.clone();
+			if typ.clone().unwrap().typ != Type::Array {
+				let bytes = typ.unwrap().bytes();
+				let offset = node.borrow().offset.unwrap();
+				let ax = reg_ax(bytes);
+				
+				mov_from!(bytes, ax, "rbp", offset);
+				// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
+				if bytes == 4 { operate!("cdqe"); } 
+				operate!("push", "rax");
+			} else {
+				gen_addr(node);
+			}
+
 			return;
 		}
 		Nodekind::DerefNd => {
-			check_can_deref(node);
 			// gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n"; 
-			*_asm += "	mov rax, [rax]\n";
-			*_asm += "	push rax\n";
+			// 配列との整合をとるために *& の場合に打ち消す必要がある
+			let left = node.borrow().left.clone().unwrap();
+			if left.borrow().kind == Nodekind::AddrNd {
+				gen_expr(left.borrow().left.as_ref().unwrap());
+			} else {
+				// 参照を外した後でも配列なのであれば、アドレスが指す値を評価せずそのまま使用する
+				gen_expr(&left);
+				if node.borrow().typ.as_ref().unwrap().typ != Type::Array {
+					let left_typ = left.borrow().typ.clone().unwrap();
+					let bytes = if left_typ.typ == Type::Array { 8 } else { left_typ.bytes() };
+					operate!("pop", "rax");
+					mov_from!(bytes, "rax", "rax");
+					operate!("push", "rax");
+				}
+			}
 			return;
 		}
 		Nodekind::AddrNd => {
 			// gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、そのままでOK
-			// 生成規則上は Deref も Addr と同様に複数つけられる(&&var)ことになっているが、本当はそんなことないので、ここで gen_addr を使うことで担保する
-			gen_addr((**node).borrow().left.as_ref().unwrap());
+			gen_addr(node.borrow().left.as_ref().unwrap());
 			return;
 		}
 		Nodekind::FuncNd => {
 			// 引数をレジスタに格納する処理
-			push_args(&(**node).borrow().args);
+			push_args(&node.borrow().args);
 			
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	mov rax, rsp\n";
-			*_asm += format!("	and rsp, ~0x10\n").as_str(); // 16の倍数に align
-			*_asm += "	sub rsp, 8\n";
-			*_asm += "	push rax\n";
+			mov!("rax", "rsp");
+			operate!("and", "rsp", "~0x0f"); // 16の倍数に align
+			operate!("sub", "rsp", 8);
+			operate!("push", "rax");
+
 			// この時点で ARGS_REGISTERS に記載の6つのレジスタには引数が入っている必要がある
-			*_asm += format!("	call {}\n", (**node).borrow().name.as_ref().unwrap()).as_str();
-			*_asm += "	pop rsp\n";
-			*_asm += "	push rax\n";
+			operate!("call", node.borrow().name.as_ref().unwrap());
+			operate!("pop", "rsp");
+			operate!("push", "rax");
 			return;
 		}
 		Nodekind::AssignNd => {
 			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_addr内でエラー)
-			gen_addr((**node).borrow().left.as_ref().unwrap());
-			gen_expr((**node).borrow().right.as_ref().unwrap());
+			gen_addr(node.borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().right.as_ref().unwrap());
 
 			// 上記gen_expr2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rdi\n"; 
-			*_asm += "	pop rax\n"; 
-			*_asm += "	mov [rax], rdi\n";
-			*_asm += "	push rdi\n"; // 連続代入可能なように、評価値として代入した値をpushする
+			let typ = node.borrow().typ.clone().unwrap();
+			let bytes = if typ.typ == Type::Array { 8 } else { typ.bytes() };
+			operate!("pop", "rdi");
+			operate!("pop", "rax");
+			mov_to!(bytes, "rax", reg_di(bytes));
+			operate!("push", "rdi"); // 連続代入可能なように、評価値として代入した値をpushする
 			return;
 		}
 		Nodekind::CommaNd => {
 			// 式の評価値として1つ目の結果は捨てる
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += "	pop rax\n"; 
-			}
+			gen_expr(node.borrow().left.as_ref().unwrap());
+			operate!("pop", "rax");
+
 			// 2つ目の式の評価値はそのまま使うので、popなしでOK
-			gen_expr((**node).borrow().right.as_ref().unwrap());
+			gen_expr(node.borrow().right.as_ref().unwrap());
 			return;
 		}
 		Nodekind::ReturnNd => {
 			// リターンならleftの値を評価してretする。
-			gen_expr((**node).borrow().left.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n";
-			*_asm += "	mov rsp, rbp\n";
-			*_asm += "	pop rbp\n";
-			*_asm += "	ret\n";
+			gen_expr(node.borrow().left.as_ref().unwrap());
+			operate!("pop", "rax");
+			mov!("rsp", "rbp");
+			operate!("pop", "rbp");
+			operate!("ret");
 			return;
 		}
 		Nodekind::IfNd => {
@@ -237,39 +250,35 @@ pub fn gen_expr(node: &NodeRef) {
 			let end: String = format!(".LEnd{}", c);
 
 			// 条件文の処理
-			gen_expr((**node).borrow().enter.as_ref().unwrap());
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += "	pop rax\n";
-				*_asm += "	cmp rax, 0\n"; 
-			}
+			gen_expr(node.borrow().enter.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0);
 
 			// elseがある場合は微妙にjmp命令の位置が異なることに注意
-			if let Some(ptr) = (**node).borrow().els.as_ref() {
+			if let Some(ptr) = node.borrow().els.as_ref() {
 				let els: String = format!(".LElse{}", c);
 
 				// falseは0なので、cmp rax, 0が真ならelseに飛ぶ
-				*ASM.try_lock().unwrap() += format!("	je {}\n", els).as_str();
-				gen_expr((**node).borrow().branch.as_ref().unwrap()); // if(true)の場合の処理
-				*ASM.try_lock().unwrap() += format!("	jmp {}\n", end).as_str(); // elseを飛ばしてendへ
+				operate!("je", els);
+				gen_expr(node.borrow().branch.as_ref().unwrap()); // if(true)の場合の処理
+				operate!("jmp", end); // elseを飛ばしてendへ
 
 				// elseの後ろの処理
-				*ASM.try_lock().unwrap() += format!("{}:\n", els).as_str();
+				asm_write!("{}:\n", els);
 				gen_expr(ptr);
-				*ASM.try_lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 
 			} else {
 				// elseがない場合の処理
-				*ASM.try_lock().unwrap() += format!("	je {}\n", end).as_str();
-				gen_expr((**node).borrow().branch.as_ref().unwrap());
-				*ASM.try_lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+				operate!("je", end);
+				gen_expr(node.borrow().branch.as_ref().unwrap());
+				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			}
 
 			// stmtでgen_exprした後にはpopが呼ばれるはずであり、分岐後いきなりpopから始まるのはおかしい(し、そのpopは使われない)
 			// ブロック文やwhile文も単なる num; などと同じようにstmt自体が(使われない)戻り値を持つものだと思えば良い
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += format!("{}:\n", end).as_str();
-			*_asm += "	push 0\n"; 
+			asm_write!("{}:\n", end);
+			operate!("push", 0);
 
 			return;
 		}
@@ -278,29 +287,20 @@ pub fn gen_expr(node: &NodeRef) {
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += format!("{}:\n", begin).as_str();
-			}
+			asm_write!("{}:\n", begin);
 
-			gen_expr((**node).borrow().enter.as_ref().unwrap());
+			gen_expr(node.borrow().enter.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0); // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
+			operate!("je", end);
 
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += "	pop rax\n";
-				*_asm += "	cmp rax, 0\n"; // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
-				*_asm += format!("	je {}\n", end).as_str();
-			}
-			
-			gen_expr((**node).borrow().branch.as_ref().unwrap());
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+			gen_expr(node.borrow().branch.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("jmp", begin);
 
-			*_asm += format!("	jmp {}\n", begin).as_str();
-
-			// if文と同じ理由でpushが必要
-			*_asm += format!("{}:\n", end).as_str();
-			*_asm += "	push 0\n"; 
+			// if 文同様に push が必要
+			asm_write!("{}:\n", end);
+			operate!("push", 0);
 
 			return;
 		}
@@ -309,162 +309,147 @@ pub fn gen_expr(node: &NodeRef) {
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
-			if let Some(ptr) = (**node).borrow().init.as_ref() {
+			if let Some(ptr) = node.borrow().init.as_ref() {
 				gen_expr(ptr);
 			}
 
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += format!("{}:\n", begin).as_str();
-			}
+			asm_write!("{}:\n", begin);
 
-			gen_expr((**node).borrow().enter.as_ref().unwrap());
-
-			{
-				let mut _asm = ASM.try_lock().unwrap();
-				*_asm += "	pop rax\n";
-				*_asm += "	cmp rax, 0\n"; // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
-				*_asm += format!("	je {}\n", end).as_str();
-			}
+			gen_expr(node.borrow().enter.as_ref().unwrap());
+			operate!("pop", "rax");
+			operate!("cmp", "rax", 0); // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
+			operate!("je", end);
 			
-			gen_expr((**node).borrow().branch.as_ref().unwrap()); // for文内の処理
-			*ASM.try_lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+			gen_expr(node.borrow().branch.as_ref().unwrap()); // for文内の処理
+			operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			
-			gen_expr((**node).borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += format!("	jmp {}\n", begin).as_str();
+			gen_expr(node.borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
+			operate!("jmp", begin);
 
 			// if文と同じ理由でpushが必要
-			*_asm += format!("{}:\n", end).as_str();
-			*_asm += "	push 0\n"; 
+			asm_write!("{}:\n", end);
+			operate!("push", 0);
 
 			return;
 		} 
 		Nodekind::BlockNd => {
-			for child in &(**node).borrow().children {
+			for child in &node.borrow().children {
 				// parserのコード的にNoneなchildはありえないはずであるため、直にunwrapする
 				gen_expr(child.as_ref().unwrap());
-				*ASM.try_lock().unwrap() += "	pop rax\n"; // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
+				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			}
 			
 			// このBlock自体がstmt扱いであり、このgen_exprがreturnした先でもpop raxが生成されるはず
 			// これもif文と同じくpush 0をしておく
-			*ASM.try_lock().unwrap() += "	push 0\n"; 
+			operate!("push", 0);
 
 			return;
 		}
 		_ => {}// 他のパターンなら、ここでは何もしない
 	} 
 
-	gen_expr((**node).borrow().left.as_ref().unwrap());
-	gen_expr((**node).borrow().right.as_ref().unwrap());
+	let left = node.borrow().left.clone().unwrap();
+	let right = node.borrow().right.clone().unwrap();
+	gen_expr(&left);
+	gen_expr(&right);
 
-	let mut _asm = ASM.try_lock().unwrap();
-	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&(**node).borrow().kind) {
-		*_asm += "	pop rcx\n";
+	// long や long long などが実装されるまではポインタなら8バイト、そうでなければ4バイトのレジスタを使うことにする
+	let (ax, di, dx, cq) = if left.borrow().typ.as_ref().unwrap().ptr_end.is_some() {
+		("rax", "rdi", "rdx", "cqo") 
 	} else {
-		*_asm += "	pop rdi\n";
+		("eax", "edi", "edx", "cdq") 
+	};
+
+
+	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&node.borrow().kind) {
+		operate!("pop", "rcx");
+	} else {
+		operate!("pop", "rdi");
 	}
-	*_asm += "	pop rax\n";
+	operate!("pop", "rax");
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
-	match (**node).borrow().kind {
+	match node.borrow().kind {
 		Nodekind::AddNd => {
-			*_asm += "	add rax, rdi\n";
+			operate!("add", ax, di);
 		}
 		Nodekind::SubNd => {
-			*_asm += "	sub rax, rdi\n";
+			operate!("sub", ax, di);
 		}
 		Nodekind::MulNd => {
-			*_asm += "	imul rax, rdi\n";
+			operate!("imul", ax, di);
 		}
 		Nodekind::DivNd  => {
-			*_asm += "	cqo\n"; // rax -> rdx:rax に拡張(ただの 0 fill)
-			*_asm += "	idiv rdi\n"; // rdi で割る: rax が商で rdx が剰余になる
+			operate!(cq); // rax -> rdx:rax に拡張(ただの 0 fill)
+			operate!("idiv", di); // rdi で割る: rax が商で rdx が剰余になる
 		}
 		Nodekind::ModNd  => {
-			*_asm += "	cqo\n";
-			*_asm += "	idiv rdi\n";
-			*_asm += "	push rdx\n";
+			operate!(cq);
+			operate!("idiv", di);
+			operate!("push", dx);
 			return;
 		}
 		Nodekind::LShiftNd => {
-			*_asm += "	sal rax, cl\n";
+			operate!("sal", ax, "cl");
 		}
 		Nodekind::RShiftNd => {
-			*_asm += "	sar rax, cl\n";
+			operate!("sar", ax, "cl");
 		}
 		Nodekind::BitAndNd => {
-			*_asm += "	and rax, rdi\n";
+			operate!("and", ax, di);
 		}
 		Nodekind::BitOrNd => {
-			*_asm += "	or rax, rdi\n";
+			operate!("or", ax, di);
 		}
 		Nodekind::BitXorNd => {
-			*_asm += "	xor rax, rdi\n";
+			operate!("xor", ax, di);
 		}
 		Nodekind::EqNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	sete al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("sete", "al");
+			operate!("movzb", "rax", "al");
 		}
 		Nodekind::NEqNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	setne al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("setne", "al");
+			operate!("movzb", "rax", "al");
 		}
 		Nodekind::LThanNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	setl al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("setl", "al");
+			operate!("movzb", "rax", "al");
 		}
 		Nodekind::LEqNd => {
-			*_asm += "	cmp rax, rdi\n";
-			*_asm += "	setle al\n";
-			*_asm += "	movzb rax, al\n";
+			operate!("cmp", ax, di);
+			operate!("setle", "al");
+			operate!("movzb", "rax", "al");
 		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
-			error_with_node!("不正な Nodekind です。", &*(**node).borrow());
+			error_with_node!("不正な Nodekind です。", &*node.borrow());
 		}
 	}
 
-	*_asm += "	push rax\n";
+	operate!("push", "rax");
 }
 
 // アドレスを生成する関数(ポインタでない普通の変数への代入等でも使用)
 fn gen_addr(node: &NodeRef) {
-	match (**node).borrow().kind {
+	match node.borrow().kind {
 		Nodekind::LvarNd => {
 			// 変数に対応するアドレスをスタックにプッシュする
-			let mut _asm = ASM.try_lock().unwrap();
-			*_asm += "	mov rax, rbp\n";
-			*_asm += format!("	sub rax, {}\n", (**node).borrow().offset.as_ref().unwrap()).as_str();
-			*_asm += "	push rax\n";
+			let offset = node.borrow().offset.unwrap();
+			lea!("rax", "rbp", offset);
+			operate!("push", "rax");
 		}
 		Nodekind::DerefNd => {
 			// *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
-			// 今はここが計算式になることをサポートしない(以下の _ => {} での左辺値エラーにたどり着くはず)
-			check_can_deref(node);
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 		}
 		_ => {
-			error_with_node!("左辺値が変数ではありません。", &*(**node).borrow());
+			error_with_node!("左辺値が変数ではありません。", &*node.borrow());
 		}
 	}
-}
-
-fn check_can_deref(node: &NodeRef) {
-	// *expr において expr が単なる変数(すなわち node.left が LvarNd であれば、その Type が Ptr でない場合にはエラーを吐く)
-	// これは int *p = &x; **p = 10; みたいなパターンを防げないことに注意
-	let left = &(**node).borrow().left;
-	if let Some(typ) = (**left.as_ref().unwrap()).borrow().typ.as_ref() {
-		if typ.typ != Type::Ptr {
-			error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &(**left.as_ref().unwrap()).borrow(), typ.typ);
-		}
-	}
-
-	()
 }
 
 // 関数呼び出し時の引数の処理を行う関数
@@ -479,7 +464,14 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 	}
 
 	for i in 0..argc {
-		*ASM.try_lock().unwrap() += format!("	pop {}\n", (*ARGS_REGISTERS.try_lock().unwrap())[i]).as_str();
+		let typ = args[i].as_ref().unwrap().borrow().typ.clone().unwrap();
+		let bytes = if typ.typ == Type::Array { 8 } else { typ.bytes() };
+		let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&bytes).unwrap()[i];
+		let ax = reg_ax(bytes);
+		operate!("pop", "rax");
+		// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
+		if bytes == 4 { operate!("cdqe"); }
+		mov!(arg_reg, ax);
 	}
 }
 
