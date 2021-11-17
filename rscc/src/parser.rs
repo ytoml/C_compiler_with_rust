@@ -1568,42 +1568,59 @@ pub mod tests {
 	#[test]
 	fn wip() {
 		let src: &str = "
-			int func(int x, int y) {
-				print_helper(x+y);
-				return x + y;
+		int func(int x, int y) {
+			print_helper(x+y);
+			return x + y;
+		}
+		
+		int fib(int N) {
+			if (N <= 2) return 1;
+			return fib(N-1) + fib(N-2);
+		}
+		
+		int main() {
+			int i; i = 0;
+			int j; j = 0;
+			int k; k = 1;
+			int sum; sum = 0;
+			for (; i < 10; i+=i+1, j++) {
+				sum++;
 			}
-			
-			int fib(int N) {
-				if (N <= 2) return 1;
-				return fib(N-1) + fib(N-2);
+			print_helper(j);
+			print_helper(k);
+			while (j > 0, 0) {
+				j /= 2;
+				k <<= 1;
 			}
-			
-			int main() {
-				int i; i = 0;
-				int j; j = 0;
-				int k; k = 1;
-				int sum; sum = 0;
-				for (; i < 10; i+=i+1, j++) {
-					sum++;
-				}
-				print_helper(j);
-				print_helper(k);
-				while (j > 0, 0) {
-					j /= 2;
-					k <<= 1;
-				}
-				if (1 && !(k/2)) k--;
-				else k = -1;
-			
-				int x, y, z;
-				func(x=1, (y=1, z=~1));
-			
-				x = 15 & 10;
-				x = (++x) + y;
-				int *p; p = &x; 
-				int **pp; pp = &p;
-				print_helper(z = fib(*&(**pp)));
-			}
+			if (1 && !(k/2)) k--;
+			else k = -1;
+		
+			int x, y, z;
+			func(x=1, (y=1, z=~1));
+		
+			x = 15 & 10;
+			x = (++x) + y;
+			int *p; p = &x; 
+			int **pp; pp = &p;
+			*p += 9;
+			int X[10][20][40];
+			print_helper(z = fib(*&(**pp)));
+			print_helper(*&*&*&**&*pp);
+			print_helper(sizeof (x+y));
+			print_helper(sizeof ++x);
+			print_helper(sizeof &x + x);
+			print_helper(sizeof(int**));
+			print_helper(sizeof(x && x));
+			print_helper(sizeof(*p));
+			print_helper(sizeof *X);
+			print_helper(sizeof X);
+			print_helper16(***X);
+			print_helper16(X+2);
+			print_helper16(*(*X+2));
+			print_helper16(*(*(*X+2)+9));
+		
+			return k;
+		}
 		";
 		test_init(src);
 
