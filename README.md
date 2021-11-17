@@ -12,7 +12,7 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事のstep21まで実装しており、
+現在、上記記事の step22 まで実装しており、
 - 基本的な単項、二項演算
 	- `+=` のような演算代入や前置/後置のインクリメント/デクリメントにも対応
 	- `sizeof` にも対応していますが、現在整数型を `int` しかサポートしていないため、 `int` として扱われます。
@@ -21,10 +21,8 @@ Rui Ueyama さんの
 		- ただし、現在の実装上すべての変数を8の倍数アドレスでアラインメントしているため、int 型の変数 `x` に対して `&x+1` が前の変数のアドレスを指さないことに注意してください。
 	- 現時点では宣言と初期化を同時に行うことができず、`int x; x = 10;` のように書く必要があります。
 	- ポインタは全く同じ型どうしの場合のみに引き算ができ、それらのアドレスオフセットが変数いくつ分になるかが評価値となります。
-- 配列型の変数とオフセットによるアクセス
-	- 現在はまだ添字アクセスを実装していません。
-		- 例えば、`int X[10][10][10]` のような変数は `X[0][5][8]` とアクセスしたい場合には `*(*(*X + 5) + 8)` とする必要があります。
-		- 添字でのアクセスはstep22 で実装します。
+- 配列型の変数と添字によるアクセス
+	
 - for, while, if による制御構文
 - コンマによる複数文の記述
 がサポートされています。  
@@ -67,22 +65,21 @@ int main() {
 	int *p; p = &x; 
 	int **pp; pp = &p;
 	*p += 9;
-	int X[16][16][16];
+	int X[10][10][10];
 	print_helper(z = fib(*&(**pp)));
 	print_helper(*&*&*&**&*pp);
 	print_helper(sizeof (x+y));
 	print_helper(sizeof ++x);
 	print_helper(sizeof &x + x);
 	print_helper(sizeof(int**));
-	print_helper(sizeof(x && x));
 	print_helper(sizeof(*p));
-	print_helper(sizeof *X);
+	print_helper(sizeof &X);
 	print_helper(X);
 	print_helper(&X+1);
-	print_helper(X+1);
-	print_helper(*X+1);
-	print_helper(**X+1);
-	print_helper(***X);
+	print_helper(X[1]);
+	print_helper(X[0][1]);
+	X[0][1][1] = 100;
+	print_helper(*(*(X[0]+1)+1));
 
 	return k;
 }
