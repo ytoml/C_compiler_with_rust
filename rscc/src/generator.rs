@@ -181,10 +181,15 @@ pub fn gen_expr(node: &NodeRef) {
 			if left.borrow().kind == Nodekind::AddrNd {
 				gen_expr(left.borrow().left.as_ref().unwrap());
 			} else {
+				// 参照を外した後でも配列なのであれば、アドレスが指す値を評価せずそのまま使用する
 				gen_expr(&left);
-				operate!("pop", "rax");
-				mov_from!(8, "rax", "rax");
-				operate!("push", "rax");
+				if node.borrow().typ.as_ref().unwrap().typ != Type::Array {
+					let left_typ = left.borrow().typ.clone().unwrap();
+					let bytes = if left_typ.typ == Type::Array { 8 } else { left_typ.bytes() };
+					operate!("pop", "rax");
+					mov_from!(bytes, "rax", "rax");
+					operate!("push", "rax");
+				}
 			}
 			return;
 		}
