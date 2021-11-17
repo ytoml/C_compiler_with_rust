@@ -1011,14 +1011,18 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				typ = locals.get(&name).as_ref().unwrap().1.clone();
 			}
 
-			// 添字による配列アクセスは step22 で実装
-			// while consume(token_ptr, "[") {
-			// 	let index = expr(token_ptr);
-			// 	expect(token_ptr,"]");
-			// }
+			let mut node_ptr = new_lvar(name, ptr, typ.clone());
 
+			// TODO: 添字による配列アクセス ... X[10] -> *(X+10)
+			while consume(token_ptr, "[") {
+				let ptr = token_ptr.clone();
+				let index = expr(token_ptr);
+				node_ptr = tmp_unary!(Nodekind::DerefNd, new_add(node_ptr, index, ptr));
+				expect(token_ptr,"]");
+			}
 
-			new_lvar(name, ptr, typ.clone())
+			node_ptr
+			
 		}
 
 	} else {
