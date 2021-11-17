@@ -336,7 +336,7 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 		let mut has_return : bool = false;
 		expect(token_ptr, "{");
 		while !consume(token_ptr, "}") {
-			has_return |= (**token_ptr).borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
 			let stmt_ = stmt(token_ptr);
 			confirm_type(&stmt_);
 			statements.push(stmt_);

@@ -37,22 +37,22 @@ fn get_count() -> u32 {
 }
 
 pub fn gen_expr(node: &NodeRef) {
-	match (**node).borrow().kind {
+	match node.borrow().kind {
 		Nodekind::FuncDecNd => {
 			{
-				asm_write!("{}:\n", (**node).borrow().name.as_ref().unwrap());
+				asm_write!("{}:\n", node.borrow().name.as_ref().unwrap());
 			
 				// プロローグ(変数の格納領域の確保)
 				operate!("push", "rbp");
 				mov!("rbp", "rsp");
-				let pull = (**node).borrow().max_offset.unwrap();
+				let pull = node.borrow().max_offset.unwrap();
 				if pull > 0 {
 					operate!("sub", "rsp", pull);
 				}
 
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-				if (**node).borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
-				for (ix, arg) in (&(**node).borrow().args).iter().enumerate() {
+				if node.borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+				for (ix, arg) in (&node.borrow().args).iter().enumerate() {
 					let offset = *(*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap();
 					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
 					let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
@@ -62,8 +62,8 @@ pub fn gen_expr(node: &NodeRef) {
 			}
 			
 			// 関数内の文の処理
-			let s = (**node).borrow().stmts.as_ref().unwrap().len();
-			for (ix, stmt_) in (**node).borrow().stmts.as_ref().unwrap().iter().enumerate() {
+			let s = node.borrow().stmts.as_ref().unwrap().len();
+			for (ix, stmt_) in node.borrow().stmts.as_ref().unwrap().iter().enumerate() {
 				gen_expr(stmt_);
 				if ix != s - 1 { operate!("pop", "rax"); }
 			}
@@ -72,7 +72,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::NumNd => {
-			operate!("push", (**node).borrow().val.unwrap());
+			operate!("push", node.borrow().val.unwrap());
 			return;
 		}
 		Nodekind::LogAndNd => {
@@ -81,13 +81,13 @@ pub fn gen_expr(node: &NodeRef) {
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
 			// && の左側 (short circuit であることに注意)
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0);
 			operate!("je", f_anchor); // 0 なら false ゆえ残りの式の評価はせずに飛ぶ 
 
 			// && の右側
-			gen_expr((**node).borrow().right.as_ref().unwrap());
+			gen_expr(node.borrow().right.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0);
 			operate!("je", f_anchor);
@@ -111,13 +111,13 @@ pub fn gen_expr(node: &NodeRef) {
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
 			// && の左側 (short circuit であることに注意)
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0);
 			operate!("jne", t_anchor); // 0 なら false ゆえ残りの式の評価はせずに飛ぶ 
 
 			// && の右側
-			gen_expr((**node).borrow().right.as_ref().unwrap());
+			gen_expr(node.borrow().right.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0);
 			operate!("jne", t_anchor); 
@@ -136,7 +136,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::LogNotNd => {
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 			operate!("pop", "rax");
 
 			// rax が 0 なら 1, そうでないなら 0 にすれば良い
@@ -148,7 +148,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::BitNotNd => {
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("not", "rax");
 			operate!("push", "rax");
@@ -177,7 +177,7 @@ pub fn gen_expr(node: &NodeRef) {
 		Nodekind::DerefNd => {
 			// gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
 			// 配列との整合をとるために *& の場合に打ち消す必要がある
-			let left = (*node).borrow().left.clone().unwrap();
+			let left = node.borrow().left.clone().unwrap();
 			if left.borrow().kind == Nodekind::AddrNd {
 				gen_expr(left.borrow().left.as_ref().unwrap());
 			} else {
@@ -195,12 +195,12 @@ pub fn gen_expr(node: &NodeRef) {
 		}
 		Nodekind::AddrNd => {
 			// gen_addr内で対応する変数のアドレスをスタックにプッシュしているので、そのままでOK
-			gen_addr((**node).borrow().left.as_ref().unwrap());
+			gen_addr(node.borrow().left.as_ref().unwrap());
 			return;
 		}
 		Nodekind::FuncNd => {
 			// 引数をレジスタに格納する処理
-			push_args(&(**node).borrow().args);
+			push_args(&node.borrow().args);
 			
 			mov!("rax", "rsp");
 			operate!("and", "rsp", "~0x0f"); // 16の倍数に align
@@ -208,15 +208,15 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("push", "rax");
 
 			// この時点で ARGS_REGISTERS に記載の6つのレジスタには引数が入っている必要がある
-			operate!("call", (**node).borrow().name.as_ref().unwrap());
+			operate!("call", node.borrow().name.as_ref().unwrap());
 			operate!("pop", "rsp");
 			operate!("push", "rax");
 			return;
 		}
 		Nodekind::AssignNd => {
 			// 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_addr内でエラー)
-			gen_addr((**node).borrow().left.as_ref().unwrap());
-			gen_expr((**node).borrow().right.as_ref().unwrap());
+			gen_addr(node.borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().right.as_ref().unwrap());
 
 			// 上記gen_expr2つでスタックに変数の値を格納すべきアドレスと、代入する値(式の評価値)がこの順で積んであるはずなので2回popして代入する
 			let typ = node.borrow().typ.clone().unwrap();
@@ -229,16 +229,16 @@ pub fn gen_expr(node: &NodeRef) {
 		}
 		Nodekind::CommaNd => {
 			// 式の評価値として1つ目の結果は捨てる
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 			operate!("pop", "rax");
 
 			// 2つ目の式の評価値はそのまま使うので、popなしでOK
-			gen_expr((**node).borrow().right.as_ref().unwrap());
+			gen_expr(node.borrow().right.as_ref().unwrap());
 			return;
 		}
 		Nodekind::ReturnNd => {
 			// リターンならleftの値を評価してretする。
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 			operate!("pop", "rax");
 			mov!("rsp", "rbp");
 			operate!("pop", "rbp");
@@ -250,17 +250,17 @@ pub fn gen_expr(node: &NodeRef) {
 			let end: String = format!(".LEnd{}", c);
 
 			// 条件文の処理
-			gen_expr((**node).borrow().enter.as_ref().unwrap());
+			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0);
 
 			// elseがある場合は微妙にjmp命令の位置が異なることに注意
-			if let Some(ptr) = (**node).borrow().els.as_ref() {
+			if let Some(ptr) = node.borrow().els.as_ref() {
 				let els: String = format!(".LElse{}", c);
 
 				// falseは0なので、cmp rax, 0が真ならelseに飛ぶ
 				operate!("je", els);
-				gen_expr((**node).borrow().branch.as_ref().unwrap()); // if(true)の場合の処理
+				gen_expr(node.borrow().branch.as_ref().unwrap()); // if(true)の場合の処理
 				operate!("jmp", end); // elseを飛ばしてendへ
 
 				// elseの後ろの処理
@@ -271,7 +271,7 @@ pub fn gen_expr(node: &NodeRef) {
 			} else {
 				// elseがない場合の処理
 				operate!("je", end);
-				gen_expr((**node).borrow().branch.as_ref().unwrap());
+				gen_expr(node.borrow().branch.as_ref().unwrap());
 				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			}
 
@@ -289,12 +289,12 @@ pub fn gen_expr(node: &NodeRef) {
 
 			asm_write!("{}:\n", begin);
 
-			gen_expr((**node).borrow().enter.as_ref().unwrap());
+			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0); // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
 			operate!("je", end);
 
-			gen_expr((**node).borrow().branch.as_ref().unwrap());
+			gen_expr(node.borrow().branch.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("jmp", begin);
 
@@ -309,21 +309,21 @@ pub fn gen_expr(node: &NodeRef) {
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
-			if let Some(ptr) = (**node).borrow().init.as_ref() {
+			if let Some(ptr) = node.borrow().init.as_ref() {
 				gen_expr(ptr);
 			}
 
 			asm_write!("{}:\n", begin);
 
-			gen_expr((**node).borrow().enter.as_ref().unwrap());
+			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
 			operate!("cmp", "rax", 0); // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
 			operate!("je", end);
 			
-			gen_expr((**node).borrow().branch.as_ref().unwrap()); // for文内の処理
+			gen_expr(node.borrow().branch.as_ref().unwrap()); // for文内の処理
 			operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			
-			gen_expr((**node).borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
+			gen_expr(node.borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
 			operate!("jmp", begin);
 
 			// if文と同じ理由でpushが必要
@@ -333,7 +333,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		} 
 		Nodekind::BlockNd => {
-			for child in &(**node).borrow().children {
+			for child in &node.borrow().children {
 				// parserのコード的にNoneなchildはありえないはずであるため、直にunwrapする
 				gen_expr(child.as_ref().unwrap());
 				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
@@ -348,8 +348,8 @@ pub fn gen_expr(node: &NodeRef) {
 		_ => {}// 他のパターンなら、ここでは何もしない
 	} 
 
-	let left = (*node).borrow().left.clone().unwrap();
-	let right = (*node).borrow().right.clone().unwrap();
+	let left = node.borrow().left.clone().unwrap();
+	let right = node.borrow().right.clone().unwrap();
 	gen_expr(&left);
 	gen_expr(&right);
 
@@ -361,7 +361,7 @@ pub fn gen_expr(node: &NodeRef) {
 	};
 
 
-	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&(**node).borrow().kind) {
+	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&node.borrow().kind) {
 		operate!("pop", "rcx");
 	} else {
 		operate!("pop", "rdi");
@@ -369,7 +369,7 @@ pub fn gen_expr(node: &NodeRef) {
 	operate!("pop", "rax");
 
 	// >, >= についてはオペランド入れ替えのもとsetl, setleを使う
-	match (**node).borrow().kind {
+	match node.borrow().kind {
 		Nodekind::AddNd => {
 			operate!("add", ax, di);
 		}
@@ -426,7 +426,7 @@ pub fn gen_expr(node: &NodeRef) {
 		}
 		_ => {
 			// 上記にないNodekindはここに到達する前にreturnしているはず
-			error_with_node!("不正な Nodekind です。", &*(**node).borrow());
+			error_with_node!("不正な Nodekind です。", &*node.borrow());
 		}
 	}
 
@@ -435,7 +435,7 @@ pub fn gen_expr(node: &NodeRef) {
 
 // アドレスを生成する関数(ポインタでない普通の変数への代入等でも使用)
 fn gen_addr(node: &NodeRef) {
-	match (**node).borrow().kind {
+	match node.borrow().kind {
 		Nodekind::LvarNd => {
 			// 変数に対応するアドレスをスタックにプッシュする
 			let offset = node.borrow().offset.unwrap();
@@ -444,10 +444,10 @@ fn gen_addr(node: &NodeRef) {
 		}
 		Nodekind::DerefNd => {
 			// *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
-			gen_expr((**node).borrow().left.as_ref().unwrap());
+			gen_expr(node.borrow().left.as_ref().unwrap());
 		}
 		_ => {
-			error_with_node!("左辺値が変数ではありません。", &*(**node).borrow());
+			error_with_node!("左辺値が変数ではありません。", &*node.borrow());
 		}
 	}
 }
