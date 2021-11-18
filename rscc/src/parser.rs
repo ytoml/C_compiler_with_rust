@@ -156,8 +156,7 @@ fn new_ctrl(kind: Nodekind,
 // 関数呼び出しのノード
 fn new_func(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
 	if func_typ.typ != Type::Func { panic!("new_func can be called only with function TypeCell"); }
-	let ret_typ = func_typ.ret_typ.clone().unwrap().borrow().clone();
-	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(token_ptr), name: Some(name), func_typ:Some(func_typ), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(token_ptr), name: Some(name), func_typ:Some(func_typ), args: args, ..Default::default()}))
 }
 
 // グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
@@ -274,9 +273,9 @@ fn confirm_type(node: &NodeRef) {
 			);
 		}
 		Nodekind::FunCallNd => {
-			// FunCallNd には ret_typ があるが、これを typ にも適用することで自然に型を親ノードに伝播できる
+			// FunCallNd の func_typ.ret_typ を typ に適用することで自然に型を親ノードに伝播できる
 			let mut node = node.borrow_mut();
-			let typ = node.ret_typ.clone().unwrap();
+			let typ = node.func_typ.as_ref().unwrap().ret_typ.as_ref().unwrap().borrow().clone();
 			let _ = node.typ.insert(typ);
 		}
 		_ => {}
