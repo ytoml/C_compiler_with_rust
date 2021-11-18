@@ -78,12 +78,15 @@ pub struct Node {
 	pub stmts: Option<Vec<NodeRef>>,
 	pub max_offset: Option<usize>,
 	pub ret_typ: Option<TypeCell>,
+
+	// 変数時に使用
+	pub is_local: bool,
 }
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None, ret_typ: None }
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None, ret_typ: None, is_local: false }
 	}
 }
 
@@ -92,7 +95,13 @@ impl Display for Node {
 	fn fmt(&self, f:&mut Formatter) -> Result {
 
 		let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
-		s = format!("{}Nodekind : {:?}\n", s, self.kind);
+		let scope_attr = 
+		if self.kind == Nodekind::LvarNd {
+			if self.is_local { "<Local>" } else { "<Global>"}
+		} else {
+			""
+		};
+		s = format!("{}Nodekind : {:?}{}\n", s, self.kind, scope_attr);
 
 		if let Some(e) = self.typ.as_ref() {s = format!("{}type: {}\n", s, e);}
 		if let Some(e) = self.token.as_ref() {

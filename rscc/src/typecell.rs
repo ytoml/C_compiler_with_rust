@@ -123,6 +123,13 @@ impl TypeCell {
 				format!("*{}", s)
 			};
 			(*deref).borrow().get_type_string(string)
+		} else if self.typ == Type::Func {
+			let ret_typ = self.ret_typ.as_ref().unwrap().borrow().clone();
+			let mut args_str = String::new();
+			for (ix, arg) in self.arg_typs.as_ref().unwrap().iter().enumerate() {
+				args_str = if ix == 0 { format!("{}", arg.borrow()) } else { format!("{}, {}", args_str, arg.borrow()) };
+			}
+			format!("{} __func({}){}", ret_typ, args_str,s)
 		} else {
 			format!("{}{}", self.typ, s)
 		}
