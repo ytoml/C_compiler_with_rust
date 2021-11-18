@@ -19,7 +19,7 @@ use crate::{
 /// LOCALS: ローカル変数名 -> (引数の数, 戻り値の型)
 /// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static DECLARED_FUNCS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static GLOBALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 macro_rules! align {
@@ -324,49 +324,11 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 
 	while !at_eof(token_ptr) {
 		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
-		let mut statements : Vec<NodeRef> = Vec::new();
+		globals.push(global(token_ptr));
 
-		let ret_typ = expect_type(token_ptr); // 型宣言の読み込み
-		let ptr =  token_ptr.clone();
-		let func_name = expect_ident(token_ptr);
-		if DECLARED_FUNCS.try_lock().unwrap().contains_key(&func_name) {
-			error_with_token!("{}: 重複した関数宣言です。", &*ptr.borrow(), func_name);
-		}
-		expect(token_ptr, "(");
-		let args: Vec<Option<NodeRef>> = func_args(token_ptr);
-		DECLARED_FUNCS.try_lock().unwrap().insert(func_name.clone(), (args.len(), ret_typ.clone()));
-		expect(token_ptr, ")");
-
-		let mut has_return : bool = false;
-		expect(token_ptr, "{");
-		while !consume(token_ptr, "}") {
-			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
-			let stmt_ = stmt(token_ptr);
-			confirm_type(&stmt_);
-			statements.push(stmt_);
-		}
-
-		if !has_return {
-			statements.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
-		}
-
-		let global = Rc::new(RefCell::new(
-			Node {
-				kind: Nodekind::FuncDecNd,
-				token: Some(ptr),
-				name: Some(func_name),
-				args: args,
-				stmts: Some(statements),
-				max_offset: Some(*LVAR_MAX_OFFSET.try_lock().unwrap()),
-				ret_typ: Some(ret_typ),
-				..Default::default()
-			}
-		));
 		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
 		LOCALS.try_lock().unwrap().clear();
 		*LVAR_MAX_OFFSET.try_lock().unwrap() = 0;
-
-		globals.push(global);
 	}
 	
 	globals
@@ -374,10 +336,50 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 
 // 生成規則:
 // global = type ident global-suffix
-// global-suffix = "(" func-args ")" "{" stmt* "}" | ("[" num "]")* ";"
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
-	tmp_num!(0)
+	let typ = expect_type(token_ptr); // 型宣言の読み込み
+	let ptr =  token_ptr.clone();
+	let name = expect_ident(token_ptr);
+	if GLOBALS.try_lock().unwrap().contains_key(&name) { error_with_token!("{}: 重複したグローバル変数です。", &*ptr.borrow(), name); }
+
+	global_suffix(token_ptr, name, typ)
 }
+
+// 生成規則:
+// global-suffix = "(" func-args ")" "{" stmt* "}" | ("[" num "]")* ";"
+fn global_suffix(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell) -> NodeRef {
+	// TODO: GLOBALS に持たせる情報を関数と普通の変数で透過にしたい
+	// 関数宣言の場合は typ は戻り値の型である
+	if consume(token_ptr, "(") {
+		let mut statements : Vec<NodeRef> = Vec::new();
+
+		let args: Vec<Option<NodeRef>> = func_args(token_ptr);
+		GLOBALS.try_lock().unwrap().insert(name.clone(), (args.len(), typ.clone()));
+		expect(token_ptr, ")");
+		let mut has_return : bool = false;
+
+		expect(token_ptr, "{");
+		while !consume(token_ptr, "}") {
+			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+			let stmt_ = stmt(token_ptr);
+			confirm_type(&stmt_);
+			statements.push(stmt_);
+		}
+		if !has_return {
+			statements.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
+		}
+	} else {
+		while consume(token_ptr, "[") {
+			let size = expect_number(token_ptr) as usize;
+			typ = typ.make_array_of(size);
+			expect(token_ptr,"]");
+		}
+	}
+	GLOBALS.try_lock().unwrap().insert(name, (0, typ));
+
+	tmp_num!(0) // 未完成
+}
+
 
 // 生成規則:
 // decl = vardec ("," vardec)* ";"
@@ -1004,9 +1006,10 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 		if consume(token_ptr, "(") {
 			let args:Vec<Option<NodeRef>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
-			let declared: bool = DECLARED_FUNCS.try_lock().unwrap().contains_key(&name);
+			// TODO: グローバル変数には関数でないものもあるのでチェックが必要
+			let declared: bool = GLOBALS.try_lock().unwrap().contains_key(&name);
 			if declared  {
-				let (argc, ret_typ) = DECLARED_FUNCS.try_lock().unwrap().get(&name).unwrap().clone();
+				let (argc, ret_typ) = GLOBALS.try_lock().unwrap().get(&name).unwrap().clone();
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 				new_func(name, args, ret_typ, ptr)
 			} else {
