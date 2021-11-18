@@ -154,23 +154,23 @@ fn new_ctrl(kind: Nodekind,
 }
 
 // 関数呼び出しのノード
-fn new_func(name: String, args: Vec<Option<NodeRef>>, typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
-	if typ.typ != Type::Func { panic!("new_func can be called only with function TypeCell"); }
-	let ret_typ = typ.ret_typ.clone().unwrap().borrow().clone();
-	Rc::new(RefCell::new(Node{ kind: Nodekind::FuncNd, token: Some(token_ptr), typ:Some(typ) ,name: Some(name), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
+fn new_func(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
+	if func_typ.typ != Type::Func { panic!("new_func can be called only with function TypeCell"); }
+	let ret_typ = func_typ.ret_typ.clone().unwrap().borrow().clone();
+	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(token_ptr), name: Some(name), func_typ:Some(func_typ), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
 }
 
 // グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
-fn _global(name: String, typ: Option<TypeCell>, ret_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), ret_typ: ret_typ, args: args, stmts: stmts, ..Default::default() }))
+fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), func_typ: func_typ, args: args, stmts: stmts, ..Default::default() }))
 }
 
 fn new_gvar(name: String, typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
 	_global(name, Some(typ), None, vec![], None, token_ptr)
 }
 
-fn new_funcdec(name: String, typ: TypeCell, ret_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, token_ptr: TokenRef) -> NodeRef {
-	_global(name, Some(typ), Some(ret_typ), args, Some(stmts), token_ptr)
+fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, token_ptr: TokenRef) -> NodeRef {
+	_global(name, None, Some(func_typ), args, Some(stmts), token_ptr)
 }
 
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
@@ -273,10 +273,10 @@ fn confirm_type(node: &NodeRef) {
 				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains, ..Default::default() }
 			);
 		}
-		Nodekind::FuncNd => {
-			// FuncNd には ret_typ があるが、これを typ にも適用することで自然に型を親ノードに伝播できる
+		Nodekind::FunCallNd => {
+			// FunCallNd には ret_typ があるが、これを typ にも適用することで自然に型を親ノードに伝播できる
 			let mut node = node.borrow_mut();
-			let typ =node.ret_typ.clone().unwrap();
+			let typ = node.ret_typ.clone().unwrap();
 			let _ = node.typ.insert(typ);
 		}
 		_ => {}
@@ -327,8 +327,7 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 	let glob = 
 	if consume(token_ptr, "(") {
 		let (args, arg_typs) = func_args(token_ptr);
-		let ret_typ = typ.clone();
-		typ = TypeCell::make_func(ret_typ.clone(), arg_typs);
+		typ = TypeCell::make_func(typ, arg_typs);
 		GLOBALS.try_lock().unwrap().insert(name.clone(), typ.clone());
 		expect(token_ptr, ")");
 
@@ -346,7 +345,7 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 			stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
 		}
 
-		new_funcdec(name.clone(), typ.clone(), ret_typ, args, stmts, ptr)
+		new_funcdec(name.clone(), typ.clone(), args, stmts, ptr)
 
 	} else {
 		while consume(token_ptr, "[") {
@@ -359,6 +358,7 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 		new_gvar(name.clone(), typ.clone(), ptr)
 
 	};
+	// GLOBALS に保存されるのは、変数ならば Node.typ に該当する型、関数ならば Node.func_typ に該当する型である
 	GLOBALS.try_lock().unwrap().insert(name, typ);
 
 	glob
@@ -1022,21 +1022,21 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 		node_ptr
 
 	} else if let Some(name) = consume_ident(token_ptr) {
-		let typ: TypeCell;
 		if consume(token_ptr, "(") {
+			let func_typ: TypeCell;
 			let args:Vec<Option<NodeRef>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			// TODO: グローバル変数には関数でないものもあるのでチェックが必要
 			let glb_access = GLOBALS.try_lock().unwrap();
 			if glb_access.contains_key(&name) {
-				typ = glb_access.get(&name).unwrap().clone();
-				if typ.typ != Type::Func { error_with_token!("型\"{}\"は関数として扱えません。", &*ptr.borrow(), typ); }
+				func_typ = glb_access.get(&name).unwrap().clone();
+				if func_typ.typ != Type::Func { error_with_token!("型\"{}\"は関数として扱えません。", &*ptr.borrow(), func_typ); }
 
 				// 現在利用できる型は一応全て エラーレベルで compatible (ただしまともなコンパイラは warning を出す) なので、引数の数があっていれば良いものとする
-				let argc = typ.arg_typs.as_ref().unwrap().len();
+				let argc = func_typ.arg_typs.as_ref().unwrap().len();
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
 
-				new_func(name, args, typ, ptr)
+				new_func(name, func_typ, args, ptr)
 
 			} else {
 				// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
@@ -1045,12 +1045,13 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				for arg in &args {
 					arg_typs.push(Rc::new(RefCell::new(arg.as_ref().unwrap().borrow().typ.clone().unwrap())));
 				}
-				typ = TypeCell::make_func(TypeCell::new(Type::Int), arg_typs);
+				func_typ = TypeCell::make_func(TypeCell::new(Type::Int), arg_typs);
 
-				new_func(name, args, typ, ptr)
+				new_func(name, func_typ, args, ptr)
 			}
 		} else {
 			// グローバル変数については、外部ソースとのリンクは禁止として、LOCALS, GLOBALS に当たらなければエラーになるようにする
+			let typ: TypeCell;
 			let mut is_local = false;
 			{
 				let lvar_access = LOCALS.try_lock().unwrap();
@@ -1653,7 +1654,7 @@ pub mod tests {
 			X;
 			int X[10][10][10];
 			X[0][0][0] = 10;
-			func(1, 3);
+			func(1, 3) + 1;
 			return ***X;
 		}
 		";

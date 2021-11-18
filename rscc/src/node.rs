@@ -41,7 +41,7 @@ pub enum Nodekind {
 	ReturnNd,	// "return"
 	BlockNd,	// {}
 	CommaNd,	// ','
-	FuncNd,		// func()
+	FunCallNd,	// func()
 	GlobalNd,	// グローバル変数(関数含む)
 }
 
@@ -68,13 +68,13 @@ pub struct Node {
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<NodeRef>>,
 
-	// func の引数を保存する 
-	pub args: Vec<Option<NodeRef>>,
 
 	// グローバル変数等で使用
 	pub name: Option<String>,
 
-	// 関数宣言時に使用
+	// 関数に使用
+	pub func_typ: Option<TypeCell>,
+	pub args: Vec<Option<NodeRef>>,
 	pub stmts: Option<Vec<NodeRef>>,
 	pub max_offset: Option<usize>,
 	pub ret_typ: Option<TypeCell>,
@@ -86,7 +86,7 @@ pub struct Node {
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None, ret_typ: None, is_local: false }
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, func_typ: None, args: vec![], stmts: None, max_offset: None, ret_typ: None, is_local: false }
 	}
 }
 
@@ -131,6 +131,7 @@ impl Display for Node {
 			}
 		}
 
+		if let Some(e) = self.func_typ.as_ref() {s = format!("{}function type: {}\n", s, e);}
 		if self.args.len() > 0 {
 			s = format!("{}args: exist\n", s);
 			for node in &self.args {

@@ -198,7 +198,7 @@ pub fn gen_expr(node: &NodeRef) {
 			gen_addr(node.borrow().left.as_ref().unwrap());
 			return;
 		}
-		Nodekind::FuncNd => {
+		Nodekind::FunCallNd => {
 			// 引数をレジスタに格納する処理
 			push_args(&node.borrow().args);
 			
