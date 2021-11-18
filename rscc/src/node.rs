@@ -42,7 +42,7 @@ pub enum Nodekind {
 	BlockNd,	// {}
 	CommaNd,	// ','
 	FuncNd,		// func()
-	FuncDecNd,	// 関数の宣言
+	GlobalNd,	// グローバル変数(関数含む)
 }
 
 pub struct Node {
@@ -71,7 +71,7 @@ pub struct Node {
 	// func の引数を保存する 
 	pub args: Vec<Option<NodeRef>>,
 
-	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
+	// グローバル変数等で使用
 	pub name: Option<String>,
 
 	// 関数宣言時に使用
@@ -166,7 +166,7 @@ mod tests {
 	fn display() {
 		println!("{}", Node::default());
 		let node: Node = Node {
-			kind: Nodekind::FuncDecNd,
+			kind: Nodekind::GlobalNd,
 			stmts: Some(vec![
 				Rc::new(RefCell::new(Node::default())),
 				Rc::new(RefCell::new(Node {kind: Nodekind::AddNd, ..Default::default()})),

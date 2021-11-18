@@ -38,7 +38,7 @@ fn get_count() -> u32 {
 
 pub fn gen_expr(node: &NodeRef) {
 	match node.borrow().kind {
-		Nodekind::FuncDecNd => {
+		Nodekind::GlobalNd => {
 			{
 				asm_write!("{}:\n", node.borrow().name.as_ref().unwrap());
 			
