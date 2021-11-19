@@ -16,10 +16,10 @@ use crate::{
 
 /// @static
 /// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
-/// GLOBAL: グローバル変数名 -> 型
+/// GLOBAL: グローバル変数名 -> 当該ノード
 /// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static GLOBALS: Lazy<Mutex<HashMap<String, TypeCell>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 macro_rules! align {
@@ -85,44 +85,47 @@ macro_rules! tmp_num {
 // 左辺値に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
 fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>, is_local: bool) -> NodeRef {
 	let name: String = name.into();
-	let offset;
+	let offset: Option<usize> =
+	if is_local {
+		let _offset: usize;
+		// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
+		let mut not_found: bool = false;
+		let mut local_access = LOCALS.try_lock().unwrap();
+		match local_access.get(&name) {
+			Some((offset_,_)) => {
+				_offset = *offset_;
+			}, 
+			// 見つからなければオフセットの最大値を伸ばす
+			None => {
+				let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
+				// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
+				// 8バイト変数を扱う時にはアラインメントを行う
+				let (diff, should_align) = if let Some(typ_) = typ.clone() {
+					(
+						typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
+					)
+				} else {
+					(8, true)
+				};
+				*max_offset += diff;
+				if should_align { align!(*max_offset, 8usize); }
+				_offset = *max_offset;
+				not_found = true;
+			}
+		}
 
-	// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
-	let mut not_found: bool = false;
-	let mut local_access = LOCALS.try_lock().unwrap();
-	match local_access.get(&name) {
-		Some((offset_,_)) => {
-			offset = *offset_;
-		}, 
-		// 見つからなければオフセットの最大値を伸ばす
-		None => {
-			let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
-			// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
-			// 8バイト変数を扱う時にはアラインメントを行う
-			let (diff, should_align) = if let Some(typ_) = typ.clone() {
-				(
-					typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
-				)
+		if not_found {
+			// typ に渡されるのは Option だが LOCALS に保存するのは生の TypeCell なので let Some で分岐
+			if let Some(typ_) = typ.clone() {
+				local_access.insert(name, (_offset, typ_)); 
 			} else {
-				(8, true)
-			};
-			*max_offset += diff;
-			if should_align { align!(*max_offset, 8usize); }
-			offset = *max_offset;
-			not_found = true;
+				local_access.insert(name, (_offset, TypeCell::default()));
+			}
 		}
-	}
-
-	if not_found {
-		// typ に渡されるのは Option だが LOCALS に保存するのは生の TypeCell なので let Some で分岐
-		if let Some(typ_) = typ.clone() {
-			local_access.insert(name, (offset, typ_)); 
-		} else {
-			local_access.insert(name, (offset, TypeCell::default()));
-		}
-	}
+		Some(_offset)
+	} else { None };
 	
-	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), is_local: is_local, .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, is_local: is_local, .. Default::default()}))
 }
 
 fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, is_local: bool) -> NodeRef {
@@ -327,7 +330,6 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 	if consume(token_ptr, "(") {
 		let (args, arg_typs) = func_args(token_ptr);
 		typ = TypeCell::make_func(typ, arg_typs);
-		GLOBALS.try_lock().unwrap().insert(name.clone(), typ.clone());
 		expect(token_ptr, ")");
 
 		expect(token_ptr, "{");
@@ -358,7 +360,7 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 
 	};
 	// GLOBALS に保存されるのは、変数ならば Node.typ に該当する型、関数ならば Node.func_typ に該当する型である
-	GLOBALS.try_lock().unwrap().insert(name, typ);
+	GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
 
 	glob
 }
@@ -1028,8 +1030,10 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 			// TODO: グローバル変数には関数でないものもあるのでチェックが必要
 			let glb_access = GLOBALS.try_lock().unwrap();
 			if glb_access.contains_key(&name) {
-				func_typ = glb_access.get(&name).unwrap().clone();
-				if func_typ.typ != Type::Func { error_with_token!("型\"{}\"は関数として扱えません。", &*ptr.borrow(), func_typ); }
+				let glob = glb_access.get(&name).unwrap();
+				func_typ =
+				if let Some(_typ) = glob.func_typ.clone() { _typ }
+				else { error_with_token!("型\"{}\"は関数として扱えません。", &*ptr.borrow(), glob.typ.clone().unwrap()); };
 
 				// 現在利用できる型は一応全て エラーレベルで compatible (ただしまともなコンパイラは warning を出す) なので、引数の数があっていれば良いものとする
 				let argc = func_typ.arg_typs.as_ref().unwrap().len();
@@ -1060,7 +1064,8 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				} else {
 					let glb_access = GLOBALS.try_lock().unwrap();
 					if glb_access.contains_key(&name) {
-						typ = glb_access.get(&name).unwrap().clone();
+						let glob = glb_access.get(&name).unwrap();
+						typ = glob.typ.clone().unwrap();
 					} else {
 						error_with_token!("定義されていない変数です。", &*ptr.borrow());
 					}
@@ -1682,6 +1687,8 @@ pub mod tests {
 			if (N <= 2) return 1;
 			return fib(N-1) + fib(N-2);
 		}
+
+		int X[1][10][100][1000];
 		
 		int main() {
 			int i; i = 0;
@@ -1708,6 +1715,8 @@ pub mod tests {
 			int *p; p = &x; 
 			int **pp; pp = &p;
 			*p += 9;
+
+			print_helper(sizeof X);
 			int X[10][10][10];
 			print_helper(z = fib(*&(**pp)));
 			print_helper(*&*&*&**&*pp);

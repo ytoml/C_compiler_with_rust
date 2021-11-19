@@ -45,6 +45,7 @@ pub enum Nodekind {
 	GlobalNd,	// グローバル変数(関数含む)
 }
 
+#[derive(Clone, Debug)]
 pub struct Node {
 	pub kind: Nodekind, // Nodeの種類
 	pub token: Option<TokenRef>, // 対応する Token (エラーメッセージに必要)
@@ -81,6 +82,10 @@ pub struct Node {
 	// 変数時に使用
 	pub is_local: bool,
 }
+
+// 並列で処理することがないものとして、グローバル変数の都合で Send/Sync を使う
+unsafe impl Send for Node {}
+unsafe impl Sync for Node {}
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
