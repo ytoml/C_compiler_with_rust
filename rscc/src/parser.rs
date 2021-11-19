@@ -1,5 +1,5 @@
 // 再帰下降構文のパーサ
-use std::cell::RefCell;
+use std::{cell::RefCell, convert::TryInto};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -175,6 +175,11 @@ fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stm
 	_global(name, None, Some(func_typ), args, Some(stmts), token_ptr)
 }
 
+fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
+	_global(name, None, Some(func_typ), vec![], None, token_ptr)
+}
+
+
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
@@ -318,37 +323,71 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 // プロトタイプ宣言は現状ではサポートしない
 // 生成規則:
 // global = type ident global-suffix
-// global-suffix = "(" func-args ")" "{" stmt* "}" | ("[" num "]")* ";"
+// global-suffix = "(" func-args ")" ("{" stmt* "}" | ";") | ("[" num "]")* ";"
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut typ = expect_type(token_ptr); // 型宣言の読み込み
 	let ptr =  token_ptr.clone();
 	let name = expect_ident(token_ptr);
-	if GLOBALS.try_lock().unwrap().contains_key(&name) { error_with_token!("{}: 重複したグローバル変数です。", &*ptr.borrow(), name); }
 
 	// 関数宣言の場合は typ は戻り値の型である
 	let glob = 
 	if consume(token_ptr, "(") {
 		let (args, arg_typs) = func_args(token_ptr);
+		let must_be_proto = args.len() != arg_typs.len();
 		typ = TypeCell::make_func(typ, arg_typs);
 		expect(token_ptr, ")");
 
-		expect(token_ptr, "{");
-		let mut stmts : Vec<NodeRef> = Vec::new();
-		let mut has_return : bool = false;
-		while !consume(token_ptr, "}") {
-			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
-			let stmt_ = stmt(token_ptr);
-			confirm_type(&stmt_);
-			stmts.push(stmt_);
+		let (defined, line_num, line_offset) = 
+		if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
+			let decl = node.token.as_ref().unwrap().borrow();
+			let (_num, _offset) = (decl.line_num, decl.line_offset);
+			if node.typ.is_some() { error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, _num, _offset); }
+			(node.stmts.is_some(), _num, _offset)
+		} else { (false , 0, 0) };
+
+		if consume(token_ptr, "{") {
+			if must_be_proto { error_with_token!("関数の定義時には引数名を省略できません。", &*ptr.borrow()); }
+			// 既に宣言されている場合
+			{
+				let mut glb_access = GLOBALS.try_lock().unwrap();
+				if let Some(node) = glb_access.get(&name) {
+					if defined { error_with_token!("関数\"{}\"は位置[{}, {}]で既に定義義されています。", &*ptr.borrow(), name, line_num, line_offset); }
+					// プロトタイプ宣言時と引数の整合をチェック
+					if typ != *node.func_typ.as_ref().unwrap(){ error_with_token!("プロトタイプ宣言との互換性がありません。(宣言位置: [{}, {}])", &*ptr.borrow(), line_num, line_offset); }
+				} else {
+					// プロトタイプ宣言がない場合は、再帰のことを考えて定義のパース前に GLOBALS に一旦プロトタイプ宣言の体で保存する
+					let _ = glb_access.insert(name.clone(), proto_funcdec(name.clone(), typ.clone(), ptr.clone()).borrow().clone());
+				}
+			}
+
+			let mut stmts : Vec<NodeRef> = Vec::new();
+			let mut has_return : bool = false;
+			while !consume(token_ptr, "}") {
+				has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+				let stmt_ = stmt(token_ptr);
+				confirm_type(&stmt_);
+				stmts.push(stmt_);
+			}
+
+			if !has_return {
+				stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
+			}
+
+			new_funcdec(name.clone(), typ.clone(), args, stmts, ptr)
+
+		} else {
+			expect(token_ptr, ";");
+			proto_funcdec(name.clone(), typ, ptr)
 		}
-
-		if !has_return {
-			stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
-		}
-
-		new_funcdec(name.clone(), typ.clone(), args, stmts, ptr)
-
 	} else {
+		if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
+			let decl = node.token.as_ref().unwrap().borrow();
+			if node.typ.is_some() {
+				error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
+			} else {
+				error_with_token!("\"{}\"は位置[{}, {}]で既に関数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
+			}
+		}
 		while consume(token_ptr, "[") {
 			let size = expect_number(token_ptr) as usize;
 			typ = typ.make_array_of(size);
@@ -359,23 +398,26 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 		new_gvar(name.clone(), typ.clone(), ptr)
 
 	};
-	// GLOBALS に保存されるのは、変数ならば Node.typ に該当する型、関数ならば Node.func_typ に該当する型である
-	GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
+	// GLOBALS には定義したノードを直接保存する(プロトタイプ宣言済の場合は入れ替え)
+	let _ = GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
 
 	glob
 }
 
 // 生成規則:
-// func-args = type ident ("," type ident)* | null
+// func-args = arg ("," arg)* | null
+// arg = type ident?
 fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef>) {
 	let mut args: Vec<Option<NodeRef>> = vec![];
 	let mut arg_typs: Vec<TypeCellRef> = vec![];
 	let mut argc: usize = 0;
 	if let Some(typ) = consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
-		let ptr = token_ptr.clone();
-		let name: String = expect_ident(token_ptr);
 		arg_typs.push(Rc::new(RefCell::new(typ.clone())));
-		args.push(Some(new_lvar(name, ptr, typ, true)));
+
+		let ptr = token_ptr.clone();
+		if let Some(name) = consume_ident(token_ptr) {
+				args.push(Some(new_lvar(name, ptr, typ, true)));
+		}
 		argc += 1;
 
 		loop {
@@ -384,10 +426,12 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 				exit_eprintln!("現在7つ以上の引数はサポートされていません。");
 			}
 			let typ = expect_type(token_ptr); // 型宣言の読み込み
-			let ptr = token_ptr.clone();
-			let name: String = expect_ident(token_ptr);
 			arg_typs.push(Rc::new(RefCell::new(typ.clone())));
-			args.push(Some(new_lvar(name, ptr, typ, true)));
+
+			let ptr = token_ptr.clone();
+			if let Some(name) = consume_ident(token_ptr) {
+				args.push(Some(new_lvar(name, ptr, typ, true)));
+			}
 			argc += 1;
 		}
 	} else {
@@ -397,6 +441,7 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 			error_with_token!("型指定が必要です。", &*ptr.borrow());
 		}
 	}
+	// args.len() != arg_types.len() ならば引数名が省略されており、プロトタイプ宣言であるとみなせる
 	(args, arg_typs)
 }
 
@@ -1678,14 +1723,15 @@ pub mod tests {
 	#[test]
 	fn wip() {
 		let src: &str = "
-		int func(int x, int y) {
-			print_helper(x+y);
-			return x + y;
-		}
 		
 		int fib(int N) {
 			if (N <= 2) return 1;
 			return fib(N-1) + fib(N-2);
+		}
+
+		int func(int x, int y) {
+			print_helper(x+y);
+			return x + y;
 		}
 
 		int X[1][10][100][1000];
@@ -1740,6 +1786,8 @@ pub mod tests {
 		
 			return k;
 		}	
+
+		
 		";
 		test_init(src);
 

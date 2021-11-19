@@ -160,7 +160,8 @@ impl PartialEq for TypeCell {
 				false
 			}
 		} else {
-			self.typ == other.typ
+			self.typ == other.typ && self.ret_typ == other.ret_typ && self.arg_typs == other.arg_typs
+
 		}
 	}
 }
