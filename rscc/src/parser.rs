@@ -1,5 +1,5 @@
 // 再帰下降構文のパーサ
-use std::{cell::RefCell, convert::TryInto};
+use std::{cell::RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
