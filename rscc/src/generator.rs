@@ -1,74 +1,67 @@
-use std::sync::Mutex;
-use std::collections::HashMap;
-
-use once_cell::sync::Lazy;
-
 use crate::{
-	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, operate,
-	asm::{reg_ax, reg_di},
+	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_from_glb, mov_glb_addr, operate,
+	asm::{
+		ARGS_REGISTERS, ASMCODE,
+		get_ctrl_count, get_func_count, reg_ax, reg_di,
+	},
 	node::{Nodekind, NodeRef},
 	typecell::Type
 };
 
-pub static ASM: Lazy<Mutex<String>> = Lazy::new(
-	|| Mutex::new(
-		".intel_syntax noprefix\n.globl main\n".to_string()
-	)
-);
-
-static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
-	|| Mutex::new(0)
-);
-
-static ARGS_REGISTERS: Lazy<Mutex<HashMap<usize, Vec<&str>>>> = Lazy::new(|| {
-	let mut map = HashMap::new();
-	let _ = map.insert(4, vec!["edi", "esi", "edx", "rcx", "r8d", "r9d"]);
-	let _ = map.insert(8, vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]);
-	Mutex::new(map)
-});
-
-
-
-// CTR_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
-fn get_count() -> u32 {
-	let mut count = CTR_COUNT.try_lock().unwrap();
-	*count += 1;
-	*count
-}
-
 pub fn gen_expr(node: &NodeRef) {
-	match node.borrow().kind {
-		Nodekind::FuncDecNd => {
-			{
-				asm_write!("{}:\n", node.borrow().name.as_ref().unwrap());
+	let kind =  node.borrow().kind;
+	match kind {
+		Nodekind::GlobalNd => {
+			let node = node.borrow();
+			let name = node.name.as_ref().unwrap().clone();
+			if let Some(_) = &node.func_typ {
+				// プロトタイプ宣言は無視して OK
+				if node.stmts.is_none() { return; }
+				let c = get_func_count();
+				
+				asm_write!("\t.text");
+				asm_write!("\t.globl {}", name);
+				asm_write!("\t.type {}, @function", name);
+				asm_write!("{}:", name);
+				asm_write!(".LFB{}:", c); // function begin label
 			
 				// プロローグ(変数の格納領域の確保)
 				operate!("push", "rbp");
 				mov!("rbp", "rsp");
-				let pull = node.borrow().max_offset.unwrap();
+				let pull = node.max_offset.unwrap();
 				if pull > 0 {
 					operate!("sub", "rsp", pull);
 				}
 
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-				if node.borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
-				for (ix, arg) in (&node.borrow().args).iter().enumerate() {
+				if node.args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+				for (ix, arg) in (&node.args).iter().enumerate() {
 					let offset = *(*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap();
 					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
 					let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
 
 					mov_to!(size, "rbp", arg_reg, offset);
 				}
-			}
-			
-			// 関数内の文の処理
-			let s = node.borrow().stmts.as_ref().unwrap().len();
-			for (ix, stmt_) in node.borrow().stmts.as_ref().unwrap().iter().enumerate() {
-				gen_expr(stmt_);
-				if ix != s - 1 { operate!("pop", "rax"); }
-			}
 
-			// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
+				// 関数内の文の処理
+				let s = node.stmts.as_ref().unwrap().len();
+				for (ix, stmt_) in node.stmts.as_ref().unwrap().iter().enumerate() {
+					gen_expr(stmt_);
+					if ix != s - 1 { operate!("pop", "rax"); }
+				}
+				asm_write!(".LFE{}:", c); // function begin label
+				asm_write!("\t.size {}, .-{}", name, name);
+				// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
+			} else {
+				// 現在はグローバル変数の初期化はサポートしないため、常に .bss で指定
+				let bytes = node.typ.as_ref().unwrap().bytes();
+				asm_write!("\t.globl {}", name);
+				asm_write!("\t.bss");
+				asm_write!("\t.type {}, @object", name);
+				asm_write!("\t.size {}, {}", name, bytes);
+				asm_write!("{}:", name);
+				asm_write!("\t.zero {}", bytes);
+			}
 			return;
 		}
 		Nodekind::NumNd => {
@@ -76,7 +69,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::LogAndNd => {
-			let c = get_count();
+			let c = get_ctrl_count();
 			let f_anchor: String = format!(".LLogic.False{}", c);
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
@@ -96,17 +89,17 @@ pub fn gen_expr(node: &NodeRef) {
 			mov!("rax", 1);
 			operate!("jmp", e_anchor);
 
-			asm_write!("{}:\n", f_anchor);
+			asm_write!("{}:", f_anchor);
 			mov!("rax", 0);
 
-			asm_write!("{}:\n", e_anchor);
+			asm_write!("{}:", e_anchor);
 			// operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
 			operate!("push", "rax");
 
 			return;
 		}
 		Nodekind::LogOrNd => {
-			let c = get_count();
+			let c = get_ctrl_count();
 			let t_anchor: String = format!(".LLogic.False{}", c);
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
@@ -126,10 +119,10 @@ pub fn gen_expr(node: &NodeRef) {
 			mov!("rax", 1);
 			operate!("jmp", e_anchor);
 
-			asm_write!("{}:\n", t_anchor);
+			asm_write!("{}:", t_anchor);
 			mov!("rax", 1);
 
-			asm_write!("{}:\n", e_anchor);
+			asm_write!("{}:", e_anchor);
 			// operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
 			operate!("push", "rax");
 
@@ -161,10 +154,16 @@ pub fn gen_expr(node: &NodeRef) {
 			let typ = node.borrow().typ.clone();
 			if typ.clone().unwrap().typ != Type::Array {
 				let bytes = typ.unwrap().bytes();
-				let offset = node.borrow().offset.unwrap();
 				let ax = reg_ax(bytes);
-				
-				mov_from!(bytes, ax, "rbp", offset);
+
+				if node.borrow().is_local {
+					let offset = node.borrow().offset.unwrap();
+					mov_from!(bytes, ax, "rbp", offset);
+				} else {
+					let name = node.borrow().name.clone().unwrap();
+					mov_from_glb!(bytes, ax, name);
+				}
+
 				// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
 				if bytes == 4 { operate!("cdqe"); } 
 				operate!("push", "rax");
@@ -198,7 +197,7 @@ pub fn gen_expr(node: &NodeRef) {
 			gen_addr(node.borrow().left.as_ref().unwrap());
 			return;
 		}
-		Nodekind::FuncNd => {
+		Nodekind::FunCallNd => {
 			// 引数をレジスタに格納する処理
 			push_args(&node.borrow().args);
 			
@@ -246,7 +245,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::IfNd => {
-			let c: u32 = get_count();
+			let c: u32 = get_ctrl_count();
 			let end: String = format!(".LEnd{}", c);
 
 			// 条件文の処理
@@ -264,7 +263,7 @@ pub fn gen_expr(node: &NodeRef) {
 				operate!("jmp", end); // elseを飛ばしてendへ
 
 				// elseの後ろの処理
-				asm_write!("{}:\n", els);
+				asm_write!("{}:", els);
 				gen_expr(ptr);
 				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 
@@ -277,17 +276,17 @@ pub fn gen_expr(node: &NodeRef) {
 
 			// stmtでgen_exprした後にはpopが呼ばれるはずであり、分岐後いきなりpopから始まるのはおかしい(し、そのpopは使われない)
 			// ブロック文やwhile文も単なる num; などと同じようにstmt自体が(使われない)戻り値を持つものだと思えば良い
-			asm_write!("{}:\n", end);
+			asm_write!("{}:", end);
 			operate!("push", 0);
 
 			return;
 		}
 		Nodekind::WhileNd => {
-			let c: u32 = get_count();
+			let c: u32 = get_ctrl_count();
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
-			asm_write!("{}:\n", begin);
+			asm_write!("{}:", begin);
 
 			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
@@ -299,13 +298,13 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("jmp", begin);
 
 			// if 文同様に push が必要
-			asm_write!("{}:\n", end);
+			asm_write!("{}:", end);
 			operate!("push", 0);
 
 			return;
 		}
 		Nodekind::ForNd => {
-			let c: u32 = get_count();
+			let c: u32 = get_ctrl_count();
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
@@ -313,7 +312,7 @@ pub fn gen_expr(node: &NodeRef) {
 				gen_expr(ptr);
 			}
 
-			asm_write!("{}:\n", begin);
+			asm_write!("{}:", begin);
 
 			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
@@ -327,7 +326,7 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("jmp", begin);
 
 			// if文と同じ理由でpushが必要
-			asm_write!("{}:\n", end);
+			asm_write!("{}:", end);
 			operate!("push", 0);
 
 			return;
@@ -435,19 +434,26 @@ pub fn gen_expr(node: &NodeRef) {
 
 // アドレスを生成する関数(ポインタでない普通の変数への代入等でも使用)
 fn gen_addr(node: &NodeRef) {
-	match node.borrow().kind {
+	let node = node.borrow();
+	let kind = node.kind;
+	match kind {
 		Nodekind::LvarNd => {
-			// 変数に対応するアドレスをスタックにプッシュする
-			let offset = node.borrow().offset.unwrap();
-			lea!("rax", "rbp", offset);
+			if node.is_local {
+				// 変数に対応するアドレスをスタックにプッシュする
+				let offset = node.offset.unwrap();
+				lea!("rax", "rbp", offset);
+			} else {
+				let name = node.name.clone().unwrap();
+				mov_glb_addr!("rax", name);
+			}
 			operate!("push", "rax");
 		}
 		Nodekind::DerefNd => {
 			// *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
-			gen_expr(node.borrow().left.as_ref().unwrap());
+			gen_expr(node.left.as_ref().unwrap());
 		}
 		_ => {
-			error_with_node!("左辺値が変数ではありません。", &*node.borrow());
+			error_with_node!("左辺値が変数ではありません。", &*node);
 		}
 	}
 }
@@ -503,7 +509,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -516,7 +522,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -529,7 +535,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -542,7 +548,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -555,7 +561,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 	
 	#[test]
@@ -568,7 +574,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -583,9 +589,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -600,9 +606,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -624,9 +630,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -644,9 +650,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -661,9 +667,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -680,9 +686,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -699,9 +705,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -718,9 +724,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 	
 	#[test]
@@ -742,9 +748,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 	
 	#[test]
@@ -763,9 +769,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -783,9 +789,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -803,9 +809,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -834,7 +840,7 @@ mod tests {
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -854,6 +860,6 @@ mod tests {
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 }

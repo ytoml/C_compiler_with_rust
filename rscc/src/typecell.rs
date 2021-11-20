@@ -10,6 +10,7 @@ pub enum Type {
 	Invalid, // デフォルトや無名ノードに割り当てる
 	Int,
 	Ptr,
+	Func,
 	Array,
 }
 
@@ -20,6 +21,7 @@ impl Type {
 			Type::Int => { 4 }
 			Type::Ptr => { 8 }
 			Type::Array => { panic!("cannot infer size of array from only itself"); }
+			Type::Func => { panic!("access to the size of function should not be implemented yet"); }
 		}
 	}
 }
@@ -32,6 +34,7 @@ impl Display for Type {
 			Type::Int => { s = "int"; }
 			Type::Ptr => { s = "pointer"; }
 			Type::Array => { s = "array"; }
+			Type::Func => { s = "function"; }
 		}
 		write!(f, "{}", s)
 	}
@@ -48,6 +51,11 @@ pub struct TypeCell {
 	pub ptr_end: Option<Type>,
 	pub chains: usize,
 	pub array_size: Option<usize>,
+
+	// self.typ == Type::Func
+	pub ret_typ: Option<TypeCellRef>,
+	pub arg_typs: Option<Vec<TypeCellRef>>,
+
 }
 
 impl TypeCell {
@@ -68,7 +76,7 @@ impl TypeCell {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
 		let ptr_end = if self.typ == Type::Array { self.ptr_end.clone() } else { Some(self.typ) };
 		let chains = self.chains + 1;
-		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: Some(size) }
+		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: Some(size), ..Default::default() }
 	}
 
 	// 配列の次元と最小要素の型情報を取得
@@ -86,6 +94,12 @@ impl TypeCell {
 	pub fn make_deref(&self) -> Self {
 		if ![Type::Array, Type::Ptr].contains(&self.typ) { panic!("not able to extract element from non-array"); } 
 		(*self.ptr_to.clone().unwrap().borrow()).clone()
+	}
+
+	pub fn make_func(ret_typ: Self, arg_typs: Vec<TypeCellRef>) -> Self {
+		let _ret_typ = Some(Rc::new(RefCell::new(ret_typ)));
+		let _arg_typs = Some(arg_typs);
+		TypeCell { typ: Type::Func, ret_typ: _ret_typ, arg_typs: _arg_typs, ..Default::default() }
 	}
 
 	pub fn bytes(&self) -> usize {
@@ -109,6 +123,13 @@ impl TypeCell {
 				format!("*{}", s)
 			};
 			(*deref).borrow().get_type_string(string)
+		} else if self.typ == Type::Func {
+			let ret_typ = self.ret_typ.as_ref().unwrap().borrow().clone();
+			let mut args_str = String::new();
+			for (ix, arg) in self.arg_typs.as_ref().unwrap().iter().enumerate() {
+				args_str = if ix == 0 { format!("{}", arg.borrow()) } else { format!("{}, {}", args_str, arg.borrow()) };
+			}
+			format!("{} __func({}){}", ret_typ, args_str,s)
 		} else {
 			format!("{}{}", self.typ, s)
 		}
@@ -117,7 +138,7 @@ impl TypeCell {
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None}
+		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None}
 	}
 }
 
@@ -139,7 +160,8 @@ impl PartialEq for TypeCell {
 				false
 			}
 		} else {
-			self.typ == other.typ
+			self.typ == other.typ && self.ret_typ == other.ret_typ && self.arg_typs == other.arg_typs
+
 		}
 	}
 }

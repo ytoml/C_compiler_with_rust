@@ -12,7 +12,7 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事の step22 まで実装しており、
+現在、上記記事の step23 まで実装しており、
 - 基本的な単項、二項演算
 	- `+=` のような演算代入や前置/後置のインクリメント/デクリメントにも対応
 	- `sizeof` にも対応していますが、現在整数型を `int` しかサポートしていないため、 `int` として扱われます。
@@ -22,7 +22,7 @@ Rui Ueyama さんの
 	- 現時点では宣言と初期化を同時に行うことができず、`int x; x = 10;` のように書く必要があります。
 	- ポインタは全く同じ型どうしの場合のみに引き算ができ、それらのアドレスオフセットが変数いくつ分になるかが評価値となります。
 - 配列型の変数と添字によるアクセス
-	
+- グローバル変数
 - for, while, if による制御構文
 - コンマによる複数文の記述
 がサポートされています。  
@@ -30,49 +30,27 @@ Rui Ueyama さんの
 ヘッダファイルの include をサポートしていないため、例えば `printf` のような標準ライブラリを使いたい場合などは、別の C ソースでそれらをラップした関数を定義して gcc 等で x86_64 向けにコンパイルした実行オブジェクトを rscc で改めてコンパイルした元のソースにリンクさせて呼び出す必要があります。(以下の `print_helper` はその例です。)
 
 ```C
-int func(int x, int y) {
-	print_helper(x+y);
-	return x + y;
-}
-
-int fib(int N) {
-	if (N <= 2) return 1;
-	return fib(N-1) + fib(N-2);
-}
+int fib(int);
+int MEMO[100];
+int X[10][20][30];
 
 int main() {
-	int i; i = 0;
-	int j; j = 0;
-	int k; k = 1;
-	int sum; sum = 0;
-	for (; i < 10; i+=i+1, j++) {
-		sum++;
-	}
-	print_helper(j);
-	print_helper(k);
-	while (j > 0, 0) {
-		j /= 2;
-		k <<= 1;
-	}
-	if (1 && !(k/2)) k--;
-	else k = -1;
+	int i, x;
+	int *p = &X[0][0][0];
+	int **pp = &p;
+	***X = 10;
 
-	int x, y, z;
-	func(x=1, (y=1, z=~1));
+	for(i=0; i < 100; i++) {
+		MEMO[i] = 0;
+	}
+	
+	print_helper((x = 19, x = fib(*&(**pp))));
+	print_helper(*&(**pp));
+	X[0][3][2] = 99;
+	print_helper(X[0][2][32]);
+	print_helper(sizeof X);
 
-	x = 15 & 10;
-	x = (++x) + y;
-	int *p; p = &x; 
-	int **pp; pp = &p;
-	*p += 9;
 	int X[10][10][10];
-	print_helper(z = fib(*&(**pp)));
-	print_helper(*&*&*&**&*pp);
-	print_helper(sizeof (x+y));
-	print_helper(sizeof ++x);
-	print_helper(sizeof &x + x);
-	print_helper(sizeof(int**));
-	print_helper(sizeof(*p));
 	print_helper(sizeof &X);
 	print_helper(X);
 	print_helper(&X+1);
@@ -81,6 +59,15 @@ int main() {
 	X[0][1][1] = 100;
 	print_helper(*(*(X[0]+1)+1));
 
-	return k;
+	
+	print_helper(fib(50));
+
+	return x;
+}
+
+int fib(int N) {
+	if (N <= 2) return 1;
+	if (MEMO[N-1]) return MEMO[N-1];
+	return MEMO[N-1] = fib(N-1) + fib(N-2);
 }
 ```

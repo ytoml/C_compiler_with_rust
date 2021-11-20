@@ -1,5 +1,5 @@
 // 再帰下降構文のパーサ
-use std::cell::RefCell;
+use std::{cell::RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
@@ -10,16 +10,16 @@ use crate::{
 	node::{Node, Nodekind, NodeRef},
 	token::{Tokenkind, TokenRef},
 	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_type},
-	typecell::{Type, TypeCell},
+	typecell::{Type, TypeCell, TypeCellRef},
 	exit_eprintln, error_with_token, error_with_node
 };
 
 /// @static
 /// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
-/// LOCALS: ローカル変数名 -> (引数の数, 戻り値の型)
+/// GLOBAL: グローバル変数名 -> 当該ノード
 /// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-static DECLARED_FUNCS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 macro_rules! align {
@@ -29,7 +29,6 @@ macro_rules! align {
 		$addr &= !($base - 1)
 	};
 }
-
 
 // 2つ子を持つ汎用ノード
 fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
@@ -82,56 +81,60 @@ macro_rules! tmp_num {
 	};
 }
 
-// 左辺値(今のうちはローカル変数)に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
-fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>) -> NodeRef {
+// 左辺値に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
+fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>, is_local: bool) -> NodeRef {
 	let name: String = name.into();
-	let offset;
+	let (offset, name): (Option<usize>, Option<String>) =
+	if is_local {
+		let _offset: usize;
+		// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
+		let mut not_found: bool = false;
+		let mut local_access = LOCALS.try_lock().unwrap();
+		match local_access.get(&name) {
+			Some((offset_,_)) => {
+				_offset = *offset_;
+			}, 
+			// 見つからなければオフセットの最大値を伸ばす
+			None => {
+				let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
+				// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
+				// 8バイト変数を扱う時にはアラインメントを行う
+				let (diff, should_align) = if let Some(typ_) = typ.clone() {
+					(
+						typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
+					)
+				} else {
+					(8, true)
+				};
+				*max_offset += diff;
+				if should_align { align!(*max_offset, 8usize); }
+				_offset = *max_offset;
+				not_found = true;
+			}
+		}
 
-	// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
-	let mut not_found: bool = false;
-	let mut locals = LOCALS.try_lock().unwrap();
-	match locals.get(&name) {
-		Some((offset_,_)) => {
-			offset = *offset_;
-		}, 
-		// 見つからなければオフセットの最大値を伸ばす
-		None => {
-			let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
-			// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
-			// 8バイト変数を扱う時にはアラインメントを行う
-			let (diff, should_align) = if let Some(typ_) = typ.clone() {
-				(
-					typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
-				)
+		if not_found {
+			// typ に渡されるのは Option だが LOCALS に保存するのは生の TypeCell なので let Some で分岐
+			if let Some(typ_) = typ.clone() {
+				local_access.insert(name, (_offset, typ_)); 
 			} else {
-				(8, true)
-			};
-			*max_offset += diff;
-			if should_align { align!(*max_offset, 8usize); }
-			offset = *max_offset;
-			not_found = true;
+				local_access.insert(name, (_offset, TypeCell::default()));
+			}
 		}
-	}
+		(Some(_offset), None)
+	} else { (None, Some(name)) };
 
-	if not_found {
-		// typ に渡されるのは Option だが LOCALS に保存するのは生の TypeCell なので let Some で分岐
-		if let Some(typ_) = typ.clone() {
-			locals.insert(name, (offset, typ_)); 
-		} else {
-			locals.insert(name, (offset, TypeCell::default()));
-		}
-	}
 	
-	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: Some(offset), .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, name: name, is_local: is_local, .. Default::default()}))
 }
 
-fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell) -> NodeRef {
-	_lvar(name, Some(token_ptr), Some(typ))
+fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, is_local: bool) -> NodeRef {
+	_lvar(name, Some(token_ptr), Some(typ), is_local)
 }
 
 macro_rules! tmp_lvar {
 	() => {
-		_lvar("", None, None)
+		_lvar("", None, None, true)
 	};
 }
 
@@ -154,8 +157,26 @@ fn new_ctrl(kind: Nodekind,
 }
 
 // 関数呼び出しのノード
-fn new_func(name: String, args: Vec<Option<NodeRef>>, ret_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::FuncNd, token: Some(token_ptr), name: Some(name), args: args, ret_typ: Some(ret_typ), ..Default::default()}))
+fn new_func(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
+	if func_typ.typ != Type::Func { panic!("new_func can be called only with function TypeCell"); }
+	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(token_ptr), name: Some(name), func_typ:Some(func_typ), args: args, ..Default::default()}))
+}
+
+// グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
+fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token_ptr: TokenRef) -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }))
+}
+
+fn new_gvar(name: String, typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
+	_global(name, Some(typ), None, vec![], None, None, token_ptr)
+}
+
+fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, max_offset: usize, token_ptr: TokenRef) -> NodeRef {
+	_global(name, None, Some(func_typ), args, Some(stmts), Some(max_offset), token_ptr)
+}
+
+fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
+	_global(name, None, Some(func_typ), vec![], None, None, token_ptr)
 }
 
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
@@ -258,10 +279,10 @@ fn confirm_type(node: &NodeRef) {
 				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains, ..Default::default() }
 			);
 		}
-		Nodekind::FuncNd => {
-			// FuncNd には ret_typ があるが、これを typ にも適用することで自然に型を親ノードに伝播できる
+		Nodekind::FunCallNd => {
+			// FunCallNd の func_typ.ret_typ を typ に適用することで自然に型を親ノードに伝播できる
 			let mut node = node.borrow_mut();
-			let typ =node.ret_typ.clone().unwrap();
+			let typ = node.func_typ.as_ref().unwrap().ret_typ.as_ref().unwrap().borrow().clone();
 			let _ = node.typ.insert(typ);
 		}
 		_ => {}
@@ -281,19 +302,121 @@ fn get_common_type(left: &NodeRef, right: &NodeRef) -> TypeCell {
 	}
 }
 
+// 生成規則: 
+// program = global*
+pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
+	let mut globals : Vec<NodeRef> = Vec::new();
+
+	while !at_eof(token_ptr) {
+		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
+		globals.push(global(token_ptr));
+
+		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
+		LOCALS.try_lock().unwrap().clear();
+		*LVAR_MAX_OFFSET.try_lock().unwrap() = 0;
+	}
+	
+	globals
+}
+
+// プロトタイプ宣言は現状ではサポートしない
+// 生成規則:
+// global = type ident global-suffix
+// global-suffix = "(" func-args ")" ("{" stmt* "}" | ";") | "[" array-suffix ";"
+fn global(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut typ = expect_type(token_ptr); // 型宣言の読み込み
+	let ptr =  token_ptr.clone();
+	let name = expect_ident(token_ptr);
+
+	// 関数宣言の場合は typ は戻り値の型である
+	let glob = 
+	if consume(token_ptr, "(") {
+		let (args, arg_typs) = func_args(token_ptr);
+		let must_be_proto = args.len() != arg_typs.len();
+		typ = TypeCell::make_func(typ, arg_typs);
+		expect(token_ptr, ")");
+
+		let (defined, line_num, line_offset) = 
+		if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
+			let decl = node.token.as_ref().unwrap().borrow();
+			let (_num, _offset) = (decl.line_num, decl.line_offset);
+			if node.typ.is_some() { error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, _num, _offset); }
+			(node.stmts.is_some(), _num, _offset)
+		} else { (false , 0, 0) };
+
+		if consume(token_ptr, "{") {
+			if must_be_proto { error_with_token!("関数の定義時には引数名を省略できません。", &*ptr.borrow()); }
+			// 既に宣言されている場合
+			{
+				let mut glb_access = GLOBALS.try_lock().unwrap();
+				if let Some(node) = glb_access.get(&name) {
+					if defined { error_with_token!("関数\"{}\"は位置[{}, {}]で既に定義義されています。", &*ptr.borrow(), name, line_num, line_offset); }
+					// プロトタイプ宣言時と引数の整合をチェック
+					if typ != *node.func_typ.as_ref().unwrap(){ error_with_token!("プロトタイプ宣言との互換性がありません。(宣言位置: [{}, {}])", &*ptr.borrow(), line_num, line_offset); }
+				} else {
+					// プロトタイプ宣言がない場合は、再帰のことを考えて定義のパース前に GLOBALS に一旦プロトタイプ宣言の体で保存する
+					let _ = glb_access.insert(name.clone(), proto_funcdec(name.clone(), typ.clone(), ptr.clone()).borrow().clone());
+				}
+			}
+
+			let mut stmts : Vec<NodeRef> = Vec::new();
+			let mut has_return : bool = false;
+			while !consume(token_ptr, "}") {
+				has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+				let stmt_ = stmt(token_ptr);
+				confirm_type(&stmt_);
+				stmts.push(stmt_);
+			}
+
+			if !has_return {
+				stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
+			}
+			let max_offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
+
+			new_funcdec(name.clone(), typ.clone(), args, stmts, max_offset, ptr)
+
+		} else {
+			expect(token_ptr, ";");
+			proto_funcdec(name.clone(), typ, ptr)
+		}
+	} else {
+		if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
+			let decl = node.token.as_ref().unwrap().borrow();
+			if node.typ.is_some() {
+				error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
+			} else {
+				error_with_token!("\"{}\"は位置[{}, {}]で既に関数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
+			}
+		}
+
+		if consume(token_ptr, "[") {
+			typ = array_suffix(token_ptr, typ);
+		}
+		expect(token_ptr, ";");
+
+		new_gvar(name.clone(), typ.clone(), ptr)
+
+	};
+	// GLOBALS には定義したノードを直接保存する(プロトタイプ宣言済の場合は入れ替え)
+	let _ = GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
+
+	glob
+}
 
 // 生成規則:
-// type = "int"
-
-// 生成規則:
-// func-args = type ident ("," type ident)* | null
-fn func_args(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
+// func-args = arg ("," arg)* | null
+// arg = type ident?
+fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef>) {
 	let mut args: Vec<Option<NodeRef>> = vec![];
+	let mut arg_typs: Vec<TypeCellRef> = vec![];
 	let mut argc: usize = 0;
 	if let Some(typ) = consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
+		arg_typs.push(Rc::new(RefCell::new(typ.clone())));
+
 		let ptr = token_ptr.clone();
-		let name: String = expect_ident(token_ptr);
-		args.push(Some(new_lvar(name, ptr, typ)));
+		if let Some(name) = consume_ident(token_ptr) {
+				args.push(Some(new_lvar(name, ptr, typ, true)));
+		}
 		argc += 1;
 
 		loop {
@@ -302,9 +425,12 @@ fn func_args(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 				exit_eprintln!("現在7つ以上の引数はサポートされていません。");
 			}
 			let typ = expect_type(token_ptr); // 型宣言の読み込み
+			arg_typs.push(Rc::new(RefCell::new(typ.clone())));
+
 			let ptr = token_ptr.clone();
-			let name: String = expect_ident(token_ptr);
-			args.push(Some(new_lvar(name, ptr, typ)));
+			if let Some(name) = consume_ident(token_ptr) {
+				args.push(Some(new_lvar(name, ptr, typ, true)));
+			}
 			argc += 1;
 		}
 	} else {
@@ -314,62 +440,8 @@ fn func_args(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 			error_with_token!("型指定が必要です。", &*ptr.borrow());
 		}
 	}
-	args
-}
-
-// 生成規則: 
-// program = (type ident "(" func-args ")" "{" stmt* "}")*
-pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
-	let mut globals : Vec<NodeRef> = Vec::new();
-
-	while !at_eof(token_ptr) {
-		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
-		let mut statements : Vec<NodeRef> = Vec::new();
-
-		let ret_typ = expect_type(token_ptr); // 型宣言の読み込み
-		let ptr =  token_ptr.clone();
-		let func_name = expect_ident(token_ptr);
-		if DECLARED_FUNCS.try_lock().unwrap().contains_key(&func_name) {
-			error_with_token!("{}: 重複した関数宣言です。", &*ptr.borrow(), func_name);
-		}
-		expect(token_ptr, "(");
-		let args: Vec<Option<NodeRef>> = func_args(token_ptr);
-		DECLARED_FUNCS.try_lock().unwrap().insert(func_name.clone(), (args.len(), ret_typ.clone()));
-		expect(token_ptr, ")");
-
-		let mut has_return : bool = false;
-		expect(token_ptr, "{");
-		while !consume(token_ptr, "}") {
-			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
-			let stmt_ = stmt(token_ptr);
-			confirm_type(&stmt_);
-			statements.push(stmt_);
-		}
-
-		if !has_return {
-			statements.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
-		}
-
-		let global = Rc::new(RefCell::new(
-			Node {
-				kind: Nodekind::FuncDecNd,
-				token: Some(ptr),
-				name: Some(func_name),
-				args: args,
-				stmts: Some(statements),
-				max_offset: Some(*LVAR_MAX_OFFSET.try_lock().unwrap()),
-				ret_typ: Some(ret_typ),
-				..Default::default()
-			}
-		));
-		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
-		LOCALS.try_lock().unwrap().clear();
-		*LVAR_MAX_OFFSET.try_lock().unwrap() = 0;
-
-		globals.push(global);
-	}
-	
-	globals
+	// args.len() != arg_types.len() ならば引数名が省略されており、プロトタイプ宣言であるとみなせる
+	(args, arg_typs)
 }
 
 // 生成規則:
@@ -388,6 +460,8 @@ fn decl(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 // 本来は配列も初期化できるべきだが、今はサポートしない
+// また、ローカルでの変数宣言はサポートしない
+// 生成規則:
 // vardec = ident ( "=" expr | [" array-suffix)?
 fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
@@ -396,14 +470,14 @@ fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr_ = token_ptr.clone();
 	if consume(token_ptr, "=") {
 		// 少し紛らわしいが assign_op で型チェックもできるためここでも利用
-		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ), expr(token_ptr), ptr_)
+		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ, true), expr(token_ptr), ptr_)
 	} else {
 		// suffix(token_ptr) とかする方がいいかも
 		if consume(token_ptr, "[") {
 			typ = array_suffix(token_ptr, typ);
 		}
 
-		new_lvar(name, ptr, typ)
+		new_lvar(name, ptr, typ, true)
 	}
 }
 
@@ -444,7 +518,9 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		loop {
 			if !consume(token_ptr, "}") {
 				if at_eof(token_ptr) {exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。");}
-				children.push(Some(stmt(token_ptr)));
+				let _stmt = stmt(token_ptr);
+				confirm_type(&_stmt);
+				children.push(Some(_stmt));
 			} else {
 				break;
 			}
@@ -453,20 +529,41 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 
 	} else if consume(token_ptr, "if") {
 		expect(token_ptr, "(");
-		let enter= Some(expr(token_ptr));
+		let enter= {
+			let _enter = expr(token_ptr);
+			confirm_type(&_enter);
+			Some(_enter)
+		};
 		expect(token_ptr, ")");
 
-		let branch = Some(stmt(token_ptr));
-		let els = if consume(token_ptr, "else") {Some(stmt(token_ptr))} else {None};
+		let branch = {
+			let _branch = stmt(token_ptr);
+			confirm_type(&_branch);
+			Some(_branch)
+		};
+
+		let els = if consume(token_ptr, "else") {
+			let _els = stmt(token_ptr);
+			confirm_type(&_els);
+			Some(_els)
+		} else {None};
 		
 		new_ctrl(Nodekind::IfNd, None, enter, None, branch, els)
 
 	} else if consume(token_ptr, "while") {
 		expect(token_ptr, "(");
-		let enter = Some(expr(token_ptr));
+		let enter= {
+			let _enter = expr(token_ptr);
+			confirm_type(&_enter);
+			Some(_enter)
+		};
 		expect(token_ptr, ")");
 
-		let branch = Some(stmt(token_ptr));
+		let branch = {
+			let _branch = stmt(token_ptr);
+			confirm_type(&_branch);
+			Some(_branch)
+		};
 
 		new_ctrl(Nodekind::WhileNd, None, enter, None, branch, None)
 
@@ -475,24 +572,35 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		// consumeできた場合exprが何も書かれていないことに注意
 		let init: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
-			let init_ = Some(expr(token_ptr));
+			let _init = {
+				let __init = expr(token_ptr);
+				confirm_type(&__init);
+				Some(__init)
+			};
 			expect(token_ptr, ";");
-			init_
+			_init
 		};
 
 		let enter: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
-			let enter_ = Some(expr(token_ptr));
+			let _enter = {
+				let __enter = expr(token_ptr);
+				confirm_type(&__enter);
+				Some(__enter)
+			};
 			expect(token_ptr, ";");
-			enter_
+			_enter
 		};
 
 		let routine: Option<NodeRef> = 
 		if consume(token_ptr, ")") {None} else {
-			let routine_ = Some(expr(token_ptr));
-			// confirm_type(&routine_.as_ref().unwrap());
+			let _routine = {
+				let __routine = expr(token_ptr);
+				confirm_type(&__routine);
+				Some(__routine)
+			};
 			expect(token_ptr, ")");
-			routine_
+			_routine
 		};
 
 		let branch: Option<NodeRef> = Some(stmt(token_ptr));
@@ -505,10 +613,10 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		if consume(token_ptr, ";") {
 			tmp_num!(0)
 		} else {
-			let left_: NodeRef = expr(token_ptr);
-			confirm_type(&left_);
+			let _left: NodeRef = expr(token_ptr);
+			confirm_type(&_left);
 			expect(token_ptr, ";");
-			left_
+			_left
 		};
 
 		new_unary(Nodekind::ReturnNd, left, ptr)
@@ -993,31 +1101,56 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 		node_ptr
 
 	} else if let Some(name) = consume_ident(token_ptr) {
-
 		if consume(token_ptr, "(") {
+			let func_typ: TypeCell;
 			let args:Vec<Option<NodeRef>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
-			let declared: bool = DECLARED_FUNCS.try_lock().unwrap().contains_key(&name);
-			if declared  {
-				let (argc, ret_typ) = DECLARED_FUNCS.try_lock().unwrap().get(&name).unwrap().clone();
+			// TODO: グローバル変数には関数でないものもあるのでチェックが必要
+			let glb_access = GLOBALS.try_lock().unwrap();
+			if glb_access.contains_key(&name) {
+				let glob = glb_access.get(&name).unwrap();
+				func_typ =
+				if let Some(_typ) = glob.func_typ.clone() { _typ }
+				else { error_with_token!("型\"{}\"は関数として扱えません。", &*ptr.borrow(), glob.typ.clone().unwrap()); };
+
+				// 現在利用できる型は一応全て エラーレベルで compatible (ただしまともなコンパイラは warning を出す) なので、引数の数があっていれば良いものとする
+				let argc = func_typ.arg_typs.as_ref().unwrap().len();
 				if args.len() != argc { error_with_token!("\"{}\" の引数は{}個で宣言されていますが、{}個が渡されました。", &*ptr.borrow(), name, argc, args.len()); }
-				new_func(name, args, ret_typ, ptr)
+
+				new_func(name, func_typ, args, ptr)
+
 			} else {
 				// 外部ソースの関数の戻り値の型をコンパイル時に得ることはできないため、int で固定とする
-				new_func(name, args, TypeCell::new(Type::Int), ptr)
+				// また、引数の型は正しいとして args のものをコピーする
+				let mut arg_typs = vec![];
+				for arg in &args {
+					arg_typs.push(Rc::new(RefCell::new(arg.as_ref().unwrap().borrow().typ.clone().unwrap())));
+				}
+				func_typ = TypeCell::make_func(TypeCell::new(Type::Int), arg_typs);
+
+				new_func(name, func_typ, args, ptr)
 			}
 		} else {
+			// グローバル変数については、外部ソースとのリンクは禁止として、LOCALS, GLOBALS に当たらなければエラーになるようにする
 			let typ: TypeCell;
+			let mut is_local = false;
 			{
-				let locals = LOCALS.try_lock().unwrap();
-				let declared: bool = locals.contains_key(&name);
-				if !declared { error_with_token!("\"{}\" が定義されていません。", &*ptr.borrow(), name); }
-				typ = locals.get(&name).as_ref().unwrap().1.clone();
+				let lvar_access = LOCALS.try_lock().unwrap();
+				if lvar_access.contains_key(&name) {
+					typ = lvar_access.get(&name).unwrap().1.clone();
+					is_local = true;
+				} else {
+					let glb_access = GLOBALS.try_lock().unwrap();
+					if glb_access.contains_key(&name) {
+						let glob = glb_access.get(&name).unwrap();
+						typ = glob.typ.clone().unwrap();
+					} else {
+						error_with_token!("定義されていない変数です。", &*ptr.borrow());
+					}
+				}
 			}
 
-			let mut node_ptr = new_lvar(name, ptr.clone(), typ.clone());
-
-			// TODO: 添字による配列アクセス ... X[10] -> *(X+10)
+			let mut node_ptr = new_lvar(name, ptr.clone(), typ.clone(), is_local);
 			while consume(token_ptr, "[") {
 				let index_ptr = token_ptr.clone();
 				let index = expr(token_ptr);
@@ -1026,14 +1159,11 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 			}
 
 			node_ptr
-			
 		}
-
 	} else {
 		new_num(expect_number(token_ptr), ptr)
 	}
 }
-
 
 #[cfg(test)]
 pub mod tests {
@@ -1076,13 +1206,13 @@ pub mod tests {
 	}
 
 	pub fn parse_stmts(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
-		let mut statements :Vec<NodeRef> = Vec::new();
+		let mut stmts :Vec<NodeRef> = Vec::new();
 		while !at_eof(token_ptr) {
 			let stmt_ = stmt(token_ptr);
 			confirm_type(&stmt_);
-			statements.push(stmt_);
+			stmts.push(stmt_);
 		}
-		statements
+		stmts
 	}
 
 	#[test]
@@ -1192,7 +1322,6 @@ pub mod tests {
 		}
 	}
 
-
 	#[test]
 	fn for_() {
 		let src: &str = "
@@ -1254,7 +1383,6 @@ pub mod tests {
 			count += 1;
 		}
 	}
-
 
 	#[test]
 	fn ctrls() {
@@ -1516,13 +1644,13 @@ pub mod tests {
 	#[test]
 	fn declare() {
 		let src: &str = "
-			func(int x, int y) {
+			int func(int x, int y) {
 				return x + y;
 			}
-			calc(int a, int b, int c, int d, int e, int f) {
+			int calc(int a, int b, int c, int d, int e, int f) {
 				return a*b + c - d + e/f;
 			}
-			main() {
+			int main() {
 				int i, sum;
 				i = 0;
 				sum = 0;
@@ -1593,68 +1721,66 @@ pub mod tests {
 		}
 	}
 
+	#[test]
+	fn gvar() {
+		let src: &str = "
+		int x;
+		int X[0][0][0];
+		int func(int x, int y) {
+			return x + y;
+		}
+		int main() {
+			X;
+			int X[10][10][10];
+			X[0][0][0] = 10;
+			func(1, 3) + 1;
+			return ***X;
+		}
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
 	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする
 	#[test]
 	fn wip() {
 		let src: &str = "
-		int func(int x, int y) {
-			print_helper(x+y);
-			return x + y;
+		int fib(int);
+		int X[10][20][30];
+
+		int main() {
+			int i, x;
+			int *p = &X[0][0][0];
+			int **pp = &p;
+			***X = 10;
+			
+			print_helper((x = 19, x = fib(*&(**pp))));
+			print_helper(sizeof X);
+
+			int X[1][10][100];
+			print_helper(sizeof &X);
+			print_helper(X);
+			print_helper(&X+1);
+			print_helper(X[1]);
+			print_helper(X[0][1]);
+			X[0][1][1] = 100;
+			print_helper(*(*(X[0]+1)+1));
+
+			return x;
 		}
-		
+
 		int fib(int N) {
 			if (N <= 2) return 1;
 			return fib(N-1) + fib(N-2);
 		}
-		
-		int main() {
-			int i; i = 0;
-			int j; j = 0;
-			int k; k = 1;
-			int sum; sum = 0;
-			for (; i < 10; i+=i+1, j++) {
-				sum++;
-			}
-			print_helper(j);
-			print_helper(k);
-			while (j > 0, 0) {
-				j /= 2;
-				k <<= 1;
-			}
-			if (1 && !(k/2)) k--;
-			else k = -1;
-		
-			int x, y, z;
-			func(x=1, (y=1, z=~1));
-		
-			x = 15 & 10;
-			x = (++x) + y;
-			int *p; p = &x; 
-			int **pp; pp = &p;
-			*p += 9;
-			int X[10][10][10];
-			print_helper(z = fib(*&(**pp)));
-			print_helper(*&*&*&**&*pp);
-			print_helper(sizeof (x+y));
-			print_helper(sizeof ++x);
-			print_helper(sizeof &x + x);
-			print_helper(sizeof(int**));
-			print_helper(sizeof(x && x));
-			print_helper(sizeof(*p));
-			print_helper(sizeof &X);
-			print_helper(sizeof X);
-			print_helper(sizeof *X);
-			print_helper(sizeof **X);
-			print_helper(sizeof ***X);
-			print_helper(X);
-			print_helper(&X+1);
-			print_helper(X+1);
-			print_helper(*X+1);
-			print_helper(**X+1);
-			print_helper(***X);
-		
-			return k;
-		}	
 		";
 		test_init(src);
 

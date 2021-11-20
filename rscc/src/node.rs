@@ -41,10 +41,11 @@ pub enum Nodekind {
 	ReturnNd,	// "return"
 	BlockNd,	// {}
 	CommaNd,	// ','
-	FuncNd,		// func()
-	FuncDecNd,	// 関数の宣言
+	FunCallNd,	// func()
+	GlobalNd,	// グローバル変数(関数含む)
 }
 
+#[derive(Clone, Debug)]
 pub struct Node {
 	pub kind: Nodekind, // Nodeの種類
 	pub token: Option<TokenRef>, // 対応する Token (エラーメッセージに必要)
@@ -68,22 +69,28 @@ pub struct Node {
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<NodeRef>>,
 
-	// func の引数を保存する 
-	pub args: Vec<Option<NodeRef>>,
 
-	// func 時に使用(もしかしたらグローバル変数とかでも使うかも？)
+	// グローバル変数等で使用
 	pub name: Option<String>,
 
-	// 関数宣言時に使用
+	// 関数に使用
+	pub func_typ: Option<TypeCell>,
+	pub args: Vec<Option<NodeRef>>,
 	pub stmts: Option<Vec<NodeRef>>,
 	pub max_offset: Option<usize>,
-	pub ret_typ: Option<TypeCell>,
+
+	// 変数時に使用
+	pub is_local: bool,
 }
+
+// 並列で処理することがないものとして、グローバル変数の都合で Send/Sync を使う
+unsafe impl Send for Node {}
+unsafe impl Sync for Node {}
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], args: vec![], name: None, stmts: None, max_offset: None, ret_typ: None }
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, func_typ: None, args: vec![], stmts: None, max_offset: None, is_local: false }
 	}
 }
 
@@ -92,7 +99,13 @@ impl Display for Node {
 	fn fmt(&self, f:&mut Formatter) -> Result {
 
 		let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
-		s = format!("{}Nodekind : {:?}\n", s, self.kind);
+		let scope_attr = 
+		if self.kind == Nodekind::LvarNd {
+			if self.is_local { "<Local>" } else { "<Global>"}
+		} else {
+			""
+		};
+		s = format!("{}Nodekind : {:?}{}\n", s, self.kind, scope_attr);
 
 		if let Some(e) = self.typ.as_ref() {s = format!("{}type: {}\n", s, e);}
 		if let Some(e) = self.token.as_ref() {
@@ -122,6 +135,7 @@ impl Display for Node {
 			}
 		}
 
+		if let Some(e) = self.func_typ.as_ref() {s = format!("{}function type: {}\n", s, e);}
 		if self.args.len() > 0 {
 			s = format!("{}args: exist\n", s);
 			for node in &self.args {
@@ -132,7 +146,6 @@ impl Display for Node {
 
 		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
 		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
-		if let Some(e) = self.ret_typ.as_ref() {s = format!("{}return type: {}\n", s, e);}
 
 		write!(f, "{}", s)
 	}
@@ -166,7 +179,7 @@ mod tests {
 	fn display() {
 		println!("{}", Node::default());
 		let node: Node = Node {
-			kind: Nodekind::FuncDecNd,
+			kind: Nodekind::GlobalNd,
 			stmts: Some(vec![
 				Rc::new(RefCell::new(Node::default())),
 				Rc::new(RefCell::new(Node {kind: Nodekind::AddNd, ..Default::default()})),
