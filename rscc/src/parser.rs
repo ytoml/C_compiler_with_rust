@@ -518,7 +518,9 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		loop {
 			if !consume(token_ptr, "}") {
 				if at_eof(token_ptr) {exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。");}
-				children.push(Some(stmt(token_ptr)));
+				let _stmt = stmt(token_ptr);
+				confirm_type(&_stmt);
+				children.push(Some(_stmt));
 			} else {
 				break;
 			}
@@ -527,20 +529,41 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 
 	} else if consume(token_ptr, "if") {
 		expect(token_ptr, "(");
-		let enter= Some(expr(token_ptr));
+		let enter= {
+			let _enter = expr(token_ptr);
+			confirm_type(&_enter);
+			Some(_enter)
+		};
 		expect(token_ptr, ")");
 
-		let branch = Some(stmt(token_ptr));
-		let els = if consume(token_ptr, "else") {Some(stmt(token_ptr))} else {None};
+		let branch = {
+			let _branch = stmt(token_ptr);
+			confirm_type(&_branch);
+			Some(_branch)
+		};
+
+		let els = if consume(token_ptr, "else") {
+			let _els = stmt(token_ptr);
+			confirm_type(&_els);
+			Some(_els)
+		} else {None};
 		
 		new_ctrl(Nodekind::IfNd, None, enter, None, branch, els)
 
 	} else if consume(token_ptr, "while") {
 		expect(token_ptr, "(");
-		let enter = Some(expr(token_ptr));
+		let enter= {
+			let _enter = expr(token_ptr);
+			confirm_type(&_enter);
+			Some(_enter)
+		};
 		expect(token_ptr, ")");
 
-		let branch = Some(stmt(token_ptr));
+		let branch = {
+			let _branch = stmt(token_ptr);
+			confirm_type(&_branch);
+			Some(_branch)
+		};
 
 		new_ctrl(Nodekind::WhileNd, None, enter, None, branch, None)
 
@@ -549,24 +572,35 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		// consumeできた場合exprが何も書かれていないことに注意
 		let init: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
-			let init_ = Some(expr(token_ptr));
+			let _init = {
+				let __init = expr(token_ptr);
+				confirm_type(&__init);
+				Some(__init)
+			};
 			expect(token_ptr, ";");
-			init_
+			_init
 		};
 
 		let enter: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
-			let enter_ = Some(expr(token_ptr));
+			let _enter = {
+				let __enter = expr(token_ptr);
+				confirm_type(&__enter);
+				Some(__enter)
+			};
 			expect(token_ptr, ";");
-			enter_
+			_enter
 		};
 
 		let routine: Option<NodeRef> = 
 		if consume(token_ptr, ")") {None} else {
-			let routine_ = Some(expr(token_ptr));
-			// confirm_type(&routine_.as_ref().unwrap());
+			let _routine = {
+				let __routine = expr(token_ptr);
+				confirm_type(&__routine);
+				Some(__routine)
+			};
 			expect(token_ptr, ")");
-			routine_
+			_routine
 		};
 
 		let branch: Option<NodeRef> = Some(stmt(token_ptr));
@@ -579,10 +613,10 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		if consume(token_ptr, ";") {
 			tmp_num!(0)
 		} else {
-			let left_: NodeRef = expr(token_ptr);
-			confirm_type(&left_);
+			let _left: NodeRef = expr(token_ptr);
+			confirm_type(&_left);
 			expect(token_ptr, ";");
-			left_
+			_left
 		};
 
 		new_unary(Nodekind::ReturnNd, left, ptr)
