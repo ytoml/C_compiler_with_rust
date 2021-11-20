@@ -30,7 +30,6 @@ macro_rules! align {
 	};
 }
 
-
 // 2つ子を持つ汎用ノード
 fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), right: Some(right), .. Default::default()}))
@@ -180,7 +179,6 @@ fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeR
 	_global(name, None, Some(func_typ), vec![], None, None, token_ptr)
 }
 
-
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
@@ -324,7 +322,7 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 // プロトタイプ宣言は現状ではサポートしない
 // 生成規則:
 // global = type ident global-suffix
-// global-suffix = "(" func-args ")" ("{" stmt* "}" | ";") | ("[" num "]")* ";"
+// global-suffix = "(" func-args ")" ("{" stmt* "}" | ";") | "[" array-suffix ";"
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut typ = expect_type(token_ptr); // 型宣言の読み込み
 	let ptr =  token_ptr.clone();
@@ -390,10 +388,9 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 				error_with_token!("\"{}\"は位置[{}, {}]で既に関数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
 			}
 		}
-		while consume(token_ptr, "[") {
-			let size = expect_number(token_ptr) as usize;
-			typ = typ.make_array_of(size);
-			expect(token_ptr,"]");
+
+		if consume(token_ptr, "[") {
+			typ = array_suffix(token_ptr, typ);
 		}
 		expect(token_ptr, ";");
 
@@ -1134,7 +1131,6 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-
 #[cfg(test)]
 pub mod tests {
 	use crate::tokenizer::tokenize;
@@ -1292,7 +1288,6 @@ pub mod tests {
 		}
 	}
 
-
 	#[test]
 	fn for_() {
 		let src: &str = "
@@ -1354,7 +1349,6 @@ pub mod tests {
 			count += 1;
 		}
 	}
-
 
 	#[test]
 	fn ctrls() {
@@ -1725,71 +1719,34 @@ pub mod tests {
 	#[test]
 	fn wip() {
 		let src: &str = "
-		
+		int fib(int);
+		int X[10][20][30];
+
+		int main() {
+			int i, x;
+			int *p = &X[0][0][0];
+			int **pp = &p;
+			***X = 10;
+			
+			print_helper((x = 19, x = fib(*&(**pp))));
+			print_helper(sizeof X);
+
+			int X[1][10][100];
+			print_helper(sizeof &X);
+			print_helper(X);
+			print_helper(&X+1);
+			print_helper(X[1]);
+			print_helper(X[0][1]);
+			X[0][1][1] = 100;
+			print_helper(*(*(X[0]+1)+1));
+
+			return x;
+		}
+
 		int fib(int N) {
 			if (N <= 2) return 1;
 			return fib(N-1) + fib(N-2);
 		}
-
-		int func(int x, int y) {
-			print_helper(x+y);
-			return x + y;
-		}
-
-		int X[1][10][100][1000];
-		
-		int main() {
-			int i; i = 0;
-			int j; j = 0;
-			int k; k = 1;
-			int sum; sum = 0;
-			for (; i < 10; i+=i+1, j++) {
-				sum++;
-			}
-			print_helper(j);
-			print_helper(k);
-			while (j > 0, 0) {
-				j /= 2;
-				k <<= 1;
-			}
-			if (1 && !(k/2)) k--;
-			else k = -1;
-		
-			int x, y, z;
-			func(x=1, (y=1, z=~1));
-		
-			x = 15 & 10;
-			x = (++x) + y;
-			int *p; p = &x; 
-			int **pp; pp = &p;
-			*p += 9;
-
-			print_helper(sizeof X);
-			int X[10][10][10];
-			print_helper(z = fib(*&(**pp)));
-			print_helper(*&*&*&**&*pp);
-			print_helper(sizeof (x+y));
-			print_helper(sizeof ++x);
-			print_helper(sizeof &x + x);
-			print_helper(sizeof(int**));
-			print_helper(sizeof(x && x));
-			print_helper(sizeof(*p));
-			print_helper(sizeof &X);
-			print_helper(sizeof X);
-			print_helper(sizeof *X);
-			print_helper(sizeof **X);
-			print_helper(sizeof ***X);
-			print_helper(X);
-			print_helper(&X+1);
-			print_helper(X+1);
-			print_helper(*X+1);
-			print_helper(**X+1);
-			print_helper(***X);
-		
-			return k;
-		}	
-
-		
 		";
 		test_init(src);
 
