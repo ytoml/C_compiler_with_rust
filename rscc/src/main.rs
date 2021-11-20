@@ -13,7 +13,8 @@ mod token;
 mod tokenizer;
 mod typecell; // type が予約語だったので typecell とした
 mod utils;
-use generator::{gen_expr, ASM};
+use asm::ASMCODE;
+use generator::gen_expr;
 use options::Opts;
 use parser::program;
 use token::TokenRef;
@@ -40,7 +41,7 @@ fn main() {
 		}
 
 		// 最後に一気に書き込み
-		println!("{}", *ASM.try_lock().unwrap());
+		println!("{}", *ASMCODE.try_lock().unwrap());
 
     } else {
 		// fileが指定されていない場合、exit

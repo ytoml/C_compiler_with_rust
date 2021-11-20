@@ -1,40 +1,12 @@
-use std::sync::Mutex;
-use std::collections::HashMap;
-
-use once_cell::sync::Lazy;
-
 use crate::{
 	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_from_glb, mov_glb_addr, operate,
-	asm::{reg_ax, reg_di},
+	asm::{
+		ARGS_REGISTERS, ASMCODE,
+		get_ctrl_count, get_func_count, reg_ax, reg_di,
+	},
 	node::{Nodekind, NodeRef},
 	typecell::Type
 };
-
-pub static ASM: Lazy<Mutex<String>> = Lazy::new(
-	|| Mutex::new(
-		".intel_syntax noprefix\n.globl main\n".to_string()
-	)
-);
-
-static CTR_COUNT: Lazy<Mutex<u32>> = Lazy::new(
-	|| Mutex::new(0)
-);
-
-static ARGS_REGISTERS: Lazy<Mutex<HashMap<usize, Vec<&str>>>> = Lazy::new(|| {
-	let mut map = HashMap::new();
-	let _ = map.insert(4, vec!["edi", "esi", "edx", "rcx", "r8d", "r9d"]);
-	let _ = map.insert(8, vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"]);
-	Mutex::new(map)
-});
-
-
-
-// CTR_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
-fn get_count() -> u32 {
-	let mut count = CTR_COUNT.try_lock().unwrap();
-	*count += 1;
-	*count
-}
 
 pub fn gen_expr(node: &NodeRef) {
 	let kind =  node.borrow().kind;
@@ -45,7 +17,13 @@ pub fn gen_expr(node: &NodeRef) {
 			if let Some(_) = &node.func_typ {
 				// プロトタイプ宣言は無視して OK
 				if node.stmts.is_none() { return; }
+				let c = get_func_count();
+				
+				asm_write!("\t.text\n");
+				asm_write!("\t.globl {}\n", name);
+				asm_write!("\t.type {}, @function\n", name);
 				asm_write!("{}:\n", name);
+				asm_write!(".LFB{}:\n", c); // function begin label
 			
 				// プロローグ(変数の格納領域の確保)
 				operate!("push", "rbp");
@@ -71,9 +49,16 @@ pub fn gen_expr(node: &NodeRef) {
 					gen_expr(stmt_);
 					if ix != s - 1 { operate!("pop", "rax"); }
 				}
+				asm_write!(".LFE{}:\n", c); // function begin label
+				asm_write!("\t.size\t{},\t.-{}\n", name, name);
 				// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
 			} else {
+				// 現在はグローバル変数の初期化はサポートしないため、常に .bss で指定
 				let bytes = node.typ.as_ref().unwrap().bytes();
+				asm_write!("\t.globl {}\n", name);
+				asm_write!("\t.type {}, @object\n", name);
+				asm_write!("\t.bss\n");
+				asm_write!("\t.size {}, {}\n", name, bytes);
 				asm_write!("{}:\n", name);
 				asm_write!("\t.zero {}\n", bytes);
 			}
@@ -84,7 +69,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::LogAndNd => {
-			let c = get_count();
+			let c = get_ctrl_count();
 			let f_anchor: String = format!(".LLogic.False{}", c);
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
@@ -114,7 +99,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::LogOrNd => {
-			let c = get_count();
+			let c = get_ctrl_count();
 			let t_anchor: String = format!(".LLogic.False{}", c);
 			let e_anchor: String = format!(".LLogic.End{}", c);
 
@@ -260,7 +245,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::IfNd => {
-			let c: u32 = get_count();
+			let c: u32 = get_ctrl_count();
 			let end: String = format!(".LEnd{}", c);
 
 			// 条件文の処理
@@ -297,7 +282,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::WhileNd => {
-			let c: u32 = get_count();
+			let c: u32 = get_ctrl_count();
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
@@ -319,7 +304,7 @@ pub fn gen_expr(node: &NodeRef) {
 			return;
 		}
 		Nodekind::ForNd => {
-			let c: u32 = get_count();
+			let c: u32 = get_ctrl_count();
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
@@ -524,7 +509,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -537,7 +522,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -550,7 +535,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -563,7 +548,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -576,7 +561,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 	
 	#[test]
@@ -589,7 +574,7 @@ mod tests {
 		let mut token_ptr = tokenize(0);
 		let node_ptr = expr(&mut token_ptr);
 		gen_expr(&node_ptr);
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -604,9 +589,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -621,9 +606,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -645,9 +630,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -665,9 +650,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -682,9 +667,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -701,9 +686,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -720,9 +705,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -739,9 +724,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 	
 	#[test]
@@ -763,9 +748,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 	
 	#[test]
@@ -784,9 +769,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -804,9 +789,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -824,9 +809,9 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASM.try_lock().unwrap() += "	pop rax\n";
+			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -855,7 +840,7 @@ mod tests {
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
 	#[test]
@@ -875,6 +860,6 @@ mod tests {
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
 		}
-		println!("{}", ASM.try_lock().unwrap());
+		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 }
