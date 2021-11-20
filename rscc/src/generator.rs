@@ -37,38 +37,46 @@ fn get_count() -> u32 {
 }
 
 pub fn gen_expr(node: &NodeRef) {
-	match node.borrow().kind {
+	let kind =  node.borrow().kind;
+	match kind {
 		Nodekind::GlobalNd => {
-			{
-				asm_write!("{}:\n", node.borrow().name.as_ref().unwrap());
+			let node = node.borrow();
+			let name = node.name.as_ref().unwrap().clone();
+			if let Some(_) = &node.func_typ {
+				// プロトタイプ宣言は無視して OK
+				if node.stmts.is_none() { return; }
+				asm_write!("{}:\n", name);
 			
 				// プロローグ(変数の格納領域の確保)
 				operate!("push", "rbp");
 				mov!("rbp", "rsp");
-				let pull = node.borrow().max_offset.unwrap();
+				let pull = node.max_offset.unwrap();
 				if pull > 0 {
 					operate!("sub", "rsp", pull);
 				}
 
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
-				if node.borrow().args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
-				for (ix, arg) in (&node.borrow().args).iter().enumerate() {
+				if node.args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
+				for (ix, arg) in (&node.args).iter().enumerate() {
 					let offset = *(*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap();
 					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
 					let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
 
 					mov_to!(size, "rbp", arg_reg, offset);
 				}
-			}
-			
-			// 関数内の文の処理
-			let s = node.borrow().stmts.as_ref().unwrap().len();
-			for (ix, stmt_) in node.borrow().stmts.as_ref().unwrap().iter().enumerate() {
-				gen_expr(stmt_);
-				if ix != s - 1 { operate!("pop", "rax"); }
-			}
 
-			// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
+				// 関数内の文の処理
+				let s = node.stmts.as_ref().unwrap().len();
+				for (ix, stmt_) in node.stmts.as_ref().unwrap().iter().enumerate() {
+					gen_expr(stmt_);
+					if ix != s - 1 { operate!("pop", "rax"); }
+				}
+				// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
+			} else {
+				let bytes = node.typ.as_ref().unwrap().bytes();
+				asm_write!("{}:\n", name);
+				asm_write!("\t.zero {}\n", bytes);
+			}
 			return;
 		}
 		Nodekind::NumNd => {

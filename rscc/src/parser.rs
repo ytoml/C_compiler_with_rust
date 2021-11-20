@@ -163,20 +163,20 @@ fn new_func(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token_
 }
 
 // グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
-fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), func_typ: func_typ, args: args, stmts: stmts, ..Default::default() }))
+fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token_ptr: TokenRef) -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }))
 }
 
 fn new_gvar(name: String, typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
-	_global(name, Some(typ), None, vec![], None, token_ptr)
+	_global(name, Some(typ), None, vec![], None, None, token_ptr)
 }
 
-fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, token_ptr: TokenRef) -> NodeRef {
-	_global(name, None, Some(func_typ), args, Some(stmts), token_ptr)
+fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, max_offset: usize, token_ptr: TokenRef) -> NodeRef {
+	_global(name, None, Some(func_typ), args, Some(stmts), Some(max_offset), token_ptr)
 }
 
 fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
-	_global(name, None, Some(func_typ), vec![], None, token_ptr)
+	_global(name, None, Some(func_typ), vec![], None, None, token_ptr)
 }
 
 
@@ -372,8 +372,9 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 			if !has_return {
 				stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
 			}
+			let max_offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
 
-			new_funcdec(name.clone(), typ.clone(), args, stmts, ptr)
+			new_funcdec(name.clone(), typ.clone(), args, stmts, max_offset, ptr)
 
 		} else {
 			expect(token_ptr, ";");
