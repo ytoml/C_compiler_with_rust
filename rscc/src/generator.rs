@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 
 use crate::{
-	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_glb_addr, operate,
+	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_from_glb, mov_glb_addr, operate,
 	asm::{reg_ax, reg_di},
 	node::{Nodekind, NodeRef},
 	typecell::Type
@@ -169,11 +169,16 @@ pub fn gen_expr(node: &NodeRef) {
 			let typ = node.borrow().typ.clone();
 			if typ.clone().unwrap().typ != Type::Array {
 				let bytes = typ.unwrap().bytes();
-				// TODO: global 時の分岐
-				let offset = node.borrow().offset.unwrap();
 				let ax = reg_ax(bytes);
-				
-				mov_from!(bytes, ax, "rbp", offset);
+
+				if node.borrow().is_local {
+					let offset = node.borrow().offset.unwrap();
+					mov_from!(bytes, ax, "rbp", offset);
+				} else {
+					let name = node.borrow().name.clone().unwrap();
+					mov_from_glb!(bytes, ax, name);
+				}
+
 				// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
 				if bytes == 4 { operate!("cdqe"); } 
 				operate!("push", "rax");

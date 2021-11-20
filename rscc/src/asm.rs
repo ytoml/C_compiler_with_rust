@@ -79,11 +79,20 @@ macro_rules! mov_glb_addr {
 }
 
 #[macro_export]
-macro_rules! mov_to_glb {
-	($operand:expr, $name:expr) => {
+macro_rules! mov_from_glb {
+	($size:expr, $operand:expr, $name:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASM.try_lock().unwrap() += format!("\tmov {} {}[rip], {}\n", $operand, _word, $name).as_str()
+		*ASM.try_lock().unwrap() += format!("\tmov {}, {} {}[rip]\n", $operand, _word, $name).as_str()
+	};
+}
+
+#[macro_export]
+macro_rules! mov_to_glb {
+	($size:expr, $operand:expr, $name:expr) => {
+		use crate::asm::word_ptr;
+		let _word = word_ptr($size);
+		*ASM.try_lock().unwrap() += format!("\tmov {} {}[rip], {}\n", _word, $name, $operand).as_str()
 	};
 }
 
