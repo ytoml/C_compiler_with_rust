@@ -56,8 +56,8 @@ pub fn gen_expr(node: &NodeRef) {
 				// 現在はグローバル変数の初期化はサポートしないため、常に .bss で指定
 				let bytes = node.typ.as_ref().unwrap().bytes();
 				asm_write!("\t.globl {}", name);
-				asm_write!("\t.type {}, @object", name);
 				asm_write!("\t.bss");
+				asm_write!("\t.type {}, @object", name);
 				asm_write!("\t.size {}, {}", name, bytes);
 				asm_write!("{}:", name);
 				asm_write!("\t.zero {}", bytes);

@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 const UNSUPPORTED_REG_SIZE: &str = "unsupported register size";
 
 pub static ASMCODE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(
-	"\t.intel_syntax noprefix\n".to_string()
+	"\t.intel_syntax noprefix\n\t.text\n.LText0:\n".to_string()
 ));
 
 pub static ARGS_REGISTERS: Lazy<Mutex<HashMap<usize, Vec<&str>>>> = Lazy::new(|| {
@@ -117,7 +117,7 @@ macro_rules! mov_from {
 #[macro_export]
 macro_rules! mov_glb_addr {
 	($operand:expr, $name:expr) => {
-		asm_write!("\tmov {}, OFFSET FLAT:{}", $operand, $name)
+		asm_write!("\tlea {}, {}[rip]", $operand, $name)
 	};
 }
 
@@ -156,4 +156,3 @@ macro_rules! lea {
 		asm_write!("\tlea {}, [{}-{}]", $operand1, $operand2, $offset)
 	};
 }
-
