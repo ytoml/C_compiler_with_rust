@@ -85,7 +85,7 @@ macro_rules! tmp_num {
 // 左辺値に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
 fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>, is_local: bool) -> NodeRef {
 	let name: String = name.into();
-	let offset: Option<usize> =
+	let (offset, name): (Option<usize>, Option<String>) =
 	if is_local {
 		let _offset: usize;
 		// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
@@ -122,10 +122,11 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 				local_access.insert(name, (_offset, TypeCell::default()));
 			}
 		}
-		Some(_offset)
-	} else { None };
+		(Some(_offset), None)
+	} else { (None, Some(name)) };
+
 	
-	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, is_local: is_local, .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, name: name, is_local: is_local, .. Default::default()}))
 }
 
 fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, is_local: bool) -> NodeRef {

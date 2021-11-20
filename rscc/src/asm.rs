@@ -72,6 +72,22 @@ macro_rules! mov_from {
 }
 
 #[macro_export]
+macro_rules! mov_glb_addr {
+	($operand:expr, $name:expr) => {
+		*ASM.try_lock().unwrap() += format!("\tmov {}, OFFSET FLAT:{}\n", $operand, $name).as_str()
+	};
+}
+
+#[macro_export]
+macro_rules! mov_to_glb {
+	($operand:expr, $name:expr) => {
+		use crate::asm::word_ptr;
+		let _word = word_ptr($size);
+		*ASM.try_lock().unwrap() += format!("\tmov {} {}[rip], {}\n", $operand, _word, $name).as_str()
+	};
+}
+
+#[macro_export]
 macro_rules! mov {
 	($operand1:expr, $operand2:expr) => {
 		*ASM.try_lock().unwrap() += format!("\tmov {}, {}\n", $operand1, $operand2).as_str()

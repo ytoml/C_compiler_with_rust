@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 
 use crate::{
-	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, operate,
+	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_glb_addr, operate,
 	asm::{reg_ax, reg_di},
 	node::{Nodekind, NodeRef},
 	typecell::Type
@@ -169,6 +169,7 @@ pub fn gen_expr(node: &NodeRef) {
 			let typ = node.borrow().typ.clone();
 			if typ.clone().unwrap().typ != Type::Array {
 				let bytes = typ.unwrap().bytes();
+				// TODO: global 時の分岐
 				let offset = node.borrow().offset.unwrap();
 				let ax = reg_ax(bytes);
 				
@@ -443,19 +444,26 @@ pub fn gen_expr(node: &NodeRef) {
 
 // アドレスを生成する関数(ポインタでない普通の変数への代入等でも使用)
 fn gen_addr(node: &NodeRef) {
-	match node.borrow().kind {
+	let node = node.borrow();
+	let kind = node.kind;
+	match kind {
 		Nodekind::LvarNd => {
-			// 変数に対応するアドレスをスタックにプッシュする
-			let offset = node.borrow().offset.unwrap();
-			lea!("rax", "rbp", offset);
+			if node.is_local {
+				// 変数に対応するアドレスをスタックにプッシュする
+				let offset = node.offset.unwrap();
+				lea!("rax", "rbp", offset);
+			} else {
+				let name = node.name.clone().unwrap();
+				mov_glb_addr!("rax", name);
+			}
 			operate!("push", "rax");
 		}
 		Nodekind::DerefNd => {
 			// *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
-			gen_expr(node.borrow().left.as_ref().unwrap());
+			gen_expr(node.left.as_ref().unwrap());
 		}
 		_ => {
-			error_with_node!("左辺値が変数ではありません。", &*node.borrow());
+			error_with_node!("左辺値が変数ではありません。", &*node);
 		}
 	}
 }
