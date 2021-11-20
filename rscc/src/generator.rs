@@ -19,11 +19,11 @@ pub fn gen_expr(node: &NodeRef) {
 				if node.stmts.is_none() { return; }
 				let c = get_func_count();
 				
-				asm_write!("\t.text\n");
-				asm_write!("\t.globl {}\n", name);
-				asm_write!("\t.type {}, @function\n", name);
-				asm_write!("{}:\n", name);
-				asm_write!(".LFB{}:\n", c); // function begin label
+				asm_write!("\t.text");
+				asm_write!("\t.globl {}", name);
+				asm_write!("\t.type {}, @function", name);
+				asm_write!("{}:", name);
+				asm_write!(".LFB{}:", c); // function begin label
 			
 				// プロローグ(変数の格納領域の確保)
 				operate!("push", "rbp");
@@ -49,18 +49,18 @@ pub fn gen_expr(node: &NodeRef) {
 					gen_expr(stmt_);
 					if ix != s - 1 { operate!("pop", "rax"); }
 				}
-				asm_write!(".LFE{}:\n", c); // function begin label
-				asm_write!("\t.size\t{},\t.-{}\n", name, name);
+				asm_write!(".LFE{}:", c); // function begin label
+				asm_write!("\t.size {}, .-{}", name, name);
 				// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
 			} else {
 				// 現在はグローバル変数の初期化はサポートしないため、常に .bss で指定
 				let bytes = node.typ.as_ref().unwrap().bytes();
-				asm_write!("\t.globl {}\n", name);
-				asm_write!("\t.type {}, @object\n", name);
-				asm_write!("\t.bss\n");
-				asm_write!("\t.size {}, {}\n", name, bytes);
-				asm_write!("{}:\n", name);
-				asm_write!("\t.zero {}\n", bytes);
+				asm_write!("\t.globl {}", name);
+				asm_write!("\t.type {}, @object", name);
+				asm_write!("\t.bss");
+				asm_write!("\t.size {}, {}", name, bytes);
+				asm_write!("{}:", name);
+				asm_write!("\t.zero {}", bytes);
 			}
 			return;
 		}
@@ -89,10 +89,10 @@ pub fn gen_expr(node: &NodeRef) {
 			mov!("rax", 1);
 			operate!("jmp", e_anchor);
 
-			asm_write!("{}:\n", f_anchor);
+			asm_write!("{}:", f_anchor);
 			mov!("rax", 0);
 
-			asm_write!("{}:\n", e_anchor);
+			asm_write!("{}:", e_anchor);
 			// operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
 			operate!("push", "rax");
 
@@ -119,10 +119,10 @@ pub fn gen_expr(node: &NodeRef) {
 			mov!("rax", 1);
 			operate!("jmp", e_anchor);
 
-			asm_write!("{}:\n", t_anchor);
+			asm_write!("{}:", t_anchor);
 			mov!("rax", 1);
 
-			asm_write!("{}:\n", e_anchor);
+			asm_write!("{}:", e_anchor);
 			// operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
 			operate!("push", "rax");
 
@@ -263,7 +263,7 @@ pub fn gen_expr(node: &NodeRef) {
 				operate!("jmp", end); // elseを飛ばしてendへ
 
 				// elseの後ろの処理
-				asm_write!("{}:\n", els);
+				asm_write!("{}:", els);
 				gen_expr(ptr);
 				operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 
@@ -276,7 +276,7 @@ pub fn gen_expr(node: &NodeRef) {
 
 			// stmtでgen_exprした後にはpopが呼ばれるはずであり、分岐後いきなりpopから始まるのはおかしい(し、そのpopは使われない)
 			// ブロック文やwhile文も単なる num; などと同じようにstmt自体が(使われない)戻り値を持つものだと思えば良い
-			asm_write!("{}:\n", end);
+			asm_write!("{}:", end);
 			operate!("push", 0);
 
 			return;
@@ -286,7 +286,7 @@ pub fn gen_expr(node: &NodeRef) {
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
-			asm_write!("{}:\n", begin);
+			asm_write!("{}:", begin);
 
 			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
@@ -298,7 +298,7 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("jmp", begin);
 
 			// if 文同様に push が必要
-			asm_write!("{}:\n", end);
+			asm_write!("{}:", end);
 			operate!("push", 0);
 
 			return;
@@ -312,7 +312,7 @@ pub fn gen_expr(node: &NodeRef) {
 				gen_expr(ptr);
 			}
 
-			asm_write!("{}:\n", begin);
+			asm_write!("{}:", begin);
 
 			gen_expr(node.borrow().enter.as_ref().unwrap());
 			operate!("pop", "rax");
@@ -326,7 +326,7 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("jmp", begin);
 
 			// if文と同じ理由でpushが必要
-			asm_write!("{}:\n", end);
+			asm_write!("{}:", end);
 			operate!("push", 0);
 
 			return;
@@ -589,7 +589,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -606,7 +606,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -630,7 +630,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -650,7 +650,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -667,7 +667,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -686,7 +686,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -705,7 +705,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -724,7 +724,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -748,7 +748,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -769,7 +769,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -789,7 +789,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
@@ -809,7 +809,7 @@ mod tests {
 		let node_heads = parse_stmts(&mut token_ptr);
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
-			*ASMCODE.try_lock().unwrap() += "	pop rax\n";
+			operate!("pop", "rax");
 		}
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}

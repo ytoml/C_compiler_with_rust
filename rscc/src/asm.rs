@@ -61,26 +61,26 @@ pub fn word_ptr(size: usize) -> &'static str {
 #[macro_export]
 macro_rules! asm_write {
 	($fmt: expr) => {
-		*ASMCODE.try_lock().unwrap() += format!($fmt).as_str()
+		*ASMCODE.try_lock().unwrap() += format!(concat!($fmt, "\n")).as_str()
 	};
 
 	($fmt: expr, $($arg: tt)*) =>{
-		*ASMCODE.try_lock().unwrap() += format!($fmt, $($arg)*).as_str()
+		*ASMCODE.try_lock().unwrap() += format!(concat!($fmt, "\n"), $($arg)*).as_str()
 	};
 }
 
 #[macro_export]
 macro_rules! operate {
 	($operator:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\t{}\n", $operator).as_str()
+		asm_write!("\t{}", $operator)
 	};
 	
 	($operator:expr, $operand1:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\t{} {}\n", $operator, $operand1).as_str()
+		asm_write!("\t{} {}", $operator, $operand1)
 	};
 	
 	($operator:expr, $operand1:expr, $operand2:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\t{} {}, {}\n", $operator, $operand1, $operand2).as_str()
+		asm_write!("\t{} {}, {}", $operator, $operand1, $operand2)
 	};
 }
 
@@ -89,13 +89,13 @@ macro_rules! mov_to {
 	($size:expr, $operand1:expr, $operand2:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {} [{}], {}\n", _word, $operand1, $operand2).as_str()
+		asm_write!("\tmov {} [{}], {}", _word, $operand1, $operand2)
 	};
 
 	($size:expr, $operand1:expr, $operand2:expr, $offset:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {} [{}-{}], {}\n", _word, $operand1, $offset, $operand2).as_str()
+		asm_write!("\tmov {} [{}-{}], {}", _word, $operand1, $offset, $operand2)
 	};
 }
 
@@ -104,20 +104,20 @@ macro_rules! mov_from {
 	($size:expr, $operand1:expr, $operand2:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {}, {} [{}]\n", $operand1, _word, $operand2).as_str()
+		asm_write!("\tmov {}, {} [{}]", $operand1, _word, $operand2)
 	};
 
 	($size:expr, $operand1:expr, $operand2:expr, $offset:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {}, {} [{}-{}]\n", $operand1, _word,$operand2, $offset).as_str()
+		asm_write!("\tmov {}, {} [{}-{}]", $operand1, _word,$operand2, $offset)
 	};
 }
 
 #[macro_export]
 macro_rules! mov_glb_addr {
 	($operand:expr, $name:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {}, OFFSET FLAT:{}\n", $operand, $name).as_str()
+		asm_write!("\tmov {}, OFFSET FLAT:{}", $operand, $name)
 	};
 }
 
@@ -126,7 +126,7 @@ macro_rules! mov_from_glb {
 	($size:expr, $operand:expr, $name:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {}, {} {}[rip]\n", $operand, _word, $name).as_str()
+		asm_write!("\tmov {}, {} {}[rip]", $operand, _word, $name)
 	};
 }
 
@@ -135,25 +135,25 @@ macro_rules! mov_to_glb {
 	($size:expr, $operand:expr, $name:expr) => {
 		use crate::asm::word_ptr;
 		let _word = word_ptr($size);
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {} {}[rip], {}\n", _word, $name, $operand).as_str()
+		asm_write!("\tmov {} {}[rip], {}", _word, $name, $operand)
 	};
 }
 
 #[macro_export]
 macro_rules! mov {
 	($operand1:expr, $operand2:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\tmov {}, {}\n", $operand1, $operand2).as_str()
+		asm_write!("\tmov {}, {}", $operand1, $operand2)
 	};
 }
 
 #[macro_export]
 macro_rules! lea {
 	($operand1:expr, $operand2:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\tlea {}, [{}]\n", $operand1, $operand2).as_str()
+		asm_write!("\tlea {}, [{}]", $operand1, $operand2)
 	};
 
 	($operand1:expr, $operand2:expr, $offset:expr) => {
-		*ASMCODE.try_lock().unwrap() += format!("\tlea {}, [{}-{}]\n", $operand1, $operand2, $offset).as_str()
+		asm_write!("\tlea {}, [{}-{}]", $operand1, $operand2, $offset)
 	};
 }
 
