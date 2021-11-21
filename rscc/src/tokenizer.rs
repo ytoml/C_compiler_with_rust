@@ -1,8 +1,9 @@
 // トークナイザ
-use std::sync::Mutex;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::rc::Rc;
+use std::sync::Mutex;
 
 use once_cell::sync::Lazy;
 
@@ -88,6 +89,9 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 }
 
 /* ------------------------------------------------- トークナイズ用関数 ------------------------------------------------- */
+static QUAD_KEYWORDS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
+	"else", "char"
+]));
 
 static TRI_OPS: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
 	"<<=", ">>=",
@@ -117,9 +121,12 @@ static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 ]));
 
 // 現在は int のみサポート
-static TYPES: Lazy<Mutex<Vec<&str>>> = Lazy::new(|| Mutex::new(vec![
-	"int"
-]));
+static TYPES: Lazy<Mutex<HashMap<String, Type>>> = Lazy::new(||{
+	let mut map = HashMap::new();
+	map.insert(String::from("int"), Type::Int);
+	map.insert(String::from("char"), Type::Char);
+	Mutex::new(map)
+});
 
 // 空白を飛ばして読み進める
 fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()> {
@@ -182,7 +189,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 	let lim = *index + 4;
 	if lim <= len {
 		let slice: String = String::from_iter(string[*index..lim].iter());
-		if slice == "else" && can_follow_reserved(string, lim) {
+		if QUAD_KEYWORDS.try_lock().unwrap().contains(&slice.as_str()) && can_follow_reserved(string, lim) {
 			*index = lim;
 			return Some(slice);
 		}
@@ -282,14 +289,11 @@ pub fn expect(token_ptr: &mut TokenRef, op: &str) {
 }
 
 pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
-	if token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&token_ptr.borrow().body.as_ref().unwrap().as_str()) {
-		let ptr = token_ptr.clone();
-		token_ptr_exceed(token_ptr);
+	let types_access =  TYPES.try_lock().unwrap();
+	if token_ptr.borrow().kind == Tokenkind::ReservedTk && types_access.contains_key(token_ptr.borrow().body.as_ref().unwrap()) {
 
-		let base: Type = match ptr.borrow().body.as_ref().unwrap().as_str() {
-			"int" => { Type::Int }
-			_ => { panic!("invalid type annotation is now treated as type."); }
-		};
+		let base: Type = *types_access.get(token_ptr.borrow().body.as_ref().unwrap()).unwrap();
+		token_ptr_exceed(token_ptr);
 
 		let mut cell = TypeCell::new(base);
 
@@ -324,7 +328,7 @@ pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
 }
 
 pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
-	if token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&token_ptr.borrow().body.as_ref().unwrap().as_str()) {
+	if is_type(token_ptr) {
 		Some(expect_type(token_ptr))
 	} else {
 		None
@@ -332,9 +336,8 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 }
 
 pub fn is_type(token_ptr: &mut TokenRef) -> bool {
-	token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains(&(token_ptr).borrow().body.as_ref().unwrap().as_str()) 
+	token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains_key(token_ptr.borrow().body.as_ref().unwrap()) 
 }
-
 
 pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
 	if token_ptr.borrow().kind == Tokenkind::IdentTk {
@@ -574,6 +577,23 @@ mod tests {
 		let src: &str ="
 			int x[20];
 			x[5] = 20;
+		";
+		test_init(src);
+
+		let mut token_ptr: TokenRef = tokenize(0);
+		while token_ptr.borrow().kind != Tokenkind::EOFTk {
+			println!("{}", token_ptr.borrow());
+			token_ptr_exceed(&mut token_ptr);
+		}
+		assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+		println!("{}", token_ptr.borrow());
+	}
+
+	#[test]
+	fn char_(){
+		let src: &str ="
+			char c;
+			char c[10];
 		";
 		test_init(src);
 

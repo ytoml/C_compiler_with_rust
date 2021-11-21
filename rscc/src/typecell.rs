@@ -9,6 +9,7 @@ pub type TypeCellRef = Rc<RefCell<TypeCell>>;
 pub enum Type {
 	Invalid, // デフォルトや無名ノードに割り当てる
 	Int,
+	Char,
 	Ptr,
 	Func,
 	Array,
@@ -18,6 +19,7 @@ impl Type {
 	pub fn bytes(&self) -> usize {
 		match self {
 			Type::Invalid => { panic!("cannot extract size of invalid type."); }
+			Type::Char => { 1 }
 			Type::Int => { 4 }
 			Type::Ptr => { 8 }
 			Type::Array => { panic!("cannot infer size of array from only itself"); }
@@ -31,6 +33,7 @@ impl Display for Type {
 		let s: &str;
 		match self {
 			Type::Invalid => { s = "invalid"; }
+			Type::Char => { s = "char"; }
 			Type::Int => { s = "int"; }
 			Type::Ptr => { s = "pointer"; }
 			Type::Array => { s = "array"; }
@@ -55,7 +58,6 @@ pub struct TypeCell {
 	// self.typ == Type::Func
 	pub ret_typ: Option<TypeCellRef>,
 	pub arg_typs: Option<Vec<TypeCellRef>>,
-
 }
 
 impl TypeCell {
@@ -204,5 +206,4 @@ mod tests {
 
 		assert_eq!(t1, t2);
 	}
-
 }
