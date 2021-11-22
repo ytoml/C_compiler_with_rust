@@ -168,6 +168,20 @@ impl PartialEq for TypeCell {
 	}
 }
 
+// 計算時、代入時などに暗黙のキャストを行うための処理
+pub fn get_common_type(left_typ: TypeCell, right_typ: TypeCell) -> TypeCell {
+	// 現在はポインタ、 int, char しかサポートされていない
+	// 右側"のみ"がポインタになることはない(そのようなノード生成が起きる前にエラーになる)ことに注意
+	if let Some(_typ) = left_typ.ptr_to {
+		_typ.borrow().make_ptr_to()
+	} else if let Some(_typ) = right_typ.ptr_to {
+		_typ.borrow().make_ptr_to()
+	} else {
+		// int 以下のサイズの数は全て int にキャストされる
+		TypeCell::new(Type::Int)
+	}
+}
+
 unsafe impl Send for TypeCell {}
 unsafe impl Sync for TypeCell {}
 
