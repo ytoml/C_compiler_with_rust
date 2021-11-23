@@ -9,6 +9,7 @@ pub type TypeCellRef = Rc<RefCell<TypeCell>>;
 pub enum Type {
 	Invalid, // デフォルトや無名ノードに割り当てる
 	Int,
+	Char,
 	Ptr,
 	Func,
 	Array,
@@ -18,6 +19,7 @@ impl Type {
 	pub fn bytes(&self) -> usize {
 		match self {
 			Type::Invalid => { panic!("cannot extract size of invalid type."); }
+			Type::Char => { 1 }
 			Type::Int => { 4 }
 			Type::Ptr => { 8 }
 			Type::Array => { panic!("cannot infer size of array from only itself"); }
@@ -31,6 +33,7 @@ impl Display for Type {
 		let s: &str;
 		match self {
 			Type::Invalid => { s = "invalid"; }
+			Type::Char => { s = "char"; }
 			Type::Int => { s = "int"; }
 			Type::Ptr => { s = "pointer"; }
 			Type::Array => { s = "array"; }
@@ -38,6 +41,13 @@ impl Display for Type {
 		}
 		write!(f, "{}", s)
 	}
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RawType {
+	I8		= 0,
+	I32		= 1, 
+	U64		= 2, 
 }
 
 #[derive(Clone, Debug, Eq)] // PartialEq は別で実装
@@ -55,7 +65,6 @@ pub struct TypeCell {
 	// self.typ == Type::Func
 	pub ret_typ: Option<TypeCellRef>,
 	pub arg_typs: Option<Vec<TypeCellRef>>,
-
 }
 
 impl TypeCell {
@@ -166,6 +175,29 @@ impl PartialEq for TypeCell {
 	}
 }
 
+// 計算時、代入時などに暗黙のキャストを行うための処理
+pub fn get_common_type(left_typ: TypeCell, right_typ: TypeCell) -> TypeCell {
+	// 現在はポインタ、 int, char しかサポートされていない
+	// 右側"のみ"がポインタになることはない(そのようなノード生成が起きる前にエラーになる)ことに注意
+	if let Some(_typ) = left_typ.ptr_to {
+		_typ.borrow().make_ptr_to()
+	} else if let Some(_typ) = right_typ.ptr_to {
+		_typ.borrow().make_ptr_to()
+	} else {
+		// int 以下のサイズの数は全て int にキャストされる
+		TypeCell::new(Type::Int)
+	}
+}
+
+pub fn get_raw_type(typ: Type) -> RawType {
+	match typ {
+		Type::Invalid => { panic!("cannot extract raw type from {}.", typ) }
+		Type::Char => { RawType::I8 }
+		Type::Int => { RawType::I32 }
+		_ => { RawType::U64 }
+	}
+}
+
 unsafe impl Send for TypeCell {}
 unsafe impl Sync for TypeCell {}
 
@@ -204,5 +236,4 @@ mod tests {
 
 		assert_eq!(t1, t2);
 	}
-
 }

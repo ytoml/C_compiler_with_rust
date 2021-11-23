@@ -10,7 +10,7 @@ use crate::{
 	node::{Node, Nodekind, NodeRef},
 	token::{Tokenkind, TokenRef},
 	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_type},
-	typecell::{Type, TypeCell, TypeCellRef},
+	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
 	exit_eprintln, error_with_token, error_with_node
 };
 
@@ -24,7 +24,7 @@ static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 macro_rules! align {
 	($addr:expr, $base:expr) => {
-		if $base.count_ones() != 1 || $base <= 1 { panic!("invalid alignment basis: {}", $base); }
+		if $base.count_ones() != 1 { panic!("invalid alignment basis: {}", $base); }
 		$addr += $base - 1; 
 		$addr &= !($base - 1)
 	};
@@ -96,19 +96,18 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 			}, 
 			// 見つからなければオフセットの最大値を伸ばす
 			None => {
-				let mut max_offset = LVAR_MAX_OFFSET.try_lock().unwrap();
-				// None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
-				// 8バイト変数を扱う時にはアラインメントを行う
-				let (diff, should_align) = if let Some(typ_) = typ.clone() {
+				let mut max_offset_access = LVAR_MAX_OFFSET.try_lock().unwrap();
+				// 各変数のサイズ(配列なら1要素のサイズ)に alignment する
+				let (diff, align_base) = if let Some(typ_) = typ.clone() {
 					(
-						typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() == 8 } else { typ_.typ.bytes() == 8 }
+						typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() } else { typ_.typ.bytes() }
 					)
 				} else {
-					(8, true)
+					(8, 8) // None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
 				};
-				*max_offset += diff;
-				if should_align { align!(*max_offset, 8usize); }
-				_offset = *max_offset;
+				*max_offset_access += diff;
+				align!(*max_offset_access, align_base);
+				_offset = *max_offset_access;
 				not_found = true;
 			}
 		}
@@ -123,7 +122,6 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 		}
 		(Some(_offset), None)
 	} else { (None, Some(name)) };
-
 	
 	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, name: name, is_local: is_local, .. Default::default()}))
 }
@@ -179,19 +177,52 @@ fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeR
 	_global(name, None, Some(func_typ), vec![], None, None, token_ptr)
 }
 
+// 計算時にキャストを自動的に行う
+// fn arith_cast(left: &NodeRef, right: &NodeRef) -> (NodeRef, NodeRef, TypeCell) {
+// 	let left_typ = left.borrow().typ.clone().unwrap();
+// 	let right_typ = right.borrow().typ.clone().unwrap();
+// 	let typ = get_common_type(left_typ, right_typ);
+// 	(new_cast(Rc::clone(left), typ.clone()), new_cast(Rc::clone(right), typ.clone()), typ)
+// }
+
+fn arith_cast(node: &mut Node) -> TypeCell {
+	let left = Rc::clone(node.left.as_ref().unwrap());
+	let right = Rc::clone(node.right.as_ref().unwrap());
+	let left_typ = left.borrow().typ.clone().unwrap();
+	let right_typ = right.borrow().typ.clone().unwrap();
+	let typ = get_common_type(left_typ, right_typ);
+	let _ = node.left.insert(new_cast(left, typ.clone()));
+	let _ = node.right.insert(new_cast(right, typ.clone()));
+	typ
+}
+
+// cast を行う
+fn new_cast(expr: NodeRef, typ: TypeCell) -> NodeRef {
+	confirm_type(&expr);
+	let token = expr.borrow().token.clone();
+	let typ = Some(typ);
+	let left = Some(expr);
+	Rc::new(RefCell::new(Node { kind: Nodekind::CastNd, token: token, typ: typ, left: left, ..Default::default() }))
+}
+
 // 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
 
 	if let Some(n) = &node.borrow().left { confirm_type(n); }
 	if let Some(n) = &node.borrow().right { confirm_type(n); }
+	if let Some(n) = &node.borrow().init { confirm_type(n); }
+	if let Some(n) = &node.borrow().enter { confirm_type(n); }
+	if let Some(n) = &node.borrow().routine { confirm_type(n); }
+	if let Some(n) = &node.borrow().branch { confirm_type(n); }
+	if let Some(n) = &node.borrow().els { confirm_type(n); }
 
 	let kind: Nodekind = node.borrow().kind;
+	let mut node = node.borrow_mut();
 	match kind {
-		Nodekind::NumNd => { let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int)); }
+		Nodekind::NumNd => { let _ = node.typ.insert(TypeCell::new(Type::Int)); }
 		Nodekind::AddrNd => {
 			// & は変数やそのポインタにのみ可能であるため、このタイミングで left をチェックして弾くことができる
-			let mut node = node.borrow_mut();
 			let typ: TypeCell;
 			{
 				let left = node.left.as_ref().unwrap().borrow();
@@ -203,7 +234,6 @@ fn confirm_type(node: &NodeRef) {
 			let _ = node.typ.insert( typ.make_ptr_to() );
 		}
 		Nodekind::DerefNd => {
-			let mut node = node.borrow_mut();
 			let typ: TypeCell;
 			{
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
@@ -218,28 +248,25 @@ fn confirm_type(node: &NodeRef) {
 			}
 		}
 		Nodekind::AssignNd => {
-			// 暗黙のキャストを行う
-			let mut node = node.borrow_mut();
-			let left = node.left.as_ref().unwrap();
-			let right = node.right.as_ref().unwrap();
+			// 右辺に関しては暗黙のキャストを行う
+			let left = node.left.clone().unwrap();
+			let right = node.right.clone().unwrap();
 			let left_typ = left.borrow().typ.clone().unwrap();
+			
 			if left_typ.typ == Type::Array {
 				error_with_node!("左辺値は代入可能な型である必要がありますが、配列型\"{}\"が指定されています。", &left.borrow(), left_typ);
 			}
-			let typ = get_common_type(left, right);
-			let _ = node.typ.insert(typ);
+			let right = new_cast(right, left_typ.clone());
+			let _ = node.right.insert(right);
+			let _ = node.typ.insert(left_typ);
 		}
 		Nodekind::AddNd | Nodekind::SubNd  => {
 			// 暗黙のキャストを行う
-			let mut node = node.borrow_mut();
-			let left = node.left.as_ref().unwrap();
-			let right = node.right.as_ref().unwrap();
-			let typ = get_common_type(left, right);
+			let typ = arith_cast(&mut node);
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::BitNotNd => {
 			// ポインタの bitnot は不可
-			let mut node = node.borrow_mut();
 			let typ: TypeCell;
 			{
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
@@ -252,10 +279,7 @@ fn confirm_type(node: &NodeRef) {
 		Nodekind::MulNd | Nodekind::DivNd | Nodekind::ModNd |
 		Nodekind::BitAndNd | Nodekind::BitOrNd | Nodekind::BitXorNd |
 		Nodekind::LShiftNd | Nodekind::RShiftNd => {
-			let mut node = node.borrow_mut();
-			let left = node.left.as_ref().unwrap();
-			let right = node.right.as_ref().unwrap();
-			let typ= get_common_type(left, right);
+			let typ = arith_cast(&mut node);
 			if typ.ptr_end.is_some() {
 				// FYI: この辺の仕様はコンパイラによって違うかも？
 				error_with_node!("ポインタに対して行えない計算です。", &node);
@@ -263,42 +287,33 @@ fn confirm_type(node: &NodeRef) {
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::LogNotNd | Nodekind::LogAndNd | Nodekind::LogOrNd => {
-			let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int));
+			let _ = node.typ.insert(TypeCell::new(Type::Int));
 		}
 		Nodekind::EqNd | Nodekind::NEqNd | Nodekind::LThanNd | Nodekind::LEqNd => {
-			let _ = node.borrow_mut().typ.insert(TypeCell::new(Type::Int));
+			let _ = arith_cast(&mut node);
+			let _ = node.typ.insert(TypeCell::new(Type::Int));
 		}
 		Nodekind::CommaNd => {
 			// x, y の評価は y になるため、型も y のものを引き継ぐ
-			let mut node = node.borrow_mut();
 			let typ: TypeCell;
 			{
 				typ = node.right.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
 			}
-			let _ = node.typ.insert(
-				TypeCell { typ: typ.typ, ptr_end: typ.ptr_end.clone(), chains: typ.chains, ..Default::default() }
-			);
+			let _ = node.typ.insert(typ);
 		}
 		Nodekind::FunCallNd => {
 			// FunCallNd の func_typ.ret_typ を typ に適用することで自然に型を親ノードに伝播できる
-			let mut node = node.borrow_mut();
 			let typ = node.func_typ.as_ref().unwrap().ret_typ.as_ref().unwrap().borrow().clone();
 			let _ = node.typ.insert(typ);
 		}
+		Nodekind::ReturnNd => {
+			let typ: TypeCell;
+			{
+				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			let _ = node.typ.insert(typ);
+		}
 		_ => {}
-	}
-}
-
-fn get_common_type(left: &NodeRef, right: &NodeRef) -> TypeCell {
-	// 現在はポインタか int しかサポートされていないためベタ打ち
-	let left_is_ptr = left.borrow().typ.as_ref().unwrap().ptr_end.is_some();
-	let right_is_ptr = right.borrow().typ.as_ref().unwrap().ptr_end.is_some();
-	if left_is_ptr {
-		left.borrow().typ.clone().unwrap()
-	} else if right_is_ptr {
-		right.borrow().typ.clone().unwrap()
-	} else {
-		TypeCell::new(Type::Int)
 	}
 }
 
@@ -371,7 +386,10 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 			if !has_return {
 				stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
 			}
-			let max_offset = *LVAR_MAX_OFFSET.try_lock().unwrap();
+
+			let mut max_offset_access = LVAR_MAX_OFFSET.try_lock().unwrap();
+			align!(*max_offset_access, 8usize);
+			let max_offset = *max_offset_access;
 
 			new_funcdec(name.clone(), typ.clone(), args, stmts, max_offset, ptr)
 
@@ -529,41 +547,21 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 
 	} else if consume(token_ptr, "if") {
 		expect(token_ptr, "(");
-		let enter= {
-			let _enter = expr(token_ptr);
-			confirm_type(&_enter);
-			Some(_enter)
-		};
+		let enter= Some(expr(token_ptr));
 		expect(token_ptr, ")");
 
-		let branch = {
-			let _branch = stmt(token_ptr);
-			confirm_type(&_branch);
-			Some(_branch)
-		};
+		let branch = Some(stmt(token_ptr));
 
-		let els = if consume(token_ptr, "else") {
-			let _els = stmt(token_ptr);
-			confirm_type(&_els);
-			Some(_els)
-		} else {None};
-		
+		let els = if consume(token_ptr, "else") { Some(stmt(token_ptr)) } else {None};
+
 		new_ctrl(Nodekind::IfNd, None, enter, None, branch, els)
 
 	} else if consume(token_ptr, "while") {
 		expect(token_ptr, "(");
-		let enter= {
-			let _enter = expr(token_ptr);
-			confirm_type(&_enter);
-			Some(_enter)
-		};
+		let enter= Some(expr(token_ptr));
 		expect(token_ptr, ")");
 
-		let branch = {
-			let _branch = stmt(token_ptr);
-			confirm_type(&_branch);
-			Some(_branch)
-		};
+		let branch = Some(stmt(token_ptr)) ;
 
 		new_ctrl(Nodekind::WhileNd, None, enter, None, branch, None)
 
@@ -572,33 +570,21 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		// consumeできた場合exprが何も書かれていないことに注意
 		let init: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
-			let _init = {
-				let __init = expr(token_ptr);
-				confirm_type(&__init);
-				Some(__init)
-			};
+			let _init = Some(expr(token_ptr));
 			expect(token_ptr, ";");
 			_init
 		};
 
 		let enter: Option<NodeRef> =
 		if consume(token_ptr, ";") {None} else {
-			let _enter = {
-				let __enter = expr(token_ptr);
-				confirm_type(&__enter);
-				Some(__enter)
-			};
+			let _enter = Some(expr(token_ptr));
 			expect(token_ptr, ";");
 			_enter
 		};
 
 		let routine: Option<NodeRef> = 
 		if consume(token_ptr, ")") {None} else {
-			let _routine = {
-				let __routine = expr(token_ptr);
-				confirm_type(&__routine);
-				Some(__routine)
-			};
+			let _routine = Some(expr(token_ptr));
 			expect(token_ptr, ")");
 			_routine
 		};
@@ -614,7 +600,6 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 			tmp_num!(0)
 		} else {
 			let _left: NodeRef = expr(token_ptr);
-			confirm_type(&_left);
 			expect(token_ptr, ";");
 			_left
 		};
@@ -1754,33 +1739,45 @@ pub mod tests {
 	fn wip() {
 		let src: &str = "
 		int fib(int);
+		int MEMO[100];
 		int X[10][20][30];
+
+		int fib(int N) {
+			if (N <= 2) return 1;
+			if (MEMO[N-1]) return MEMO[N-1];
+			return MEMO[N-1] = fib(N-1) + fib(N-2);
+		}
 
 		int main() {
 			int i, x;
 			int *p = &X[0][0][0];
 			int **pp = &p;
 			***X = 10;
+
+			for(i=0; i < 100; i++) {
+				MEMO[i] = 0;
+			}
+			char c;
+			c = 1;
 			
-			print_helper((x = 19, x = fib(*&(**pp))));
+			X[0][3][2] = 99;
+			print_helper(X[0][2][32]);
 			print_helper(sizeof X);
 
-			int X[1][10][100];
+			int X[10][10][10];
 			print_helper(sizeof &X);
 			print_helper(X);
-			print_helper(&X+1);
 			print_helper(X[1]);
-			print_helper(X[0][1]);
+			print_helper(&X+1);
 			X[0][1][1] = 100;
-			print_helper(*(*(X[0]+1)+1));
+			
+			print_helper((x = 19, x = fib(*&(**pp))));
+			print_helper(fib(50));
 
 			return x;
 		}
 
-		int fib(int N) {
-			if (N <= 2) return 1;
-			return fib(N-1) + fib(N-2);
-		}
+		
 		";
 		test_init(src);
 

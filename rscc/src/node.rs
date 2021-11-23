@@ -28,6 +28,7 @@ pub enum Nodekind {
 	LogNotNd,	// '!'
 	AssignNd,	// '='
 	LvarNd,		// 左辺値
+	CastNd,		// キャスト
 	NumNd,		// 数値
 	AddrNd,		// アドレス参照(&)
 	DerefNd,	// アドレスの値を読む(*)
@@ -68,7 +69,6 @@ pub struct Node {
 
 	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
 	pub children: Vec<Option<NodeRef>>,
-
 
 	// グローバル変数等で使用
 	pub name: Option<String>,
