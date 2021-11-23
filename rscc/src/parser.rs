@@ -178,11 +178,22 @@ fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeR
 }
 
 // 計算時にキャストを自動的に行う
-fn arith_cast(left: &NodeRef, right: &NodeRef) -> (NodeRef, NodeRef, TypeCell) {
+// fn arith_cast(left: &NodeRef, right: &NodeRef) -> (NodeRef, NodeRef, TypeCell) {
+// 	let left_typ = left.borrow().typ.clone().unwrap();
+// 	let right_typ = right.borrow().typ.clone().unwrap();
+// 	let typ = get_common_type(left_typ, right_typ);
+// 	(new_cast(Rc::clone(left), typ.clone()), new_cast(Rc::clone(right), typ.clone()), typ)
+// }
+
+fn arith_cast(node: &mut Node) -> TypeCell {
+	let left = Rc::clone(node.left.as_ref().unwrap());
+	let right = Rc::clone(node.right.as_ref().unwrap());
 	let left_typ = left.borrow().typ.clone().unwrap();
 	let right_typ = right.borrow().typ.clone().unwrap();
 	let typ = get_common_type(left_typ, right_typ);
-	(new_cast(Rc::clone(left), typ.clone()), new_cast(Rc::clone(right), typ.clone()), typ)
+	let _ = node.left.insert(new_cast(left, typ.clone()));
+	let _ = node.right.insert(new_cast(right, typ.clone()));
+	typ
 }
 
 // cast を行う
@@ -237,7 +248,7 @@ fn confirm_type(node: &NodeRef) {
 			}
 		}
 		Nodekind::AssignNd => {
-			// 暗黙のキャストを行う
+			// 右辺に関しては暗黙のキャストを行う
 			let left = node.left.clone().unwrap();
 			let right = node.right.clone().unwrap();
 			let left_typ = left.borrow().typ.clone().unwrap();
@@ -245,18 +256,13 @@ fn confirm_type(node: &NodeRef) {
 			if left_typ.typ == Type::Array {
 				error_with_node!("左辺値は代入可能な型である必要がありますが、配列型\"{}\"が指定されています。", &left.borrow(), left_typ);
 			}
-			let (left, right, typ) = arith_cast(&left, &right);
-			let _ = node.left.insert(left);
+			let right = new_cast(right, left_typ.clone());
 			let _ = node.right.insert(right);
-			let _ = node.typ.insert(typ);
+			let _ = node.typ.insert(left_typ);
 		}
 		Nodekind::AddNd | Nodekind::SubNd  => {
 			// 暗黙のキャストを行う
-			let left = node.left.clone().unwrap();
-			let right = node.right.clone().unwrap();
-			let (left, right, typ) = arith_cast(&left, &right);
-			let _ = node.left.insert(left);
-			let _ = node.right.insert(right);
+			let typ = arith_cast(&mut node);
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::BitNotNd => {
@@ -273,21 +279,18 @@ fn confirm_type(node: &NodeRef) {
 		Nodekind::MulNd | Nodekind::DivNd | Nodekind::ModNd |
 		Nodekind::BitAndNd | Nodekind::BitOrNd | Nodekind::BitXorNd |
 		Nodekind::LShiftNd | Nodekind::RShiftNd => {
-			let left = node.left.clone().unwrap();
-			let right = node.right.clone().unwrap();
-			let (left, right, typ) = arith_cast(&left, &right);
+			let typ = arith_cast(&mut node);
 			if typ.ptr_end.is_some() {
 				// FYI: この辺の仕様はコンパイラによって違うかも？
 				error_with_node!("ポインタに対して行えない計算です。", &node);
 			}
-			let _ = node.left.insert(left);
-			let _ = node.right.insert(right);
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::LogNotNd | Nodekind::LogAndNd | Nodekind::LogOrNd => {
 			let _ = node.typ.insert(TypeCell::new(Type::Int));
 		}
 		Nodekind::EqNd | Nodekind::NEqNd | Nodekind::LThanNd | Nodekind::LEqNd => {
+			let _ = arith_cast(&mut node);
 			let _ = node.typ.insert(TypeCell::new(Type::Int));
 		}
 		Nodekind::CommaNd => {
