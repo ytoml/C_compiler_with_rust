@@ -153,8 +153,9 @@ pub fn gen_expr(node: &NodeRef) {
 			// 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使うことにしてスルー
 			let typ = node.borrow().typ.clone();
 			if typ.clone().unwrap().typ != Type::Array {
+				// movsx などで eax を使うことに注意
 				let bytes = typ.unwrap().bytes();
-				let ax = reg_ax(bytes);
+				let ax = if bytes < 4 { "eax" } else { reg_ax(bytes) };
 
 				if node.borrow().is_local {
 					let offset = node.borrow().offset.unwrap();
