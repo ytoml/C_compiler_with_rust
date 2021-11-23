@@ -31,7 +31,7 @@ pub static CAST_TABLE: Lazy<Mutex<Vec<Vec<&str>>>> = Lazy::new(|| { Mutex::new(
 	]
 )});
 
-const I32I8: &str = "movsbl al, eax";
+const I32I8: &str = "movsbl eax, al";
 
 // CTRL_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
 pub fn get_ctrl_count() -> u32 {

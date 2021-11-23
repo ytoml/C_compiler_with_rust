@@ -232,7 +232,9 @@ pub fn gen_expr(node: &NodeRef) {
 			let from = left.borrow().typ.as_ref().unwrap().typ;
 			let to = node.typ.as_ref().unwrap().typ;
 			gen_expr(left);
+			operate!("pop", "rax");
 			cast(from, to);
+			operate!("push", "rax");
 			return;
 		}
 		Nodekind::CommaNd => {
