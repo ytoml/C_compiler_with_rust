@@ -1,8 +1,8 @@
 use crate::{
-	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_from_glb, mov_glb_addr, operate,
+	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_from_glb, mov_glb_addr, mov_op, operate,
 	asm::{
 		ARGS_REGISTERS, ASMCODE,
-		get_ctrl_count, get_func_count, reg_ax, reg_di,
+		cast, get_ctrl_count, get_func_count, reg_ax, reg_di, word_ptr
 	},
 	node::{Nodekind, NodeRef},
 	typecell::Type
@@ -224,6 +224,15 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("pop", "rax");
 			mov_to!(bytes, "rax", reg_di(bytes));
 			operate!("push", "rdi"); // 連続代入可能なように、評価値として代入した値をpushする
+			return;
+		}
+		Nodekind::CastNd => {
+			let node = node.borrow();
+			let left = node.left.as_ref().unwrap();
+			let from = left.borrow().typ.as_ref().unwrap().typ;
+			let to = node.typ.as_ref().unwrap().typ;
+			gen_expr(left);
+			cast(from, to);
 			return;
 		}
 		Nodekind::CommaNd => {

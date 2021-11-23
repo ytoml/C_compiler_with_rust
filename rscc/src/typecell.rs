@@ -43,6 +43,13 @@ impl Display for Type {
 	}
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RawType {
+	I8		= 0,
+	I32		= 1, 
+	U64		= 2, 
+}
+
 #[derive(Clone, Debug, Eq)] // PartialEq は別で実装
 pub struct TypeCell {
 	pub typ: Type,
@@ -179,6 +186,15 @@ pub fn get_common_type(left_typ: TypeCell, right_typ: TypeCell) -> TypeCell {
 	} else {
 		// int 以下のサイズの数は全て int にキャストされる
 		TypeCell::new(Type::Int)
+	}
+}
+
+pub fn get_raw_type(typ: Type) -> RawType {
+	match typ {
+		Type::Invalid => { panic!("cannot extract raw type from {}.", typ) }
+		Type::Char => { RawType::I8 }
+		Type::Int => { RawType::I32 }
+		_ => { RawType::U64 }
 	}
 }
 
