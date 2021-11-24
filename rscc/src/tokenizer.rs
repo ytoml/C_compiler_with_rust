@@ -33,10 +33,11 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 			let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
 
 			while lookat < len {
+				
 				// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
 				match skipspace(&string, &mut lookat, len) {
-					Ok(()) => {},
-					Err(()) => {break;}
+					Ok(()) => {}
+					Err(()) => { break; }
 				}
 
 				// 予約文字を判定
@@ -72,9 +73,22 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 					continue;
 				}
 
+				// C ではソース上での文字列リテラルの改行は認められていないので、行ごとのループ内でリテラルを読む処理を完結させて良い
+				match read_str_literal(&string, &mut lookat, len) {
+					Ok(literal) => {
+						if let Some(body) = literal {
+							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::StringTk, body, file_num, line_num, lookat))));
+							token_ptr_exceed(&mut token_ptr);
+							continue;
+						}
+					}
+					Err(()) => {}
+				}
+
 				err_profile = (true, line_num, lookat);
 				break;
 			}
+			if err_profile.0 { break; }
 		}
 	}
 
@@ -137,7 +151,8 @@ fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()
 	}
 
 	// 空白でなくなるまで読み進める
-	while SPACES.try_lock().unwrap().contains(&string[*index]) {
+	let spaces_access = SPACES.try_lock().unwrap();
+	while spaces_access.contains(&string[*index]) {
 		*index += 1;
 		if *index >= len {
 			return Err(());
@@ -145,6 +160,24 @@ fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()
 	}
 
 	Ok(())
+}
+
+// 文字列リテラルを読む関数
+fn read_str_literal(string: &Vec<char>, index: &mut usize, len: usize) -> Result<Option<String>, ()> {
+	if *index >= len { return Err(()); }
+	if string[*index] != '\"' { return Ok(None); }
+
+	let mut literal = vec![];
+	*index += 1;
+	while string[*index] != '\"' {
+		literal.push(string[*index]);
+		*index += 1;
+		if *index >= len {
+			return Err(());
+		}
+	}
+	*index += 1;
+	Ok(Some(literal.iter().collect()))
 }
 
 // 識別子の一部として使用可能な文字であるかどうかを判別する
@@ -594,6 +627,23 @@ mod tests {
 		let src: &str ="
 			char c;
 			char c[10];
+		";
+		test_init(src);
+
+		let mut token_ptr: TokenRef = tokenize(0);
+		while token_ptr.borrow().kind != Tokenkind::EOFTk {
+			println!("{}", token_ptr.borrow());
+			token_ptr_exceed(&mut token_ptr);
+		}
+		assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+		println!("{}", token_ptr.borrow());
+	}
+
+	#[test]
+	fn literal(){
+		let src: &str ="
+			char *c =
+			\"This is a test of string literal\";
 		";
 		test_init(src);
 
