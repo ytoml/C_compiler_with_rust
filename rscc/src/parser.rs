@@ -21,6 +21,25 @@ use crate::{
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+static LITERALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static LITERAL_COUNTS: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+
+// 文字列リテラルを記憶
+fn store_literal(body: impl Into<String>) -> String {
+	let body = body.into();
+	let mut literal_access = (LITERALS.try_lock().unwrap(), LITERAL_COUNTS.try_lock().unwrap());
+	let id = 
+	if literal_access.0.contains_key(&body) {
+		*literal_access.0.get(&body).unwrap()
+	} else {
+		let _id = *literal_access.1;
+		literal_access.0.insert(body, _id);
+		*literal_access.1 += 1;
+		_id
+	};
+
+	format!(".LC{}", id)
+}
 
 macro_rules! align {
 	($addr:expr, $base:expr) => {
@@ -1074,6 +1093,7 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 
 // 生成規則: 
 // primary = num
+//			| str
 //			| ident ( "(" params ")" | "[" expr "]")?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
@@ -1145,6 +1165,11 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 
 			node_ptr
 		}
+	} else if consume_kind(token_ptr, Tokenkind::StringTk) {
+		let literal = ptr.borrow().body.clone().unwrap();
+		let name = store_literal(literal);
+		new_lvar(name, ptr, TypeCell::new(Type::Char).make_ptr_to(), false)
+
 	} else {
 		new_num(expect_number(token_ptr), ptr)
 	}
@@ -1720,6 +1745,28 @@ pub mod tests {
 			X[0][0][0] = 10;
 			func(1, 3) + 1;
 			return ***X;
+		}
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn literal() {
+		let src: &str = "
+		int main() {
+			char *c = \"aaaa\";
+			\"bbbb\";
+			*c = 60;
+			return 0;
 		}
 		";
 		test_init(src);
