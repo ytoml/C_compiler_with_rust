@@ -182,6 +182,13 @@ macro_rules! mov {
 }
 
 #[macro_export]
+macro_rules! movsx {
+	($operand1:expr, $operand2:expr) => {
+		asm_write!("\tmovsx {}, {}", $operand1, $operand2)
+	};
+}
+
+#[macro_export]
 macro_rules! lea {
 	($operand1:expr, $operand2:expr) => {
 		asm_write!("\tlea {}, [{}]", $operand1, $operand2)
