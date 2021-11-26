@@ -11,7 +11,7 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事の step24 まで実装しており、
+現在、上記記事の step25 まで実装しており、
 - 基本的な単項、二項演算
 	- `+=` のような演算代入や前置/後置のインクリメント/デクリメントにも対応
 	- `sizeof` にも対応していますが、現在整数型を `int` しかサポートしていないため、 `int` として扱われます。
@@ -22,11 +22,13 @@ Rui Ueyama さんの
 	- スタックにプッシュする値を全て8バイトで処理している関係で、符号拡張などが甘い部分があります。今後修正予定です。
 - 配列型の変数と添字によるアクセス
 - グローバル変数
+- 文字列リテラル
 - for, while, if による制御構文
 - コンマによる複数文の記述
+
 がサポートされています。  
 また、引数6つまでの関数宣言・呼び出しにも対応しています。ただし、引数に式を入れた場合にそれらの式を処理する順番が後ろの引数からの逆順になってしまうという仕様になってしまっており、修正予定です。  
-ヘッダファイルの include をサポートしていないため、例えば `printf` のような標準ライブラリを使いたい場合などは、別の C ソースでそれらをラップした関数を定義して gcc 等で x86_64 向けにコンパイルした実行オブジェクトを rscc で改めてコンパイルした元のソースにリンクさせて呼び出す必要があります。(以下の `print_helper` はその例です。)
+ヘッダファイルの include をサポートしていないため、例えば `printf` のような標準ライブラリを使いたい場合などは、別の C ソースでそれらをラップした関数を定義して gcc 等で x86_64 向けにコンパイルした実行オブジェクトを rscc で改めてコンパイルした元のソースにリンクさせて呼び出す必要があります。(以下の `print_helper`, `showChar`, `printf_wrap` はその例です。)
 
 ```C
 int fib(int);
@@ -44,8 +46,6 @@ int main() {
 		MEMO[i] = 0;
 	}
 	
-	print_helper((x = 19, x = fib(*&(**pp))));
-	print_helper(*&(**pp));
 	X[0][3][2] = 99;
 	print_helper(X[0][2][32]);
 	print_helper(sizeof X);
@@ -53,18 +53,18 @@ int main() {
 	int X[10][10][10];
 	print_helper(sizeof &X);
 	print_helper(X);
-	print_helper(&X+1);
 	print_helper(X[1]);
-	print_helper(X[0][1]);
+	print_helper(&X+1);
 	X[0][1][1] = 100;
-	print_helper(*(*(X[0]+1)+1));
 	
+	print_helper((x = 19, x = fib(*&(**pp))));
 	print_helper(fib(50));
 
-	*c = 257;
-	c[1] = 1000;
-	print_helper(c[0]);
-	print_helper(c[1]);
+	char *str = "This is test script";
+	showChar(str[13], str[14], str[15], str[16], str[17], str[18]);
+
+	char lf = 10;
+	printf_wrap("This is test script for step%d%c", 25, lf);
 
 	return x;
 }

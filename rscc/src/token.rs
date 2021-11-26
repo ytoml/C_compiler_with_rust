@@ -16,6 +16,7 @@ pub enum Tokenkind {
 	HeadTk,		// 先頭にのみ使用するkind
 	IdentTk,	// 識別子
 	ReservedTk,	// 記号
+	StringTk,	// 文字列リテラル
 	NumTk,		// 整数トークン
 	ReturnTk,	// リターン
 	EOFTk,		// 入力終わり
@@ -29,9 +30,10 @@ impl Display for Tokenkind {
 			Tokenkind::HeadTk => {s = "Head Token";},
 			Tokenkind::IdentTk => {s = "Identity Token";},
 			Tokenkind::ReservedTk => {s = "Reserved Token";},
-			Tokenkind::NumTk => {s = "Number Token";},
-			Tokenkind::ReturnTk => {s = "Return Token";}
-			Tokenkind::EOFTk => {s = "EOF Token";}
+			Tokenkind::StringTk => { s = "String Token"; }
+			Tokenkind::NumTk => {s = "Number Token"; },
+			Tokenkind::ReturnTk => {s = "Return Token"; }
+			Tokenkind::EOFTk => {s = "EOF Token"; }
 		}
 		write!(f, "{}", s)
 	}
@@ -66,7 +68,7 @@ impl Token {
 		match kind {
 			Tokenkind::HeadTk => {
 				Token {kind: kind, .. Default::default()}
-			},
+			}
 			Tokenkind::IdentTk => {
 				Token {
 					kind: kind, 
@@ -77,7 +79,7 @@ impl Token {
 					line_offset: line_offset,
 					.. Default::default()
 				}
-			},
+			}
 			Tokenkind::NumTk => {
 				// NumTk と共に数字以外の値が渡されることはないものとして、 unwrap で処理
 				let val = body.parse::<i32>().unwrap();
@@ -91,7 +93,7 @@ impl Token {
 					line_num: line_num,
 					line_offset: line_offset,
 				}
-			},
+			}
 			Tokenkind::ReservedTk => {
 				Token {
 					kind: kind,
@@ -102,7 +104,18 @@ impl Token {
 					line_offset: line_offset,
 					.. Default::default()
 				}
-			},
+			}
+			Tokenkind::StringTk => {
+				Token {
+					kind: kind,
+					body: Some(body),
+					len: len,
+					file_num: file_num,
+					line_num: line_num,
+					line_offset: line_offset,
+					..Default::default()
+				}
+			}
 			Tokenkind::ReturnTk => {
 				Token {
 					kind: kind, 
@@ -120,8 +133,8 @@ impl Token {
 					body: Some("token of EOF".to_string()),
 					.. Default::default()
 				}
-			},
-			_ => Default::default() // DefaultTkの場合(想定されていない)
+			}
+			_ => { panic!("invalid type of token."); } // DefaultTkの場合(想定されていない)
 		}
 	}
 }
@@ -132,6 +145,7 @@ impl Display for Token {
 		let mut s = format!("{}\n", "-".to_string().repeat(40));
 		s = format!("{}kind: {}\n", s, self.kind);
 		s = format!("{}pos: [{}, {}]\n", s, self.line_num, self.line_offset);
+		s = format!("{}length: {}\n", s, self.len);
 
 		if let Some(e) = self.body.as_ref() {
 			s = format!("{}body: {}\n", s, e);

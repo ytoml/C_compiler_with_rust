@@ -18,9 +18,30 @@ use crate::{
 /// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
 /// GLOBAL: グローバル変数名 -> 当該ノード
 /// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
+/// LITERALS: 文字リテラルと対応する内部変数名の対応
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+pub static LITERALS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static LITERAL_COUNTS: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+
+// 文字列リテラルを記憶
+fn store_literal(body: impl Into<String>) -> String {
+	let body = body.into();
+	let mut literal_access = (LITERALS.try_lock().unwrap(), LITERAL_COUNTS.try_lock().unwrap());
+	let name = 
+	if literal_access.0.contains_key(&body) {
+		literal_access.0.get(&body).unwrap().clone()
+	} else {
+		let id = *literal_access.1;
+		let _name = format!(".LC{}", id);
+		literal_access.0.insert(body, _name.clone());
+		*literal_access.1 += 1;
+		_name
+	};
+
+	name
+}
 
 macro_rules! align {
 	($addr:expr, $base:expr) => {
@@ -1074,6 +1095,7 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 
 // 生成規則: 
 // primary = num
+//			| str
 //			| ident ( "(" params ")" | "[" expr "]")?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
@@ -1145,6 +1167,13 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 
 			node_ptr
 		}
+	} else if consume_kind(token_ptr, Tokenkind::StringTk) {
+		let literal = ptr.borrow().body.clone().unwrap();
+		let size = literal.len() + 1;
+		let name = store_literal(literal);
+
+		new_lvar(name, ptr, TypeCell::new(Type::Char).make_array_of(size), false)
+
 	} else {
 		new_num(expect_number(token_ptr), ptr)
 	}
@@ -1734,6 +1763,28 @@ pub mod tests {
 		}
 	}
 
+	#[test]
+	fn literal() {
+		let src: &str = "
+		int main() {
+			char *c = \"aaaa\";
+			\"bbbb\";
+			*c = 60;
+			return 0;
+		}
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
 	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする
 	#[test]
 	fn wip() {
@@ -1741,12 +1792,7 @@ pub mod tests {
 		int fib(int);
 		int MEMO[100];
 		int X[10][20][30];
-
-		int fib(int N) {
-			if (N <= 2) return 1;
-			if (MEMO[N-1]) return MEMO[N-1];
-			return MEMO[N-1] = fib(N-1) + fib(N-2);
-		}
+		char c[10];
 
 		int main() {
 			int i, x;
@@ -1757,8 +1803,6 @@ pub mod tests {
 			for(i=0; i < 100; i++) {
 				MEMO[i] = 0;
 			}
-			char c;
-			c = 1;
 			
 			X[0][3][2] = 99;
 			print_helper(X[0][2][32]);
@@ -1774,10 +1818,18 @@ pub mod tests {
 			print_helper((x = 19, x = fib(*&(**pp))));
 			print_helper(fib(50));
 
+			char *str = \"This is test script\";
+			int t = *str;
+			print_helper(t);
+
 			return x;
 		}
 
-		
+		int fib(int N) {
+			if (N <= 2) return 1;
+			if (MEMO[N-1]) return MEMO[N-1];
+			return MEMO[N-1] = fib(N-1) + fib(N-2);
+		}
 		";
 		test_init(src);
 

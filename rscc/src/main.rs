@@ -14,7 +14,7 @@ mod tokenizer;
 mod typecell; // type が予約語だったので typecell とした
 mod utils;
 use asm::ASMCODE;
-use generator::gen_expr;
+use generator::{gen_expr, load_literals};
 use options::Opts;
 use parser::program;
 use token::TokenRef;
@@ -36,6 +36,7 @@ fn main() {
 		let node_heads = program(&mut token_ptr);
 
 		// 構文木が複数(関数の数)生成されているはずなのでそれぞれについて回す
+		load_literals();
 		for node_ptr in node_heads {
 			gen_expr(&node_ptr);
 		}

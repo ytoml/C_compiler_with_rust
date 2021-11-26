@@ -1,12 +1,24 @@
 use crate::{
-	asm_write, error_with_node, exit_eprintln, lea, mov, mov_to, mov_from, mov_from_glb, mov_glb_addr, mov_op, operate,
+	asm_write, error_with_node, exit_eprintln, lea, mov, movsx, mov_to, mov_from, mov_from_glb, mov_glb_addr, mov_op, operate,
 	asm::{
 		ARGS_REGISTERS, ASMCODE,
 		cast, get_ctrl_count, get_func_count, reg_ax, reg_di, word_ptr
 	},
 	node::{Nodekind, NodeRef},
+	parser::LITERALS,
 	typecell::Type
 };
+
+pub fn load_literals() {
+	let literals_access = LITERALS.try_lock().unwrap();
+	if literals_access.is_empty() { return; }
+
+	asm_write!("\t.section .rodata"); // read-only data
+	for (body, name) in literals_access.iter() {
+		asm_write!("{}:", name);
+		asm_write!("\t.string \"{}\"", body);
+	}
+}
 
 pub fn gen_expr(node: &NodeRef) {
 	let kind =  node.borrow().kind;
@@ -208,6 +220,7 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("push", "rax");
 
 			// この時点で ARGS_REGISTERS に記載の6つのレジスタには引数が入っている必要がある
+			mov!("rax", 0); // 可変長引数をとる際、浮動小数点の数を al に入れる必要があるが、今は浮動小数点がサポートされていないため単に0を入れる
 			operate!("call", node.borrow().name.as_ref().unwrap());
 			operate!("pop", "rsp");
 			operate!("push", "rax");
@@ -477,8 +490,17 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 
 	// 計算時に rdi などを使う場合があるので、引数はまずはスタックに全て push したままにしておく
 	// おそらく、逆順にしておいた方がスタックに引数を積みたくなった場合に都合が良い
-	for i in (0..argc).rev() {
-		gen_expr(&(args[i]).as_ref().unwrap());
+	if argc != 0 {
+		operate!("sub", "rsp", argc*8);
+		for i in 0..argc {
+			gen_expr(&(args[i]).as_ref().unwrap());
+			operate!("pop", "rax");
+			if i == 0 {
+				asm_write!("\tmov QWORD PTR[rsp], rax");
+			} else {
+				asm_write!("\tmov QWORD PTR[rsp+{}], rax", i*8);
+			}
+		}
 	}
 
 	for i in 0..argc {
@@ -487,8 +509,12 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 		let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&bytes).unwrap()[i];
 		let ax = reg_ax(bytes);
 		operate!("pop", "rax");
-		// rax で push するために、 eax ならば符号拡張が必要(現在は4と8しかサポートしていないためこうなる)
-		if bytes == 4 { operate!("cdqe"); }
+		// rax で push するために符号拡張する
+		if bytes == 4 {
+			operate!("cdqe");
+		} else if bytes < 4 {
+			movsx!("rax", "al");
+		}
 		mov!(arg_reg, ax);
 	}
 }
