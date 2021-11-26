@@ -5,8 +5,20 @@ use crate::{
 		cast, get_ctrl_count, get_func_count, reg_ax, reg_di, word_ptr
 	},
 	node::{Nodekind, NodeRef},
+	parser::LITERALS,
 	typecell::Type
 };
+
+pub fn load_literals() {
+	let literals_access = LITERALS.try_lock().unwrap();
+	if literals_access.is_empty() { return; }
+
+	asm_write!("\t.section .rodata"); // read-only data
+	for (body, name) in literals_access.iter() {
+		asm_write!("{}:", name);
+		asm_write!("\t.string \"{}\"", body);
+	}
+}
 
 pub fn gen_expr(node: &NodeRef) {
 	let kind =  node.borrow().kind;
@@ -208,6 +220,7 @@ pub fn gen_expr(node: &NodeRef) {
 			operate!("push", "rax");
 
 			// この時点で ARGS_REGISTERS に記載の6つのレジスタには引数が入っている必要がある
+			mov!("rax", 0); // 可変長引数をとる際、浮動小数点の数を al に入れる必要があるが、今は浮動小数点がサポートされていないため単に0を入れる
 			operate!("call", node.borrow().name.as_ref().unwrap());
 			operate!("pop", "rsp");
 			operate!("push", "rax");

@@ -18,27 +18,29 @@ use crate::{
 /// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
 /// GLOBAL: グローバル変数名 -> 当該ノード
 /// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
+/// LITERALS: 文字リテラルと対応する内部変数名の対応
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
-static LITERALS: Lazy<Mutex<HashMap<String, usize>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static LITERALS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LITERAL_COUNTS: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 // 文字列リテラルを記憶
 fn store_literal(body: impl Into<String>) -> String {
 	let body = body.into();
 	let mut literal_access = (LITERALS.try_lock().unwrap(), LITERAL_COUNTS.try_lock().unwrap());
-	let id = 
+	let name = 
 	if literal_access.0.contains_key(&body) {
-		*literal_access.0.get(&body).unwrap()
+		literal_access.0.get(&body).unwrap().clone()
 	} else {
-		let _id = *literal_access.1;
-		literal_access.0.insert(body, _id);
+		let id = *literal_access.1;
+		let _name = format!(".LC{}", id);
+		literal_access.0.insert(body, _name.clone());
 		*literal_access.1 += 1;
-		_id
+		_name
 	};
 
-	format!(".LC{}", id)
+	name
 }
 
 macro_rules! align {
