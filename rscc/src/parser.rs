@@ -1169,8 +1169,10 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 		}
 	} else if consume_kind(token_ptr, Tokenkind::StringTk) {
 		let literal = ptr.borrow().body.clone().unwrap();
+		let size = literal.len() + 1;
 		let name = store_literal(literal);
-		new_lvar(name, ptr, TypeCell::new(Type::Char).make_ptr_to(), false)
+
+		new_lvar(name, ptr, TypeCell::new(Type::Char).make_array_of(size), false)
 
 	} else {
 		new_num(expect_number(token_ptr), ptr)
@@ -1790,12 +1792,7 @@ pub mod tests {
 		int fib(int);
 		int MEMO[100];
 		int X[10][20][30];
-
-		int fib(int N) {
-			if (N <= 2) return 1;
-			if (MEMO[N-1]) return MEMO[N-1];
-			return MEMO[N-1] = fib(N-1) + fib(N-2);
-		}
+		char c[10];
 
 		int main() {
 			int i, x;
@@ -1806,8 +1803,6 @@ pub mod tests {
 			for(i=0; i < 100; i++) {
 				MEMO[i] = 0;
 			}
-			char c;
-			c = 1;
 			
 			X[0][3][2] = 99;
 			print_helper(X[0][2][32]);
@@ -1823,10 +1818,18 @@ pub mod tests {
 			print_helper((x = 19, x = fib(*&(**pp))));
 			print_helper(fib(50));
 
+			char *str = \"This is test script\";
+			int t = *str;
+			print_helper(t);
+
 			return x;
 		}
 
-		
+		int fib(int N) {
+			if (N <= 2) return 1;
+			if (MEMO[N-1]) return MEMO[N-1];
+			return MEMO[N-1] = fib(N-1) + fib(N-2);
+		}
 		";
 		test_init(src);
 
