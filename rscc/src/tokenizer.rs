@@ -24,6 +24,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
 	{
 		let code = &mut CODES.try_lock().unwrap()[file_num];
+		let mut is_block_comment =  false;
 		for (line_num, string) in (&*code).iter().enumerate() {
 
 			// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
@@ -33,11 +34,25 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 			let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
 
 			while lookat < len {
-				
 				// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
 				match skipspace(&string, &mut lookat, len) {
 					Ok(()) => {}
 					Err(()) => { break; }
+				}
+
+				if is_block_comment {
+					if read(&string, "*/", &mut lookat, len) { is_block_comment = false; }
+					else { lookat += 1; } 
+					continue;
+				}
+
+				if read(&string, "/*", &mut lookat, len) {
+					is_block_comment = true;
+					continue;
+				}
+
+				if read(&string, "//", &mut lookat, len) {
+					break;
 				}
 
 				// 予約文字を判定
@@ -178,6 +193,17 @@ fn read_str_literal(string: &Vec<char>, index: &mut usize, len: usize) -> Result
 	}
 	*index += 1;
 	Ok(Some(literal.iter().collect()))
+}
+
+fn read(string: &Vec<char>, read: impl Into<String>,index: &mut usize, len: usize) -> bool {
+	let mut look = *index;
+	for c in read.into().to_string().chars() {
+		if look >= len || c != string[look] { return false; }
+		look += 1;
+	}
+	*index = look;
+	
+	true
 }
 
 // 識別子の一部として使用可能な文字であるかどうかを判別する
@@ -644,6 +670,28 @@ mod tests {
 		let src: &str ="
 			char *c =
 			\"This is a test of string literal\";
+		";
+		test_init(src);
+
+		let mut token_ptr: TokenRef = tokenize(0);
+		while token_ptr.borrow().kind != Tokenkind::EOFTk {
+			println!("{}", token_ptr.borrow());
+			token_ptr_exceed(&mut token_ptr);
+		}
+		assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+		println!("{}", token_ptr.borrow());
+	}
+
+	#[test]
+	fn comment(){
+		let src: &str ="
+			// This is a comment.
+			/* block comment
+			*/
+			int a //*
+			// */ b;
+			a = 100/*
+			*// 5;
 		";
 		test_init(src);
 
