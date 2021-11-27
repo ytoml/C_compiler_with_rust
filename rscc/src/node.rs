@@ -170,7 +170,6 @@ pub fn error_nod(msg: &str, node: &Node) -> ! {
 	error_tok(msg, &*node.token.as_ref().unwrap().borrow());
 }
 
-
 #[cfg(test)]
 mod tests {
 	use super::*;
