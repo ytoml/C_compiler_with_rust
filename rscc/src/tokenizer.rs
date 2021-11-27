@@ -28,10 +28,10 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 		for (line_num, string) in (&*code).iter().enumerate() {
 
 			// StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
-			let len: usize = string.len();
 			let mut lookat: usize = 0;
 			let mut c: char;
 			let string: Vec<char> = string.as_str().chars().collect::<Vec<char>>(); 
+			let len: usize = string.len(); // Vec<char> にしてから len() を呼ぶことで、複数バイト文字も正しく1文字ずつ扱える
 
 			while lookat < len {
 				// 余白をまとめて飛ばす。streamを最後まで読んだならbreakする。
