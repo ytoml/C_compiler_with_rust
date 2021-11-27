@@ -11,7 +11,7 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事の step25 まで実装しており、
+現在、上記記事の step27 まで実装しており、
 - 基本的な単項、二項演算
 	- `+=` のような演算代入や前置/後置のインクリメント/デクリメントにも対応
 	- `sizeof` にも対応していますが、現在整数型を `int` しかサポートしていないため、 `int` として扱われます。
@@ -25,6 +25,7 @@ Rui Ueyama さんの
 - 文字列リテラル
 - for, while, if による制御構文
 - コンマによる複数文の記述
+- 行・ブロックコメント
 
 がサポートされています。  
 また、引数6つまでの関数宣言・呼び出しにも対応しています。ただし、引数に式を入れた場合にそれらの式を処理する順番が後ろの引数からの逆順になってしまうという仕様になってしまっており、修正予定です。  
@@ -51,10 +52,10 @@ int main() {
 	print_helper(sizeof X);
 
 	int X[10][10][10];
-	print_helper(sizeof &X);
-	print_helper(X);
-	print_helper(X[1]);
-	print_helper(&X+1);
+	print_helper(sizeof &X);	// (*)int[10][10][10] -> 8 bytes
+	print_helper(X);			// addr
+	print_helper(X[1]);			// addr + 0x190
+	print_helper(&X+1);			// addr + 0xFA0
 	X[0][1][1] = 100;
 	
 	print_helper((x = 19, x = fib(*&(**pp))));
@@ -69,6 +70,9 @@ int main() {
 	return x;
 }
 
+/**
+ * Recursive fibonacci with memoization.
+ */
 int fib(int N) {
 	if (N <= 2) return 1;
 	if (MEMO[N-1]) return MEMO[N-1];

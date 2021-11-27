@@ -384,7 +384,6 @@ pub fn gen_expr(node: &NodeRef) {
 		("eax", "edi", "edx", "cdq") 
 	};
 
-
 	if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&node.borrow().kind) {
 		operate!("pop", "rcx");
 	} else {

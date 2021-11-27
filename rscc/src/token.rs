@@ -139,7 +139,6 @@ impl Token {
 	}
 }
 
-
 impl Display for Token {
 	fn fmt(&self, f:&mut Formatter) -> fmt::Result {
 		let mut s = format!("{}\n", "-".to_string().repeat(40));
