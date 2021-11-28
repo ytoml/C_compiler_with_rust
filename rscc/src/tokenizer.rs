@@ -20,7 +20,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 	// Rcを使って読み進める
 	let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
 	let mut token_head_ptr: TokenRef = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
-	let mut err_profile: (bool, usize, usize) = (false, 0, 0);
+	let mut err_profile: (bool, usize, usize, &str) = (false, 0, 0, "");
 	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
 	{
 		let code = &mut CODES.try_lock().unwrap()[file_num];
@@ -97,10 +97,27 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 							continue;
 						}
 					}
-					Err(()) => {}
+					Err(msg) => {
+						err_profile = (true, line_num, lookat, msg);
+						break;
+					}
 				}
 
-				err_profile = (true, line_num, lookat);
+				match read_char_literal(&string, &mut lookat, len) {
+					Ok(encoded) => {
+						if let Some(val) = encoded {
+							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, val.to_string(), file_num, line_num, lookat))));
+							token_ptr_exceed(&mut token_ptr);
+							continue;
+						}
+					}
+					Err(msg) => {
+						err_profile = (true, line_num, lookat, msg);
+						break;
+					}
+				}
+
+				err_profile = (true, line_num, lookat, "トークナイズできません");
 				break;
 			}
 			if err_profile.0 { break; }
@@ -108,7 +125,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 	}
 
 	if err_profile.0 {
-		error_at("トークナイズできません。", file_num, err_profile.1, err_profile.2);
+		error_at(err_profile.3, file_num, err_profile.1, err_profile.2);
 	}
 
 	token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::EOFTk, "", 0, 0, 0))));
@@ -177,9 +194,11 @@ fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()
 	Ok(())
 }
 
+const QUOTE_ERROR_MSG: &str = "終わり引用符がありません。";
+
 // 文字列リテラルを読む関数
-fn read_str_literal(string: &Vec<char>, index: &mut usize, len: usize) -> Result<Option<String>, ()> {
-	if *index >= len { return Err(()); }
+fn read_str_literal(string: &Vec<char>, index: &mut usize, len: usize) -> Result<Option<String>, &'static str> {
+	if *index >= len { return Ok(None); }
 	if string[*index] != '\"' { return Ok(None); }
 
 	let mut literal = vec![];
@@ -188,11 +207,34 @@ fn read_str_literal(string: &Vec<char>, index: &mut usize, len: usize) -> Result
 		literal.push(string[*index]);
 		*index += 1;
 		if *index >= len {
-			return Err(());
+			return Err(QUOTE_ERROR_MSG);
 		}
 	}
 	*index += 1;
 	Ok(Some(literal.iter().collect()))
+}
+
+// char リテラルを読む関数
+fn read_char_literal(string: &Vec<char>, index: &mut usize, len: usize) -> Result<Option<i32>, &'static str> {
+	if *index >= len { return Ok(None); }
+	if string[*index] != '\'' { return Ok(None); }
+
+	let mut val = 0;
+	*index += 1;
+	// 各バイトを単に連結したものを int と見做して扱う(オーバーフローは無視する)
+	while string[*index] != '\'' {
+		let mut buf = vec![0u8; 4];
+		for i in string[*index].encode_utf8(&mut buf).as_bytes() {
+			val <<= 8;
+			val += *i as i32;
+		}
+		*index += 1;
+		if *index >= len {
+			return Err(QUOTE_ERROR_MSG);
+		}
+	}
+	*index += 1;
+	Ok(Some(val as i32))
 }
 
 fn read(string: &Vec<char>, read: impl Into<String>,index: &mut usize, len: usize) -> bool {
@@ -666,10 +708,27 @@ mod tests {
 	}
 
 	#[test]
-	fn literal(){
+	fn str_literal(){
 		let src: &str ="
 			char *c =
 			\"This is a test of string literal\";
+		";
+		test_init(src);
+
+		let mut token_ptr: TokenRef = tokenize(0);
+		while token_ptr.borrow().kind != Tokenkind::EOFTk {
+			println!("{}", token_ptr.borrow());
+			token_ptr_exceed(&mut token_ptr);
+		}
+		assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+		println!("{}", token_ptr.borrow());
+	}
+
+	#[test]
+	fn char_literal(){
+		let src: &str ="
+			char c = \'a\';
+			int x = \'ああ\'
 		";
 		test_init(src);
 
