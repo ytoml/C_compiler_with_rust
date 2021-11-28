@@ -22,7 +22,8 @@ Rui Ueyama さんの
 	- スタックにプッシュする値を全て8バイトで処理している関係で、符号拡張などが甘い部分があります。今後修正予定です。
 - 配列型の変数と添字によるアクセス
 - グローバル変数
-- 文字列リテラル
+- 文字列リテラル及び char リテラル
+	- utf-8 です
 - for, while, if による制御構文
 - コンマによる複数文の記述
 - 行・ブロックコメント
@@ -52,7 +53,7 @@ int main() {
 	print_helper(sizeof X);
 
 	int X[10][10][10];
-	print_helper(sizeof &X);	// (*)int[10][10][10] -> 8 bytes
+	print_helper(sizeof &X);	// (*)int[10][10][10] なので、8 bytes
 	print_helper(X);			// addr
 	print_helper(X[1]);			// addr + 0x190
 	print_helper(&X+1);			// addr + 0xFA0
@@ -65,17 +66,31 @@ int main() {
 	showChar(str[13], str[14], str[15], str[16], str[17], str[18]);
 
 	char lf = 10;
-	printf_wrap("This is test script for step%d%c", 25, lf);
+	printf_wrap("This is test script for step%d%c", 'a'-70, lf);
 
 	return x;
 }
 
 /**
- * Recursive fibonacci with memoization.
+ * メモ化再帰による fibonacci
  */
 int fib(int N) {
 	if (N <= 2) return 1;
 	if (MEMO[N-1]) return MEMO[N-1];
 	return MEMO[N-1] = fib(N-1) + fib(N-2);
 }
+```
+上記のプログラムの出力は、リンクさせる関数内でどう表示するかにもよりますが、例えば以下のようになります。ただし、最後の行は exit status を表示しています。
+```
+I got 99 as argument.
+I got 24000 as argument.
+I got 8 as argument.
+I got 274903112992 as argument.
+I got 274903113392 as argument.
+I got 274903116992 as argument.
+I got 55 as argument.
+I got 3996334433 as argument.
+showChar called, message is "script"
+This is test script for step27
+55
 ```
