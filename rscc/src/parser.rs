@@ -199,13 +199,6 @@ fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeR
 }
 
 // 計算時にキャストを自動的に行う
-// fn arith_cast(left: &NodeRef, right: &NodeRef) -> (NodeRef, NodeRef, TypeCell) {
-// 	let left_typ = left.borrow().typ.clone().unwrap();
-// 	let right_typ = right.borrow().typ.clone().unwrap();
-// 	let typ = get_common_type(left_typ, right_typ);
-// 	(new_cast(Rc::clone(left), typ.clone()), new_cast(Rc::clone(right), typ.clone()), typ)
-// }
-
 fn arith_cast(node: &mut Node) -> TypeCell {
 	let left = Rc::clone(node.left.as_ref().unwrap());
 	let right = Rc::clone(node.right.as_ref().unwrap());
@@ -484,14 +477,14 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 }
 
 // 生成規則:
-// decl = vardec ("," vardec)* ";"
-fn decl(token_ptr: &mut TokenRef) -> NodeRef {
+// declaration = type lvar-decl ("," lvar-decl )* ";"
+fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 	let typ = expect_type(token_ptr);
-	let mut node_ptr = vardec(token_ptr, typ.clone());
+	let mut node_ptr = lvar_decl(token_ptr, typ.clone());
 	loop {
 		let ptr_comma = token_ptr.clone();
 		if !consume(token_ptr, ",") { break; }
-		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, vardec(token_ptr, typ.clone()), ptr_comma)
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, lvar_decl(token_ptr, typ.clone()), ptr_comma)
 	}
 	expect(token_ptr,";");
 	
@@ -501,22 +494,23 @@ fn decl(token_ptr: &mut TokenRef) -> NodeRef {
 // 本来は配列も初期化できるべきだが、今はサポートしない
 // また、ローカルでの変数宣言はサポートしない
 // 生成規則:
-// vardec = ident ( "=" expr | [" array-suffix)?
-fn vardec(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+// lvar-decl = ident ("[" array-suffix)? ("=" lvar-init)?
+fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
 
 	let ptr_ = token_ptr.clone();
-	if consume(token_ptr, "=") {
-		// 少し紛らわしいが assign_op で型チェックもできるためここでも利用
-		assign_op(Nodekind::AssignNd, new_lvar(name, ptr, typ, true), expr(token_ptr), ptr_)
-	} else {
-		// suffix(token_ptr) とかする方がいいかも
-		if consume(token_ptr, "[") {
-			typ = array_suffix(token_ptr, typ);
-		}
 
-		new_lvar(name, ptr, typ, true)
+	if consume(token_ptr, "[") {
+		typ = array_suffix(token_ptr, typ);
+	}
+
+	let lvar = new_lvar(name, ptr, typ, true);
+	if consume(token_ptr, "=") {
+		// TODO: 配列のことなどを考えると単なる AssignNd ではダメそう
+		assign_op(Nodekind::AssignNd, lvar, lvar_init(token_ptr), ptr_)
+	} else {
+		lvar
 	}
 }
 
@@ -537,11 +531,37 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 }
 
 // 生成規則:
+// lvar-init = ("{" array-init) | assign
+fn lvar_init(token_ptr: &mut TokenRef) -> NodeRef {
+	if consume(token_ptr, "{") {
+		array_init(token_ptr)
+	} else {
+		assign(token_ptr)
+	}
+}
+
+// 生成規則:
+// array-init = (("{" array-init) | assign) ("," array-init)* ","? "}"
+fn array_init(token_ptr: &mut TokenRef) -> NodeRef {
+	let node_ptr = if consume(token_ptr, "{") { array_init(token_ptr) } else { assign(token_ptr) };
+	if consume(token_ptr, ",") {
+		if consume(token_ptr, "}") { node_ptr }
+		else {
+			array_init(token_ptr);
+			let _ = consume(token_ptr, ",");
+			node_ptr
+		}
+	} else {
+		expect(token_ptr, "}");
+		node_ptr
+	}
+}
+
+// 生成規則:
 // stmt = expr? ";"
-//		| decl
+//		| declaration
 //		| "{" stmt* "}" 
 //		| "if" "(" expr ")" stmt ("else" stmt)?
-//		| ...(今はelse ifは実装しない)
 //		| "while" "(" expr ")" stmt
 //		| "for" "(" expr? ";" expr? ";" expr? ")" stmt
 //		| "return" expr? ";"
@@ -551,7 +571,7 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 	if consume(token_ptr, ";") {
 		tmp_num!(0)
 	} else if is_type(token_ptr) {
-		decl(token_ptr)
+		declaration(token_ptr)
 	} else if consume(token_ptr, "{") {
 		let mut children: Vec<Option<NodeRef>> = vec![];
 		loop {
@@ -685,7 +705,6 @@ fn assign(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 // a += b; -->  tmp = &a, *tmp = *tmp + b;
-// AssignAddNd 的な Nodekind を導入して generator で add [a], b となるように直接処理する手もある
 fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	// 左右の型を確定させておく
 	confirm_type(&left);
@@ -972,11 +991,11 @@ fn mul(token_ptr: &mut TokenRef) -> NodeRef {
 // TODO: *+x; *-y; みたいな構文を禁止したい
 // !+x; や ~-y; は valid
 // unary = tailed 
-//		| ("sizeof")? ( "(" (type | expr) ")" | unary)
-//		| ("~" | "!")? unary
-//		| ("*" | "&")? unary 
-//		| ("+" | "-")? unary
-//		| ("++" | "--")? unary 
+//		| ("sizeof") ( "(" (type | expr) ")" | unary)
+//		| ("~" | "!") unary
+//		| ("*" | "&") unary 
+//		| ("+" | "-") unary
+//		| ("++" | "--") unary 
 fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = token_ptr.clone();
 
@@ -1112,7 +1131,6 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 			let func_typ: TypeCell;
 			let args:Vec<Option<NodeRef>> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
-			// TODO: グローバル変数には関数でないものもあるのでチェックが必要
 			let glb_access = GLOBALS.try_lock().unwrap();
 			if glb_access.contains_key(&name) {
 				let glob = glb_access.get(&name).unwrap();
