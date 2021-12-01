@@ -6,6 +6,7 @@ use clap::Clap;
 mod asm;
 mod generator;
 mod globals;
+mod initializer;
 mod node;
 mod options;
 mod parser;

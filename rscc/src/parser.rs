@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 use crate::{
+	initializer::Initializer,
 	node::{Node, Nodekind, NodeRef},
 	token::{Tokenkind, TokenRef},
 	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_type, expect, expect_ident, expect_number, expect_type, is_type},
@@ -504,11 +505,10 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		typ = array_suffix(token_ptr, typ);
 	}
 
-	let (dim, _) = typ.array_dim();
-	let lvar = new_lvar(name, ptr, typ, true);
+	let lvar = new_lvar(name, ptr, typ.clone(), true);
 	if consume(token_ptr, "=") {
 		// TODO: 配列のことなどを考えると単なる AssignNd ではダメそう
-		assign_op(Nodekind::AssignNd, lvar, lvar_initializer(token_ptr, dim), ptr_)
+		assign_op(Nodekind::AssignNd, lvar, lvar_initializer(token_ptr, typ), ptr_)
 	} else {
 		lvar
 	}
@@ -532,15 +532,15 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 
 // 生成規則:
 // lvar-initializer = ("{" array-init) | assign
-fn lvar_initializer(token_ptr: &mut TokenRef, dim: Vec<usize>) -> NodeRef {
+fn lvar_initializer(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let ptr =  token_ptr.clone();
 	if consume(token_ptr, "{") {
 		// TODO: 初期化要素のパースを経て、ゼロクリア及び各位置への要素代入を行う処理を記述
-		// let init: Initializer;
+		let init: Initializer = Initializer::new(&typ, true);
 		new_unary(Nodekind::ZeroClearNd, array_initializer(token_ptr), ptr)
 
 	} else {
-		if dim.len() != 0 { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
+		if typ.array_dim().0.len() != 0 { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 		assign(token_ptr)
 	}
 }
