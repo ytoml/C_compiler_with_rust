@@ -492,7 +492,6 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 // 本来は配列も初期化できるべきだが、今はサポートしない
-// また、ローカルでの変数宣言はサポートしない
 // 生成規則:
 // lvar-decl = ident ("[" array-suffix)? ("=" lvar-init)?
 fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
@@ -505,10 +504,11 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		typ = array_suffix(token_ptr, typ);
 	}
 
+	let (dim, _) = typ.array_dim();
 	let lvar = new_lvar(name, ptr, typ, true);
 	if consume(token_ptr, "=") {
 		// TODO: 配列のことなどを考えると単なる AssignNd ではダメそう
-		assign_op(Nodekind::AssignNd, lvar, lvar_init(token_ptr), ptr_)
+		assign_op(Nodekind::AssignNd, lvar, lvar_initializer(token_ptr, dim), ptr_)
 	} else {
 		lvar
 	}
@@ -531,30 +531,38 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 }
 
 // 生成規則:
-// lvar-init = ("{" array-init) | assign
-fn lvar_init(token_ptr: &mut TokenRef) -> NodeRef {
+// lvar-initializer = ("{" array-init) | assign
+fn lvar_initializer(token_ptr: &mut TokenRef, dim: Vec<usize>) -> NodeRef {
+	let ptr =  token_ptr.clone();
 	if consume(token_ptr, "{") {
-		array_init(token_ptr)
+		// TODO: 初期化要素のパースを経て、ゼロクリア及び各位置への要素代入を行う処理を記述
+		// let init: Initializer;
+		new_unary(Nodekind::ZeroClearNd, array_initializer(token_ptr), ptr)
+
 	} else {
+		if dim.len() != 0 { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 		assign(token_ptr)
 	}
 }
 
+// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
 // 生成規則:
-// array-init = (("{" array-init) | assign) ("," array-init)* ","? "}"
-fn array_init(token_ptr: &mut TokenRef) -> NodeRef {
-	let node_ptr = if consume(token_ptr, "{") { array_init(token_ptr) } else { assign(token_ptr) };
-	if consume(token_ptr, ",") {
-		if consume(token_ptr, "}") { node_ptr }
-		else {
-			array_init(token_ptr);
-			let _ = consume(token_ptr, ",");
-			node_ptr
+// array-initializer = (("{" array-init) | assign) ("," array-init)* ","? "}"
+fn array_initializer(token_ptr: &mut TokenRef) -> NodeRef {
+	// TODO: 要素情報をどうやって generator に伝えるか検討する必要あり
+	let node_ptr = if consume(token_ptr, "{") { array_initializer(token_ptr) } else { assign(token_ptr) };
+	loop {
+		if consume(token_ptr, ",") {
+			if !consume(token_ptr, "}") {
+				array_initializer(token_ptr);
+				continue;
+			}
+		} else {
+			expect(token_ptr, "}");
 		}
-	} else {
-		expect(token_ptr, "}");
-		node_ptr
+		break;
 	}
+	node_ptr
 }
 
 // 生成規則:

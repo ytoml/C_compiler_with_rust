@@ -44,6 +44,7 @@ pub enum Nodekind {
 	CommaNd,	// ','
 	FunCallNd,	// func()
 	GlobalNd,	// グローバル変数(関数含む)
+	ZeroClearNd,	// スタックのゼロクリア(配列の初期化など)
 }
 
 #[derive(Clone, Debug)]
