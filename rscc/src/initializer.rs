@@ -23,29 +23,16 @@ impl Default for Initializer {
 }
 
 impl Initializer {
-	pub fn new(typ: &TypeCell, is_flex: bool) -> Self {
-		match typ.typ {
-			Type::Array => {
-				if let Some(array_size) = typ.array_size {
-					let mut elements = vec![];
-					let elem_typ = typ.make_deref();
-					for _ in 0..array_size {
-						elements.push(Rc::new(RefCell::new(
-							Initializer::new(&elem_typ, false)
-						)));
-					}
-					Initializer { typ: Some(typ.clone()), elements: elements, ..Default::default() }
-				} else {
-					// flexible array
-					if !is_flex { panic!("array flexibility conflicts."); }
-					Initializer { typ: Some(typ.clone()), is_flex: true, ..Default::default() }
-				}
+	pub fn new(typ: &TypeCell) -> Self {
+		Initializer { typ: Some(typ.clone()), ..Default::default() }
+	}
 
-			},
-			_ => {
-				Initializer { typ: Some(typ.clone()), ..Default::default() }
-			}
-		}
+	pub fn new_with_node(typ: &TypeCell, node: &NodeRef) -> Self {
+		Initializer { node: Some(Rc::clone(node)), typ: Some(typ.clone()), ..Default::default() }
+	}
+
+	pub fn push_element(&mut self,  elem: Initializer) {
+		self.elements.push(Rc::new(RefCell::new(elem)));
 	}
 }
 

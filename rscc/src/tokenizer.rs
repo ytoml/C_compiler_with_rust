@@ -410,11 +410,25 @@ pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_ptr: &mut TokenRef, op: &str) -> bool {
-	if token_ptr.borrow().kind != Tokenkind::ReservedTk || token_ptr.borrow().body.as_ref().unwrap() != op {
+	if is(token_ptr, op) {
 		false
 	} else {
 		token_ptr_exceed(token_ptr);
 		true
+	}
+}
+
+#[inline]
+pub fn is(token_ptr: &mut TokenRef, op: &str) -> bool {
+	token_ptr.borrow().kind != Tokenkind::ReservedTk || token_ptr.borrow().body.as_ref().unwrap() != op 
+}
+
+// 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
+pub fn consume_number(token_ptr: &mut TokenRef) -> Option<i32> {
+	if token_ptr.borrow().kind == Tokenkind::NumTk {
+		Some(expect_number(token_ptr))
+	} else {
+		None
 	}
 }
 
@@ -436,6 +450,7 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	}
 }
 
+#[inline]
 pub fn is_type(token_ptr: &mut TokenRef) -> bool {
 	token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains_key(token_ptr.borrow().body.as_ref().unwrap()) 
 }
