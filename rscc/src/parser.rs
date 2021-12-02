@@ -255,9 +255,7 @@ fn confirm_type(node: &NodeRef) {
 			}
 
 			if let Some(_) = &typ.ptr_end {
-				// left がポインタ型だということなので、 chains は必ず正であり、1ならば参照外し後は値に、そうでなければ配列 or ポインタになることに注意
-				// 配列かポインタかを継承するために typ.typ を使う
-				let _ = node.typ.insert( typ.make_deref() );
+				let _ = node.typ.insert( typ.make_deref().unwrap() );
 			} else {
 				error_with_node!("\"*\"ではポインタの参照を外すことができますが、型\"{}\"が指定されています。", &node, typ.typ);
 			}
@@ -564,7 +562,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 // 生成規則:
 // array-initializer = (initializer ("," initializer)* ","? "}"
 fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
-	let elem_typ = typ.make_deref();
+	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
 	let first_elem = initializer(token_ptr, &elem_typ);
 	// 配列の Initializer の node は最初の要素を指すことにする
 	let mut init = Initializer::new(typ, first_elem.node.as_ref().unwrap()); 

@@ -100,9 +100,10 @@ impl TypeCell {
 		}
 	}
 
-	pub fn make_deref(&self) -> Self {
-		if ![Type::Array, Type::Ptr].contains(&self.typ) { panic!("not able to extract element from non-array"); } 
-		(*self.ptr_to.clone().unwrap().borrow()).clone()
+	pub fn make_deref(&self) -> Result<Self, ()> {
+		if [Type::Array, Type::Ptr].contains(&self.typ) {
+			Ok((*self.ptr_to.clone().unwrap().borrow()).clone())
+		} else { Err(()) }
 	}
 
 	pub fn make_func(ret_typ: Self, arg_typs: Vec<TypeCellRef>) -> Self {
