@@ -492,16 +492,13 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 本来は配列も初期化できるべきだが、今はサポートしない
 // 生成規則:
 // lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
 fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
-
-	let ptr_ = token_ptr.clone();
-
 	let mut is_flex = false;
+
 	if consume(token_ptr, "[") {
 		let array_info = array_suffix(token_ptr, typ);
 		typ = array_info.0;
@@ -536,17 +533,17 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
 fn lvar_initializer(token_ptr: &mut TokenRef, lvar: NodeRef, typ: TypeCell, is_flex: bool) -> NodeRef {
-	if typ.array_size.is_some() && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
+	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	let init = initializer(token_ptr, &typ);
 
 	// new_unary(Nodekind::ZeroClearNd, make_initialization(lvar, init, is_flex), ptr)
-	make_initialization(lvar, init, is_flex)
+	make_lvar_init(lvar, init, is_flex)
 }
 
 // int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
-// 要素数が足りない時: int x[3] = {1, 2}; -> x[0] = 1, x[1] = 2, x[2] = 0;
-// ネストが浅すぎる時: int x[2][2] = {1, 2}; -> x[0][0] = 1, x[0][1] = 2;
-// ネストが深すぎる時: int x[2][2] = {{{1, 2, 3}, 10}, 20}; -> x[0][0] = 1, x[0][1] = 10, x[1][0] = 20;
+// 要素数が足りない時: "int x[3] = {1, 2};" -> x[0] = 1, x[1] = 2, x[2] = 0;
+// ネストが浅すぎる時: "int x[2][2] = {1, 2};" or "int x[2][2] = {1, {2, 1}}" -> x[0][0] = 1, x[0][1] = 2;
+// ネストが深すぎる時: "int x[2][2] = {{{1, 2, 3}, 10}, 20};" -> x[0][0] = 1, x[0][1] = 10, x[1][0] = 20;
 // グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
 // 生成規則:
 // initializer = "{" array-initializer | assign
@@ -554,23 +551,24 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 	if consume(token_ptr, "{") {
 		if typ.typ != Type::Array {
 			// スカラ値に代入することになるため、最初の要素以外読み飛ばす
-			Initializer { typ: Some(typ.clone()), node: array_initializer(token_ptr ,typ).node, ..Default::default() }
+			Initializer::new(&typ, array_initializer(token_ptr, typ).node.as_ref().unwrap())
 		} else {
 			array_initializer(token_ptr, typ)
 		}
 	} else {
 		let node_ptr = assign(token_ptr);
-		Initializer::new_with_node(&typ, &node_ptr)
+		Initializer::new(&typ, &node_ptr)
 	}
 } 
 
 // 生成規則:
 // array-initializer = (initializer ("," initializer)* ","? "}"
 fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
-	// TODO: 要素情報をどうやって generator に伝えるか検討する必要あり
-	let mut init = Initializer::new(typ);
 	let elem_typ = typ.make_deref();
-	init.push_element(initializer(token_ptr, &elem_typ));
+	let first_elem = initializer(token_ptr, &elem_typ);
+	// 配列の Initializer の node は最初の要素を指すことにする
+	let mut init = Initializer::new(typ, first_elem.node.as_ref().unwrap()); 
+	init.push_element(first_elem);
 	
 	loop {
 		if consume(token_ptr, ",") {
@@ -586,7 +584,7 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 	init
 }
 
-fn make_initialization(lvar: NodeRef, init: Initializer, is_flex: bool) -> NodeRef {
+fn make_lvar_init(lvar: NodeRef, init: Initializer, is_flex: bool) -> NodeRef {
 	Rc::new(RefCell::new(Node { ..Default::default() }))
 }
 

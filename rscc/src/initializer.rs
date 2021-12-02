@@ -23,11 +23,7 @@ impl Default for Initializer {
 }
 
 impl Initializer {
-	pub fn new(typ: &TypeCell) -> Self {
-		Initializer { typ: Some(typ.clone()), ..Default::default() }
-	}
-
-	pub fn new_with_node(typ: &TypeCell, node: &NodeRef) -> Self {
+	pub fn new(typ: &TypeCell, node: &NodeRef) -> Self {
 		Initializer { node: Some(Rc::clone(node)), typ: Some(typ.clone()), ..Default::default() }
 	}
 
