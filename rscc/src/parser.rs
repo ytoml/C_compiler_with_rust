@@ -53,10 +53,12 @@ macro_rules! align {
 }
 
 // 2つ子を持つ汎用ノード
+#[inline]
 fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), right: Some(right), .. Default::default()}))
 }
 
+#[inline]
 fn new_binary(kind: Nodekind, left: NodeRef, right: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	_binary(kind, left, right, Some(token_ptr))
 }
@@ -68,10 +70,12 @@ macro_rules! tmp_binary {
 }
 
 // 1つ子を持つ汎用ノード
+#[inline]
 fn _unary(kind: Nodekind, left: NodeRef, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: kind, token: token, left: Some(left), .. Default::default()}))
 }
 
+#[inline]
 fn new_unary(kind: Nodekind, left: NodeRef, token_ptr: TokenRef) -> NodeRef {
 	_unary(kind, left, Some(token_ptr))
 }
@@ -83,6 +87,7 @@ macro_rules! tmp_unary {
 }
 
 // 数字に対応するノード
+#[inline]
 fn _num(val: i32, token: Option<TokenRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node{
 		kind: Nodekind::NumNd,
@@ -93,6 +98,7 @@ fn _num(val: i32, token: Option<TokenRef>) -> NodeRef {
 	}))
 }
 
+#[inline]
 fn new_num(val: i32, token_ptr: TokenRef) -> NodeRef {
 	_num(val, Some(token_ptr))
 }
@@ -148,6 +154,7 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, name: name, is_local: is_local, .. Default::default()}))
 }
 
+#[inline]
 fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, is_local: bool) -> NodeRef {
 	_lvar(name, Some(token_ptr), Some(typ), is_local)
 }
@@ -159,11 +166,13 @@ macro_rules! tmp_lvar {
 }
 
 // ブロックのノード
+#[inline]
 fn new_block(children: Vec<Option<NodeRef>>) -> NodeRef {
 	Rc::new(RefCell::new(Node { kind: Nodekind::BlockNd, children: children, ..Default::default()}))
 }
 
 // 制御構文のためのノード
+#[inline]
 fn new_ctrl(kind: Nodekind,
 			init: Option<NodeRef>,
 			enter: Option<NodeRef>,
@@ -177,26 +186,36 @@ fn new_ctrl(kind: Nodekind,
 }
 
 // 関数呼び出しのノード
+#[inline]
 fn new_func(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token_ptr: TokenRef) -> NodeRef {
 	if func_typ.typ != Type::Func { panic!("new_func can be called only with function TypeCell"); }
 	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(token_ptr), name: Some(name), func_typ:Some(func_typ), args: args, ..Default::default()}))
 }
 
 // グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
+#[inline]
 fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token_ptr: TokenRef) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }))
 }
 
+#[inline]
 fn new_gvar(name: String, typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
 	_global(name, Some(typ), None, vec![], None, None, token_ptr)
 }
 
+#[inline]
 fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, max_offset: usize, token_ptr: TokenRef) -> NodeRef {
 	_global(name, None, Some(func_typ), args, Some(stmts), Some(max_offset), token_ptr)
 }
 
+#[inline]
 fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
 	_global(name, None, Some(func_typ), vec![], None, None, token_ptr)
+}
+
+#[inline]
+fn nop() -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::NopNd, typ: Some(TypeCell::new(Type::Invalid)), ..Default::default()}))
 }
 
 // 計算時にキャストを自動的に行う
@@ -320,6 +339,13 @@ fn confirm_type(node: &NodeRef) {
 			let _ = node.typ.insert(typ);
 		}
 		Nodekind::ReturnNd => {
+			let typ: TypeCell;
+			{
+				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
+			}
+			let _ = node.typ.insert(typ);
+		}
+		Nodekind::ZeroClrNd => {
 			let typ: TypeCell;
 			{
 				typ = node.left.as_ref().unwrap().borrow().typ.as_ref().unwrap().clone();
@@ -503,11 +529,15 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		is_flex = array_info.1;
 	}
 
+	// TODO: is_flex ならば オフセットの調整量が initializer を処理した後に決まるため、これでは固定長しか処理できない
 	let lvar = new_lvar(name, ptr, typ.clone(), true);
+	let ptr = token_ptr.clone();
 	if consume(token_ptr, "=") {
-		lvar_initializer(token_ptr, lvar, typ, is_flex)
+		lvar_initializer(token_ptr, lvar, typ, is_flex, ptr)
 	} else {
-		lvar
+		// 初期化しない場合は何もアセンブリを吐かない
+		if is_flex { error_with_token!("初期化しない場合は完全な配列サイズが必要です。", &ptr.borrow()); }
+		nop()
 	}
 }
 
@@ -530,12 +560,22 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 }
 
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
-fn lvar_initializer(token_ptr: &mut TokenRef, lvar: NodeRef, typ: TypeCell, is_flex: bool) -> NodeRef {
+fn lvar_initializer(token_ptr: &mut TokenRef, lvar: NodeRef, typ: TypeCell, is_flex: bool, ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	let init = initializer(token_ptr, &typ);
-
-	// new_unary(Nodekind::ZeroClearNd, make_initialization(lvar, init, is_flex), ptr)
-	make_lvar_init(lvar, init, is_flex)
+	let zero_clear = new_unary(
+		Nodekind::ZeroClrNd,
+		Rc::clone(&lvar),
+		Rc::clone(&ptr)
+	);
+	
+	let offset = if is_flex { init.elements.len() } else { lvar.borrow().offset.unwrap() } ;
+	new_binary(
+		Nodekind::CommaNd,
+		zero_clear,
+		make_lvar_init(init, &typ, is_flex, offset, Rc::clone(&ptr)),
+		ptr
+	)
 }
 
 // int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
@@ -582,8 +622,38 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 	init
 }
 
-fn make_lvar_init(lvar: NodeRef, init: Initializer, is_flex: bool) -> NodeRef {
-	Rc::new(RefCell::new(Node { ..Default::default() }))
+// オフセットで直接代入したい場合の LvarNd
+fn direct_offset_lvar(offset: usize, typ: Type) -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(TypeCell::new(typ)), offset: Some(offset), is_local: true, ..Default::default() }))
+}
+
+// Initializer が存在する要素に対応する部分のみノードを作る
+fn make_lvar_init(init: Initializer, typ: &TypeCell, is_flex: bool, offset: usize, ptr: TokenRef) -> NodeRef {
+	if typ.typ == Type::Array {
+		let elem_typ = typ.make_deref().unwrap();
+		let elem_bytes = elem_typ.bytes();
+		let mut node_ptr = nop();
+		let len = if is_flex { init.elements.len() } else { typ.array_size.unwrap() };
+		for (i, elem) in (&init.elements).iter().enumerate() {
+			if i < len {
+				node_ptr = new_binary(
+					Nodekind::CommaNd,
+					node_ptr,
+					make_lvar_init(elem.borrow().clone(), &elem_typ, false, offset - elem_bytes * i, Rc::clone(&ptr)),
+					Rc::clone(&ptr)
+				);
+			} else { break; }
+		}
+		
+		node_ptr
+	} else {
+		assign_op(
+			Nodekind::AssignNd,
+			direct_offset_lvar(offset, typ.typ),
+			Rc::clone(init.node.as_ref().unwrap()),
+			ptr
+		)	
+	}
 }
 
 // 生成規則:
@@ -1830,6 +1900,25 @@ pub mod tests {
 			search_tree(&node_ptr);
 			count += 1;
 		}
+	}
+
+	#[test]
+	fn init() {
+		let src: &str = "
+			int X[2][2] = {{1, 2}, {3, 4}};
+			int Y[2][2] = {{1}, {2, 3}};
+			int Z[2][2] = {{{1, 2}}, 3};
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = parse_stmts(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("stmt{} {}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		} 
 	}
 
 	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする

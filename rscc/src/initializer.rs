@@ -3,23 +3,17 @@ use std::cell::RefCell;
 
 use crate::{
 	node::NodeRef,
-	typecell::{Type, TypeCell},
+	typecell::TypeCell,
 };
 
 pub type InitializerRef = Rc<RefCell<Initializer>>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Initializer {
 	pub node:		Option<NodeRef>,		// 初期化する値に対応する式 
 	pub typ:		Option<TypeCell>,		// タイプ
 	pub elements:	Vec<InitializerRef>,	// 配列の各要素
 	pub is_flex:	bool,					// 配列サイズを指定しない初期化
-}
-
-impl Default for Initializer {
-	fn default() -> Initializer {
-		Initializer {node: None, typ: None, elements: vec![], is_flex: false }
-	}
 }
 
 impl Initializer {
