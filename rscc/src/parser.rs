@@ -559,6 +559,8 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 	(typ.make_array_of(size), is_flex)
 }
 
+
+// グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
 fn lvar_initializer(token_ptr: &mut TokenRef, lvar: NodeRef, typ: TypeCell, is_flex: bool, ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
@@ -578,11 +580,6 @@ fn lvar_initializer(token_ptr: &mut TokenRef, lvar: NodeRef, typ: TypeCell, is_f
 	)
 }
 
-// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
-// 要素数が足りない時: "int x[3] = {1, 2};" -> x[0] = 1, x[1] = 2, x[2] = 0;
-// ネストが浅すぎる時: "int x[2][2] = {1, 2};" or "int x[2][2] = {1, {2, 1}}" -> x[0][0] = 1, x[0][1] = 2;
-// ネストが深すぎる時: "int x[2][2] = {{{1, 2, 3}, 10}, 20};" -> x[0][0] = 1, x[0][1] = 10, x[1][0] = 20;
-// グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
 // 生成規則:
 // initializer = "{" array-initializer | assign
 fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
@@ -599,6 +596,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 	}
 } 
 
+// C99 以降の designator は現段階ではサポートしない
 // 生成規則:
 // array-initializer = (initializer ("," initializer)* ","? "}"
 fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
@@ -623,33 +621,76 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 }
 
 // オフセットで直接代入したい場合の LvarNd
-fn direct_offset_lvar(offset: usize, typ: Type) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(TypeCell::new(typ)), offset: Some(offset), is_local: true, ..Default::default() }))
+#[inline]
+fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(typ.clone()), offset: Some(offset), is_local: true, ..Default::default() }))
 }
 
 // Initializer が存在する要素に対応する部分のみノードを作る
+// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
+// ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
+// 要素数が足りない時:
+// "int x[3] = {1, 2};" -> x[0] = 1, x[1] = 2, x[2] = 0;
+// - これは単に0埋めである
+// 
+// ネストが浅すぎる時:
+// "int x[2][2] = {1, 2};" or "int x[2][2] = {1, {2, 1}}" -> x[0][0] = 1, x[0][1] = 2;
+// - これは opening brace で始まらない要素があると、そこからそのレベルの1要素におけるベース型の格納個数だけ要素を読むという処理に起因している
+// - 例えば、 int x[4][2][1] = {1, {2, 3}, 4, 5, {6}, 7, 8, 9}; は
+// - int x[4][2][1] = {{{1}, {2}}, {{4}, {5}}, {{6}, {0}}, {{7}, {8}}}; と同じ
+// 
+// ネストが深すぎる時:
+// "int x[2][2] = {{{1, 2, 3}, 10}, 20};" -> x[0][0] = 1, x[0][1] = 10, x[1][0] = 20;
+// - これは、それ以上の sub-array がない場合には先頭の要素のみを扱うことになっている
+// - 例えば、 int x = {{2, 3}, 4}; なども valid であり、これは単に int x = 2; と同じ
 fn make_lvar_init(init: Initializer, typ: &TypeCell, is_flex: bool, offset: usize, ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array {
 		let elem_typ = typ.make_deref().unwrap();
 		let elem_bytes = elem_typ.bytes();
+		let elem_flatten_size = elem_typ.flatten_size();
+		let base_typ = typ.get_base_cell();
+		let base_bytes = base_typ.bytes();
 		let mut node_ptr = nop();
-		let len = if is_flex { init.elements.len() } else { typ.array_size.unwrap() };
-		for (i, elem) in (&init.elements).iter().enumerate() {
-			if i < len {
+		let array_len = if is_flex { init.flex_elem_count() } else { typ.array_size.unwrap() };
+
+		let mut ix = 0;
+		let mut finised_bytes = 0;
+		while finised_bytes/elem_bytes < array_len && ix < init.elements.len() {
+			let elem = Rc::clone(&init.elements[ix]);
+			if elem.borrow().is_element() {
+				// flatten して読む
+				for _ in 0..elem_flatten_size {
+					let _expr = init.elements[ix].borrow().node.clone().unwrap();
+					let _assign = assign_op(
+						Nodekind::AssignNd,
+						direct_offset_lvar(offset - finised_bytes, &base_typ),
+						_expr,
+						Rc::clone(&ptr)
+					);
+					node_ptr = new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&ptr));
+					ix += 1;
+					finised_bytes += base_bytes;
+					if ix >= init.elements.len() { break; }
+				}
+
+			} else {
 				node_ptr = new_binary(
-					Nodekind::CommaNd,
-					node_ptr,
-					make_lvar_init(elem.borrow().clone(), &elem_typ, false, offset - elem_bytes * i, Rc::clone(&ptr)),
-					Rc::clone(&ptr)
+				Nodekind::CommaNd,
+				node_ptr,
+				make_lvar_init(elem.borrow().clone(), &elem_typ, false, offset - finised_bytes, Rc::clone(&ptr)),
+				Rc::clone(&ptr)
 				);
-			} else { break; }
+				ix += 1;
+				finised_bytes += elem_bytes;
+			}
 		}
-		
+
 		node_ptr
+		
 	} else {
 		assign_op(
 			Nodekind::AssignNd,
-			direct_offset_lvar(offset, typ.typ),
+			direct_offset_lvar(offset, typ),
 			Rc::clone(init.node.as_ref().unwrap()),
 			ptr
 		)	
@@ -1905,9 +1946,7 @@ pub mod tests {
 	#[test]
 	fn init() {
 		let src: &str = "
-			int X[2][2] = {{1, 2}, {3, 4}};
-			int Y[2][2] = {{1}, {2, 3}};
-			int Z[2][2] = {{{1, 2}}, 3};
+			int X[4][2][1] = {1, {2, 3}, 4, 5, {6}, 7, 8, 9};
 		";
 		test_init(src);
 

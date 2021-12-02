@@ -100,16 +100,33 @@ impl TypeCell {
 		}
 	}
 
+	#[inline]
 	pub fn make_deref(&self) -> Result<Self, ()> {
 		if [Type::Array, Type::Ptr].contains(&self.typ) {
 			Ok((*self.ptr_to.clone().unwrap().borrow()).clone())
 		} else { Err(()) }
 	}
 
+	#[inline]
+	pub fn get_base_cell(&self) -> Self {
+		if let Some(_typ) = self.ptr_end {
+			Self::new(_typ)
+		} else {
+			panic!("cannot extract base type from non-pointer.");
+		}
+	}
+
+	#[inline]
 	pub fn make_func(ret_typ: Self, arg_typs: Vec<TypeCellRef>) -> Self {
 		let _ret_typ = Some(Rc::new(RefCell::new(ret_typ)));
 		let _arg_typs = Some(arg_typs);
 		TypeCell { typ: Type::Func, ret_typ: _ret_typ, arg_typs: _arg_typs, ..Default::default() }
+	}
+
+	#[inline]
+	pub fn flatten_size(&self) -> usize {
+		let (dim, _) = self.array_dim();
+		dim.iter().product::<usize>()
 	}
 
 	pub fn bytes(&self) -> usize {
