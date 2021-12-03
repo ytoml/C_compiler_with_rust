@@ -32,20 +32,17 @@ impl Initializer {
 	}
 
 	// 配列サイズを指定していない場合のサイズ特定を行う
+	// parser::make_lvar_init と似たような処理
 	pub fn flex_elem_count(&self) -> usize {
 		if self.is_element() { panic!("invalid function on elemental initializer"); }
+		let elem_flatten_size = self.elements[0].borrow().typ.as_ref().unwrap().flatten_size();
 		let mut count = 0;
-		// ネストされているものは1つとして読む
-		for elem in self.elements.iter() {
-			if !elem.borrow().is_element() {
-				count += 1;
-			} else { break; }
+		let mut ix = 0;
+		while ix < self.elements.len() {
+			ix += if self.elements[ix].borrow().is_element() { elem_flatten_size } else { 1 };
+			count += 1;
 		}
-		// 残りはそれぞれベース要素として読む
-		let elem_size = self.elements[0].borrow().typ.clone().unwrap().flatten_size();
-		let rem_count = ((self.elements.len() - count) + elem_size - 1)/ elem_size;
-
-		count + rem_count
+		count
 	}
 }
 

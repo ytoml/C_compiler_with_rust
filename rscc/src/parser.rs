@@ -529,11 +529,8 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		is_flex = array_info.1;
 	}
 
-	// TODO: is_flex ならば オフセットの調整量が initializer を処理した後に決まるため、これでは固定長しか処理できない
-	let lvar = new_lvar(name, ptr, typ.clone(), true);
-	let ptr = token_ptr.clone();
 	if consume(token_ptr, "=") {
-		lvar_initializer(token_ptr, lvar, typ, is_flex, ptr)
+		lvar_initializer(token_ptr, name, typ, is_flex, ptr)
 	} else {
 		// 初期化しない場合は何もアセンブリを吐かない
 		if is_flex { error_with_token!("初期化しない場合は完全な配列サイズが必要です。", &ptr.borrow()); }
@@ -559,24 +556,29 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 	(typ.make_array_of(size), is_flex)
 }
 
-
 // グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
-fn lvar_initializer(token_ptr: &mut TokenRef, lvar: NodeRef, typ: TypeCell, is_flex: bool, ptr: TokenRef) -> NodeRef {
+fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, is_flex: bool, lvar_ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	let init = initializer(token_ptr, &typ);
+	if is_flex {
+		println!("flex!!!");
+		let _ = typ.array_size.insert(init.flex_elem_count());
+	}
+
+	let lvar = new_lvar(name, lvar_ptr.clone(), typ.clone(), true);
 	let zero_clear = new_unary(
 		Nodekind::ZeroClrNd,
 		Rc::clone(&lvar),
-		Rc::clone(&ptr)
+		Rc::clone(&lvar_ptr)
 	);
 	
-	let offset = if is_flex { init.elements.len() } else { lvar.borrow().offset.unwrap() } ;
+	let offset = lvar.borrow().offset.unwrap();
 	new_binary(
 		Nodekind::CommaNd,
 		zero_clear,
-		make_lvar_init(init, &typ, is_flex, offset, Rc::clone(&ptr)),
-		ptr
+		make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr)),
+		lvar_ptr
 	)
 }
 
@@ -626,7 +628,7 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(typ.clone()), offset: Some(offset), is_local: true, ..Default::default() }))
 }
 
-// Initializer が存在する要素に対応する部分のみノードを作る
+// Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
 // int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
 // ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
 // 要素数が足りない時:
@@ -643,7 +645,7 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // "int x[2][2] = {{{1, 2, 3}, 10}, 20};" -> x[0][0] = 1, x[0][1] = 10, x[1][0] = 20;
 // - これは、それ以上の sub-array がない場合には先頭の要素のみを扱うことになっている
 // - 例えば、 int x = {{2, 3}, 4}; なども valid であり、これは単に int x = 2; と同じ
-fn make_lvar_init(init: Initializer, typ: &TypeCell, is_flex: bool, offset: usize, ptr: TokenRef) -> NodeRef {
+fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array {
 		let elem_typ = typ.make_deref().unwrap();
 		let elem_bytes = elem_typ.bytes();
@@ -651,11 +653,10 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, is_flex: bool, offset: usiz
 		let base_typ = typ.get_base_cell();
 		let base_bytes = base_typ.bytes();
 		let mut node_ptr = nop();
-		let array_len = if is_flex { init.flex_elem_count() } else { typ.array_size.unwrap() };
 
 		let mut ix = 0;
 		let mut finised_bytes = 0;
-		while finised_bytes/elem_bytes < array_len && ix < init.elements.len() {
+		while finised_bytes/elem_bytes < typ.array_size.unwrap() && ix < init.elements.len() {
 			let elem = Rc::clone(&init.elements[ix]);
 			if elem.borrow().is_element() {
 				// flatten して読む
@@ -675,10 +676,10 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, is_flex: bool, offset: usiz
 
 			} else {
 				node_ptr = new_binary(
-				Nodekind::CommaNd,
-				node_ptr,
-				make_lvar_init(elem.borrow().clone(), &elem_typ, false, offset - finised_bytes, Rc::clone(&ptr)),
-				Rc::clone(&ptr)
+					Nodekind::CommaNd,
+					node_ptr,
+					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finised_bytes, Rc::clone(&ptr)),
+					Rc::clone(&ptr)
 				);
 				ix += 1;
 				finised_bytes += elem_bytes;
@@ -693,7 +694,7 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, is_flex: bool, offset: usiz
 			direct_offset_lvar(offset, typ),
 			Rc::clone(init.node.as_ref().unwrap()),
 			ptr
-		)	
+		)
 	}
 }
 
@@ -1946,7 +1947,10 @@ pub mod tests {
 	#[test]
 	fn init() {
 		let src: &str = "
+			int x = {4, 5};
 			int X[4][2][1] = {1, {2, 3}, 4, 5, {6}, 7, 8, 9};
+			int Y[][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
+			int *P[][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
 		";
 		test_init(src);
 
