@@ -45,12 +45,3 @@ impl Initializer {
 		count
 	}
 }
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn display() {
-	}
-}

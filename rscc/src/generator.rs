@@ -369,6 +369,36 @@ pub fn gen_expr(node: &NodeRef) {
 
 			return;
 		}
+		Nodekind::ZeroClrNd => {
+			// これは特殊な Node で、現時点では left に LvarNd が繋がっているパターンしかあり得ない
+			let left = node.borrow().left.clone().unwrap();
+			let mut bytes = left.borrow().typ.clone().unwrap().bytes();
+			let mut offset = left.borrow().offset.unwrap();
+			for i in 0..bytes/8 {
+				mov_to!(8, "rbp", 0, offset);
+				offset -= 8;
+			}
+			bytes %= 8;
+			if bytes/4 == 1 {
+				mov_to!(4, "rbp", 0, offset);
+				offset -= 4;
+			}
+			bytes %= 4;
+			if bytes/2 == 1 {
+				mov_to!(2, "rbp", 0, offset);
+				offset -= 2;
+			}
+			bytes %= 2;
+			if bytes == 1 {
+				mov_to!(4, "rbp", 0, offset);
+			}
+			operate!("push", 0);
+			return;
+		}
+		Nodekind::NopNd => {
+			operate!("push", 0);
+			return;
+		}
 		_ => {}// 他のパターンなら、ここでは何もしない
 	} 
 
