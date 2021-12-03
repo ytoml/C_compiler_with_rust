@@ -372,31 +372,17 @@ pub fn gen_expr(node: &NodeRef) {
 		Nodekind::ZeroClrNd => {
 			// これは特殊な Node で、現時点では left に LvarNd が繋がっているパターンしかあり得ない
 			let left = node.borrow().left.clone().unwrap();
-			let mut bytes = left.borrow().typ.clone().unwrap().bytes();
-			let mut offset = left.borrow().offset.unwrap();
-			for i in 0..bytes/8 {
-				mov_to!(8, "rbp", 0, offset);
-				offset -= 8;
-			}
-			bytes %= 8;
-			if bytes/4 == 1 {
-				mov_to!(4, "rbp", 0, offset);
-				offset -= 4;
-			}
-			bytes %= 4;
-			if bytes/2 == 1 {
-				mov_to!(2, "rbp", 0, offset);
-				offset -= 2;
-			}
-			bytes %= 2;
-			if bytes == 1 {
-				mov_to!(4, "rbp", 0, offset);
-			}
+			let offset = left.borrow().offset.unwrap();
+			let bytes = left.borrow().typ.clone().unwrap().bytes();
+			
+			zero_clear(offset, bytes);
 			operate!("push", 0);
+
 			return;
 		}
 		Nodekind::NopNd => {
 			operate!("push", 0);
+
 			return;
 		}
 		_ => {}// 他のパターンなら、ここでは何もしない
@@ -545,6 +531,37 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 			movsx!("rax", "al");
 		}
 		mov!(arg_reg, ax);
+	}
+}
+
+// rbp - offset から rbp - offset + bytes までゼロクリアを行う
+fn zero_clear(mut offset: usize, mut bytes: usize) {
+	if bytes >= 128 {
+		lea!("rdi", "rbp", offset);
+		mov!("rax", 0);
+		mov!("rcx", bytes/8);
+		operate!("rep", "stosq");
+		mov!("eax", 0);
+		offset -= (bytes/8)*8;
+	} else {
+		for _ in 0..bytes/8 {
+		mov_to!(8, "rbp", 0, offset);
+		offset -= 8;
+		}
+	}
+	bytes %= 8;
+	if bytes/4 == 1 {
+		mov_to!(4, "rbp", 0, offset);
+		offset -= 4;
+	}
+	bytes %= 4;
+	if bytes/2 == 1 {
+		mov_to!(2, "rbp", 0, offset);
+		offset -= 2;
+	}
+	bytes %= 2;
+	if bytes == 1 {
+		mov_to!(1, "rbp", 0, offset);
 	}
 }
 
@@ -919,6 +936,26 @@ mod tests {
 			int main() {
 				return fib(10);
 			}
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		for node_ptr in node_heads {
+			gen_expr(&node_ptr);
+		}
+		println!("{}", ASMCODE.try_lock().unwrap());
+	}
+
+	#[test]
+	fn zero_clear_() {
+		let src: &str = "
+			int main() {
+			char X[][9][33] = {{1}, 3};
+			char Y[127] = {0};
+			int Z[15] = {0};
+			return 0;
+		}
 		";
 		test_init(src);
 

@@ -109,6 +109,15 @@ macro_rules! tmp_num {
 	};
 }
 
+fn get_alignment_base(typ: &TypeCell) -> usize {
+	let bytes = typ.bytes();
+	if bytes >= 16 { 16 }
+	else if bytes >= 8 { 8 }
+	else if bytes >= 4 { 4 }
+	else if bytes >= 2 { 2 }
+	else { 1 }
+}
+
 // 左辺値に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
 fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>, is_local: bool) -> NodeRef {
 	let name: String = name.into();
@@ -128,7 +137,7 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 				// 各変数のサイズ(配列なら1要素のサイズ)に alignment する
 				let (diff, align_base) = if let Some(typ_) = typ.clone() {
 					(
-						typ_.bytes(), if typ_.typ == Type::Array { typ_.ptr_end.unwrap().bytes() } else { typ_.typ.bytes() }
+						typ_.bytes(), get_alignment_base(&typ_) 
 					)
 				} else {
 					(8, 8) // None になるのは仕様上一時的な内部変数であり、ポインタとして扱うため 8 バイトとする
@@ -562,7 +571,6 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	let init = initializer(token_ptr, &typ);
 	if is_flex {
-		println!("flex!!!");
 		let _ = typ.array_size.insert(init.flex_elem_count());
 	}
 
