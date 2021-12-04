@@ -432,19 +432,45 @@ pub fn consume_number(token_ptr: &mut TokenRef) -> Option<i32> {
 	}
 }
 
+#[inline]
+pub fn is_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
+	token_ptr.borrow().kind == kind
+}
+
 // 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
-	if token_ptr.borrow().kind != kind {
-		false
-	} else {
+	if is_kind(token_ptr, kind) {
 		token_ptr_exceed(token_ptr);
 		true
+	} else {
+		false
 	}
 }
 
+#[inline]
 pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	if is_type(token_ptr) {
 		Some(expect_type(token_ptr))
+	} else {
+		None
+	}
+}
+
+pub fn expect_literal(token_ptr: &mut TokenRef) -> &str {
+	if is_kind(token_ptr, Tokenkind::StringTk) {
+		token_ptr_exceed(token_ptr);
+		let literal = token_ptr.borrow().body.clone().unwrap();
+		// TODO: スコープ管理
+		literal
+	} else {
+		error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
+	}
+}
+
+#[inline]
+pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<&str> {
+	if is_kind(token_ptr, Tokenkind::StringTk) {
+		Some(expect_literal(token_ptr))
 	} else {
 		None
 	}

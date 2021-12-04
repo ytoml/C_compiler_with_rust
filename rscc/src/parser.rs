@@ -10,7 +10,7 @@ use crate::{
 	initializer::Initializer,
 	node::{Node, Nodekind, NodeRef},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_number, consume_type, expect, expect_ident, expect_number, expect_type, is, is_type},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
 	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -575,23 +575,29 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 	}
 
 	let lvar = new_lvar(name, lvar_ptr.clone(), typ.clone(), true);
-	let zero_clear = new_unary(
-		Nodekind::ZeroClrNd,
-		Rc::clone(&lvar),
-		Rc::clone(&lvar_ptr)
-	);
-	
 	let offset = lvar.borrow().offset.unwrap();
-	new_binary(
-		Nodekind::CommaNd,
-		zero_clear,
-		make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr)),
-		lvar_ptr
-	)
+	match typ.typ {
+		Type::Array => {
+			let zero_clear = new_unary(
+				Nodekind::ZeroClrNd,
+				Rc::clone(&lvar),
+				Rc::clone(&lvar_ptr)
+			);
+			new_binary(
+				Nodekind::CommaNd,
+				zero_clear,
+				make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr)),
+				lvar_ptr
+			)
+		}
+		_ => {
+			make_lvar_init(init, &typ, offset, lvar_ptr)
+		}
+	}
 }
 
 // 生成規則:
-// initializer = "{" array-initializer | assign
+// initializer = "{" array-initializer | str-initializer | assign
 fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 	if consume(token_ptr, "{") {
 		if typ.typ != Type::Array {
@@ -600,11 +606,40 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 		} else {
 			array_initializer(token_ptr, typ)
 		}
+	} else if is_kind(token_ptr, Tokenkind::StringTk) {
+		string_initializer(token_ptr, typ)
 	} else {
 		let node_ptr = assign(token_ptr);
 		Initializer::new(&typ, &node_ptr)
 	}
 } 
+
+// char
+// 生成規則:
+// string-initializer = string-literal
+fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
+	// 今は w_char リテラルなどは扱わないため、
+	if typ.typ != Type::Array || typ.ptr_end.unwrap() != Type::Char {
+		error_with_token!("型\"{}\"は文字列リテラルで初期化できません", &*token_ptr.borrow(), typ);
+	}
+	// TODO: 細かい違いを吸収する必要がある
+	let ptr = Rc::clone(token_ptr);
+	let elem_typ = typ.ptr_to.clone().unwrap();
+	let end_elem = Initializer::new(&typ.make_deref().unwrap(), &new_num(0, Rc::clone(&ptr)));
+	let literal = expect_literal(token_ptr); 
+	let mut init = 
+	if literal.len() > 0 {
+		let mut _init = Initializer::new(&elem_typ.borrow(), &new_num(literal.as_bytes()[0] as i32, Rc::clone(&ptr)));
+		for c in literal.as_bytes().iter().map(|c | *c as i32) {
+			_init.push_element(Initializer::new(&elem_typ.borrow(), &new_num(c, Rc::clone(&ptr))));
+		}
+		_init
+	} else {
+		end_elem.clone()
+	};
+	init.push_element(end_elem);
+	init
+}
 
 // C99 以降の designator は現段階ではサポートしない
 // 生成規則:
@@ -1263,7 +1298,7 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 
 // 生成規則: 
 // primary = num
-//			| str
+//			| string-literal
 //			| ident ( "(" params ")" | "[" expr "]")?
 //			| "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
@@ -1334,13 +1369,10 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 
 			node_ptr
 		}
-	} else if consume_kind(token_ptr, Tokenkind::StringTk) {
-		let literal = ptr.borrow().body.clone().unwrap();
+	} else if let Some(literal) = consume_literal(token_ptr) {
 		let size = literal.len() + 1;
 		let name = store_literal(literal);
-
 		new_lvar(name, ptr, TypeCell::new(Type::Char).make_array_of(size), false)
-
 	} else {
 		new_num(expect_number(token_ptr), ptr)
 	}
