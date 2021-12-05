@@ -613,55 +613,33 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 		} else {
 			array_initializer(token_ptr, typ, init);
 		}
-	// } else if typ.typ == Type::Array && is_kind(token_ptr, Tokenkind::StringTk) {
-	// 	string_initializer(token_ptr, typ)
+	} else if typ.typ == Type::Array && is_kind(token_ptr, Tokenkind::StringTk) {
+		string_initializer(token_ptr, typ, init);
 	} else {
 		init.insert(typ, &assign(token_ptr));
 	}
 } 
 
-// 文字列リテラルによる初期化のルール
-// char str[] = "abc"; と char str[] = {"abc"}; は char str[] = {'a', 'b', 'c', '\0'}; と同じ(1つめが例外的表現)
-// 下記の「ネストが深すぎる時」に該当する場合を除き、文字列リテラルを char 配列以外の初期化に使用することはできない
-// また、2次以上の配列を中括弧なしの文字列で初期化することはできない
-// 
-// ネストが浅すぎる時: 
-// char str[]~[2] = {"abc~", "~", ...}; のようなパターンだと、最下位レベルの配列要素の数まで各リテラルを打ち切り、各リテラルと同じレベルに展開する
-// - 例えば、 char str[][2][2] = {"abc", "def", "ghi"}; とするとこの初期化は {'a', 'b', 'd', 'e', 'g', 'h'} と同じ
-// - この時、 {{'a', 'b'}, {'d', 'e'}, {'g', 'h'}} とはならないことに注意
-// - よって、基本的な初期化のルールに従って char str[2][2][2] = {{{'a', 'b'}, {'d', 'e'}}, {{'g', 'h'}, {}}}; と同様の初期化であると解釈される
-// 
-// ネストが深すぎる時: 
-// 単にその文字列リテラルへのポインタを要素として代入することになり、冗長な要素の読み飛ばしは基本的なネストのルールに従う
-// - 例えば、 char str[][2] = {{{"abc"}}, "def"}; は {{"abc", 0}, 'd', 'e'} すなわち {{(char)&.LC0, 0}, {'d', 'e'}} である
-// - これは make_lvar_init など Initializer を Node に変換する時に処理するものとする
-// 
 // 生成規則:
 // string-initializer = string-literal
-fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
+fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	// 今は w_char リテラルなどは扱わないため、int 配列を文字列リテラルで初期化することはできない
-	let (dim, elem_typ) = typ.array_dim();
-
 	if typ.typ != Type::Array || typ.ptr_end.unwrap() != Type::Char {
 		error_with_token!("型\"{}\"は文字列リテラルで初期化できません", &*token_ptr.borrow(), typ);
 	}
-	// TODO: 細かい違いを吸収する必要がある
+
 	let ptr = Rc::clone(token_ptr);
 	let elem_typ = typ.ptr_to.clone().unwrap();
-	let end_elem = Initializer::new(&typ.make_deref().unwrap(), &new_num(0, Rc::clone(&ptr)));
 	let literal = expect_literal(token_ptr); 
-	let mut init = 
-	if literal.len() > 0 {
-		let mut _init = Initializer::new(&elem_typ.borrow(), &new_num(literal.as_bytes()[0] as i32, Rc::clone(&ptr)));
-		for c in literal.as_bytes().iter().map(|c | *c as i32) {
-			_init.push_element(Initializer::new(&elem_typ.borrow(), &new_num(c, Rc::clone(&ptr))));
-		}
-		_init
-	} else {
-		end_elem.clone()
-	};
-	init.push_element(end_elem);
-	init
+	
+	for c in literal.as_bytes().iter().map(|c | *c as i32) {
+		eprintln!("{}", c);
+		init.push_element(Initializer::new(&elem_typ.borrow(), &new_num(c, Rc::clone(&ptr))));
+	}
+	init.push_element(Initializer::new(&typ.make_deref().unwrap(), &new_num(0, Rc::clone(&ptr))));
+	let node_ptr = init.elements[0].borrow().node.clone().unwrap();
+	init.insert(typ, &node_ptr);
+	init.is_literal = true;
 }
 
 // C99 以降の designator は現段階ではサポートしない
@@ -713,6 +691,22 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // "int x[2][2] = {{{1, 2, 3}, 10}, 20};" -> x[0][0] = 1, x[0][1] = 10, x[1][0] = 20;
 // - これは、それ以上の sub-array がない場合には先頭の要素のみを扱うことになっている
 // - 例えば、 int x = {{2, 3}, 4}; なども valid であり、これは単に int x = 2; と同じ
+// 
+// 文字列リテラルによる初期化のルール
+// char str[] = "abc"; と char str[] = {"abc"}; は char str[] = {'a', 'b', 'c', '\0'}; と同じ(1つめが例外的表現)
+// 「ネストが深すぎる時」に該当する場合を除き、文字列リテラルを char 配列以外の初期化に使用することはできない
+// また、2次以上の配列を中括弧なしの文字列で初期化することはできない
+// 
+// ネストが浅すぎる時: 
+// char str[]~[2] = {"abc~", "~", ...}; のようなパターンだと、最下位レベルの配列要素の数まで各リテラルを打ち切り、各リテラルと同じレベルに展開する
+// - 例えば、 char str[][2][2] = {"abc", "def", "ghi"}; とするとこの初期化は {'a', 'b', 'd', 'e', 'g', 'h'} と同じ
+// - この時、 {{'a', 'b'}, {'d', 'e'}, {'g', 'h'}} とはならないことに注意
+// - よって、基本的な初期化のルールに従って char str[2][2][2] = {{{'a', 'b'}, {'d', 'e'}}, {{'g', 'h'}, {}}}; と同様の初期化であると解釈される
+// 
+// ネストが深すぎる時: 
+// 単にその文字列リテラルへのポインタを要素として代入することになり、冗長な要素の読み飛ばしは基本的なネストのルールに従う
+// - 例えば、 char str[][2] = {{{"abc"}}, "def"}; は {{"abc", 0}, 'd', 'e'} すなわち {{(char)&.LC0, 0}, {'d', 'e'}} である
+// - これは make_lvar_init など Initializer を Node に変換する時に処理するものとする
 fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array {
 		let elem_typ = typ.make_deref().unwrap();
@@ -2012,10 +2006,8 @@ pub mod tests {
 	#[test]
 	fn init() {
 		let src: &str = "
-			int x = {4, 5};
-			int X[4][2][1] = {1, {2, 3}, 4, 5, {6}, 7, 8, 9};
-			int Y[][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
-			int *P[][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
+			
+			char str[][2][2] = {\"str\"};
 		";
 		test_init(src);
 

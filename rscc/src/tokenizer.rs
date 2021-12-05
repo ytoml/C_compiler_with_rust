@@ -458,8 +458,9 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 
 pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
 	if is_kind(token_ptr, Tokenkind::StringTk) {
+		let literal = token_ptr.borrow().body.clone().unwrap();
 		token_ptr_exceed(token_ptr);
-		 token_ptr.borrow().body.clone().unwrap()
+		literal
 	} else {
 		error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
 	}

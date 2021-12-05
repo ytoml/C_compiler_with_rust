@@ -13,7 +13,7 @@ pub struct Initializer {
 	pub node:		Option<NodeRef>,		// 初期化する値に対応する式 
 	pub typ:		Option<TypeCell>,		// タイプ
 	pub elements:	Vec<InitializerRef>,	// 配列の各要素
-	// pub is_flex:	bool,					// 配列サイズを指定しない初期化
+	pub is_literal: bool,					// リテラルに起因する char[] の場合のみ使用する
 }
 
 impl Initializer {
