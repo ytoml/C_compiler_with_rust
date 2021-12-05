@@ -13,12 +13,19 @@ pub struct Initializer {
 	pub node:		Option<NodeRef>,		// 初期化する値に対応する式 
 	pub typ:		Option<TypeCell>,		// タイプ
 	pub elements:	Vec<InitializerRef>,	// 配列の各要素
-	pub is_flex:	bool,					// 配列サイズを指定しない初期化
+	// pub is_flex:	bool,					// 配列サイズを指定しない初期化
 }
 
 impl Initializer {
+	#[inline]
 	pub fn new(typ: &TypeCell, node: &NodeRef) -> Self {
 		Initializer { node: Some(Rc::clone(node)), typ: Some(typ.clone()), ..Default::default() }
+	}
+
+	#[inline]
+	pub fn insert(&mut self, typ: &TypeCell, node: &NodeRef) {
+		let _ = self.typ.insert(typ.clone());
+		let _ = self.node.insert(Rc::clone(node));
 	}
 
 	#[inline]

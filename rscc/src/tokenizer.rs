@@ -456,19 +456,17 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	}
 }
 
-pub fn expect_literal(token_ptr: &mut TokenRef) -> &str {
+pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
 	if is_kind(token_ptr, Tokenkind::StringTk) {
 		token_ptr_exceed(token_ptr);
-		let literal = token_ptr.borrow().body.clone().unwrap();
-		// TODO: スコープ管理
-		literal
+		 token_ptr.borrow().body.clone().unwrap()
 	} else {
 		error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
 	}
 }
 
 #[inline]
-pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<&str> {
+pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<String> {
 	if is_kind(token_ptr, Tokenkind::StringTk) {
 		Some(expect_literal(token_ptr))
 	} else {

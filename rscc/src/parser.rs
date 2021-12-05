@@ -569,7 +569,12 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
 fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, is_flex: bool, lvar_ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
-	let init = initializer(token_ptr, &typ);
+	if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
+		error_with_token!("2次元以上の配列\"{}\"は単一の文字リテラルでは初期化できません。", &*token_ptr.borrow(), typ);
+	}
+
+	let mut init = Initializer::default();
+	initializer(token_ptr, &typ, &mut init);
 	if is_flex {
 		let _ = typ.array_size.insert(init.flex_elem_count());
 	}
@@ -598,27 +603,45 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 
 // 生成規則:
 // initializer = "{" array-initializer | str-initializer | assign
-fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
+fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	if consume(token_ptr, "{") {
 		if typ.typ != Type::Array {
 			// スカラ値に代入することになるため、最初の要素以外読み飛ばす
-			Initializer::new(&typ, array_initializer(token_ptr, typ).node.as_ref().unwrap())
+			let mut _init = Initializer::default();
+			array_initializer(token_ptr, typ, &mut _init);
+			init.insert(typ, _init.node.as_ref().unwrap());
 		} else {
-			array_initializer(token_ptr, typ)
+			array_initializer(token_ptr, typ, init);
 		}
-	} else if is_kind(token_ptr, Tokenkind::StringTk) {
-		string_initializer(token_ptr, typ)
+	// } else if typ.typ == Type::Array && is_kind(token_ptr, Tokenkind::StringTk) {
+	// 	string_initializer(token_ptr, typ)
 	} else {
-		let node_ptr = assign(token_ptr);
-		Initializer::new(&typ, &node_ptr)
+		init.insert(typ, &assign(token_ptr));
 	}
 } 
 
-// char
+// 文字列リテラルによる初期化のルール
+// char str[] = "abc"; と char str[] = {"abc"}; は char str[] = {'a', 'b', 'c', '\0'}; と同じ(1つめが例外的表現)
+// 下記の「ネストが深すぎる時」に該当する場合を除き、文字列リテラルを char 配列以外の初期化に使用することはできない
+// また、2次以上の配列を中括弧なしの文字列で初期化することはできない
+// 
+// ネストが浅すぎる時: 
+// char str[]~[2] = {"abc~", "~", ...}; のようなパターンだと、最下位レベルの配列要素の数まで各リテラルを打ち切り、各リテラルと同じレベルに展開する
+// - 例えば、 char str[][2][2] = {"abc", "def", "ghi"}; とするとこの初期化は {'a', 'b', 'd', 'e', 'g', 'h'} と同じ
+// - この時、 {{'a', 'b'}, {'d', 'e'}, {'g', 'h'}} とはならないことに注意
+// - よって、基本的な初期化のルールに従って char str[2][2][2] = {{{'a', 'b'}, {'d', 'e'}}, {{'g', 'h'}, {}}}; と同様の初期化であると解釈される
+// 
+// ネストが深すぎる時: 
+// 単にその文字列リテラルへのポインタを要素として代入することになり、冗長な要素の読み飛ばしは基本的なネストのルールに従う
+// - 例えば、 char str[][2] = {{{"abc"}}, "def"}; は {{"abc", 0}, 'd', 'e'} すなわち {{(char)&.LC0, 0}, {'d', 'e'}} である
+// - これは make_lvar_init など Initializer を Node に変換する時に処理するものとする
+// 
 // 生成規則:
 // string-initializer = string-literal
 fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
-	// 今は w_char リテラルなどは扱わないため、
+	// 今は w_char リテラルなどは扱わないため、int 配列を文字列リテラルで初期化することはできない
+	let (dim, elem_typ) = typ.array_dim();
+
 	if typ.typ != Type::Array || typ.ptr_end.unwrap() != Type::Char {
 		error_with_token!("型\"{}\"は文字列リテラルで初期化できません", &*token_ptr.borrow(), typ);
 	}
@@ -644,17 +667,20 @@ fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 // C99 以降の designator は現段階ではサポートしない
 // 生成規則:
 // array-initializer = (initializer ("," initializer)* ","? "}"
-fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
+fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
-	let first_elem = initializer(token_ptr, &elem_typ);
+	let mut first_elem = Initializer::default();
+	initializer(token_ptr, &elem_typ, &mut first_elem);
 	// 配列の Initializer の node は最初の要素を指すことにする
-	let mut init = Initializer::new(typ, first_elem.node.as_ref().unwrap()); 
+	init.insert(typ, first_elem.node.as_ref().unwrap());
 	init.push_element(first_elem);
 	
 	loop {
 		if consume(token_ptr, ",") {
 			if !consume(token_ptr, "}") {
-				init.push_element(initializer(token_ptr, &elem_typ));
+				let mut elem = Initializer::default();
+				initializer(token_ptr, &elem_typ, &mut elem);
+				init.push_element(elem);
 				continue;
 			}
 		} else {
@@ -662,7 +688,6 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell) -> Initializer {
 		}
 		break;
 	}
-	init
 }
 
 // オフセットで直接代入したい場合の LvarNd
