@@ -613,7 +613,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 		} else {
 			array_initializer(token_ptr, typ, init);
 		}
-	} else if typ.typ == Type::Array && is_kind(token_ptr, Tokenkind::StringTk) {
+	} else if is_kind(token_ptr, Tokenkind::StringTk) {
 		string_initializer(token_ptr, typ, init);
 	} else {
 		init.insert(typ, &assign(token_ptr));
@@ -624,7 +624,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 // string-initializer = string-literal
 fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	// 今は w_char リテラルなどは扱わないため、int 配列を文字列リテラルで初期化することはできない
-	if typ.typ != Type::Array || typ.ptr_end.unwrap() != Type::Char {
+	if typ.ptr_end.unwrap() != Type::Char {
 		error_with_token!("型\"{}\"は文字列リテラルで初期化できません", &*token_ptr.borrow(), typ);
 	}
 
@@ -633,9 +633,9 @@ fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initi
 	let literal = expect_literal(token_ptr); 
 	
 	for c in literal.as_bytes().iter().map(|c | *c as i32) {
-		eprintln!("{}", c);
 		init.push_element(Initializer::new(&elem_typ.borrow(), &new_num(c, Rc::clone(&ptr))));
 	}
+
 	init.push_element(Initializer::new(&typ.make_deref().unwrap(), &new_num(0, Rc::clone(&ptr))));
 	let node_ptr = init.elements[0].borrow().node.clone().unwrap();
 	init.insert(typ, &node_ptr);
@@ -707,6 +707,12 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // 単にその文字列リテラルへのポインタを要素として代入することになり、冗長な要素の読み飛ばしは基本的なネストのルールに従う
 // - 例えば、 char str[][2] = {{{"abc"}}, "def"}; は {{"abc", 0}, 'd', 'e'} すなわち {{(char)&.LC0, 0}, {'d', 'e'}} である
 // - これは make_lvar_init など Initializer を Node に変換する時に処理するものとする
+// 
+// また、char[] を文字列で初期化する場合に、例えば
+// char str[] = {"abc", "def"};
+// はスカラの初期化と同様に2つ目の要素を飛ばせばよさそうに見えるが、 gcc では コンパイルエラーとなる。
+// gcc では char str[] = "abc", "def"; のようにパースされているのかもしれないが、よく分からない。
+// clang では3行上の例は valid な文法としてコンパイル可能。
 fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRef) -> NodeRef {
 	if typ.typ == Type::Array {
 		let elem_typ = typ.make_deref().unwrap();
@@ -2006,8 +2012,10 @@ pub mod tests {
 	#[test]
 	fn init() {
 		let src: &str = "
-			
+			int x = {4, 5};
+			int X[4][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
 			char str[][2][2] = {\"str\"};
+			char str[] = {\"str\"};
 		";
 		test_init(src);
 
