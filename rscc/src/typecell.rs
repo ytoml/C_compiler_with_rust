@@ -129,6 +129,11 @@ impl TypeCell {
 		dim.iter().product::<usize>()
 	}
 
+	#[inline]
+	pub fn is_char_1d_array(&self) -> bool {
+		self.typ == Type::Array && self.make_deref().unwrap().typ == Type::Char
+	}
+
 	pub fn bytes(&self) -> usize {
 		match self.typ {
 			Type::Array => {

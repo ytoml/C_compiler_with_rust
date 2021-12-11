@@ -620,6 +620,97 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 	}
 } 
 
+fn _initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
+	if typ.is_char_1d_array() {
+		let braced = consume(token_ptr, "{");
+		let ptr = Rc::clone(token_ptr);
+		if let Some(body) = consume_literal(token_ptr) {
+			char_array_initializer(body, typ.array_size, init, ptr);
+		}
+		if braced && !consume(token_ptr, "}") { error_with_token!("char の1次元配列を文字列リテラルで初期化する場合は1つのみ配置してください。", &token_ptr.borrow()); }
+	} else {
+		if consume(token_ptr, "{") {
+			if typ.typ != Type::Array {
+				// スカラ値に代入することになるため、最初の要素以外読み飛ばす
+				let mut _init = Initializer::default();
+				array_initializer(token_ptr, typ, &mut _init);
+				init.insert(typ, _init.node.as_ref().unwrap());
+			} else {
+				array_initializer(token_ptr, typ, init);
+			}
+		} else if is_kind(token_ptr, Tokenkind::StringTk) {
+			if typ.array_size.is_some() && ![Type::Char, Type::Ptr, Type::Array].contains(&typ.ptr_to.as_ref().unwrap().borrow().typ) {
+				error_with_token!("文字列リテラルで\"{}\"型の変数を初期化することはできません", &*token_ptr.borrow(), typ);
+			}
+			string_initializer(token_ptr, typ, init);
+		} else {
+			init.insert(typ, &assign(token_ptr));
+		}
+	}
+} 
+
+fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Initializer, ptr: TokenRef) {
+	let elems = body.as_bytes().iter().map(|c| *c as i32);
+	let elem_typ = TypeCell::new(Type::Char);
+	// 配列は、どんな型であれ初期値の指定がない箇所は0で初期化されるため、終端'\0'としての (int)0 を生成するノードはここでは必要ない
+	if let Some(size) = array_size {
+		let mut ix: usize = 0;
+		for e in elems {
+			if ix >= size { break; }
+			ix += 1;
+			init.push_element(Initializer::new(&elem_typ, &new_num(e, Rc::clone(&ptr))));
+		}
+	} else {
+		for e in elems{
+			init.push_element(Initializer::new(&elem_typ, &new_num(e, Rc::clone(&ptr))));
+		}
+	}
+}
+
+// C99 以降の designator は現段階ではサポートしない
+// 生成規則:
+// array-initializer = (initializer ("," initializer)* ","? "}"
+fn _array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
+	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
+	let base_typ = TypeCell::default(); // TODO
+	let mut first_elem = Initializer::default();
+
+	if is_kind(token_ptr, Tokenkind::StringTk) {}
+
+
+	initializer(token_ptr, &elem_typ, &mut first_elem);
+
+	let elem_flatten_size = 1;
+	loop {
+		if is(token_ptr, "{") {
+			// 配列がネストの場合
+			let mut elem = Initializer::default();
+			initializer(token_ptr, &elem_typ, &mut elem);
+			init.push_element(elem);
+		} else {
+			// ネストが浅い場合
+			for _ in 0..elem_flatten_size {
+				let mut elem = Initializer::default();
+				initializer(token_ptr, &base_typ, &mut elem);
+				init.push_element(elem);
+				if is(token_ptr, "}") { break; }
+			}
+		}
+
+		if consume(token_ptr, ",") {
+			if !consume(token_ptr, "}") { continue; }
+
+		} else {
+			expect(token_ptr, "}");
+		}
+		break;
+	}
+
+	// 配列の Initializer の node は最初の要素を指すことにする
+	init.insert(typ, first_elem.node.as_ref().unwrap());
+	init.push_element(first_elem);
+}
+
 // 生成規則:
 // string-initializer = string-literal
 fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
