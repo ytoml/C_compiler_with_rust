@@ -602,135 +602,65 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 }
 
 // 生成規則:
-// initializer = "{" array-initializer | str-initializer | assign
+// initializer = "{" array-initializer | char-array-initializer | assign
 fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
+	// char の1次元配列のみ文字列リテラルで初期化できるため、特別扱い
+	if typ.is_char_1d_array() {
+		// string-literal か "{" string-literal "}" の形であれば char-array-initializer を呼ぶ(トークンの先読みが必要なため、clone してから読んでいることに注意)
+		let mut _token_ptr = Rc::clone(token_ptr);
+		let braced = consume(&mut _token_ptr, "{");
+		let ptr = Rc::clone(&_token_ptr);
+		if let Some(body) = consume_literal(&mut _token_ptr) {
+			if braced { expect(token_ptr, "{"); }
+			let _ = expect_literal(token_ptr);
+			char_array_initializer(body, typ.array_size, init, ptr);
+			if braced && !consume(token_ptr, "}") { error_with_token!("char の1次元配列を文字列リテラルで初期化する場合は1つのみ配置してください。", &token_ptr.borrow()); }
+			return;
+		}
+	} 
+
 	if consume(token_ptr, "{") {
 		if typ.typ != Type::Array {
 			// スカラ値に代入することになるため、最初の要素以外読み飛ばす
+			eprintln!("{}", typ);
 			let mut _init = Initializer::default();
 			array_initializer(token_ptr, typ, &mut _init);
 			init.insert(typ, _init.node.as_ref().unwrap());
 		} else {
 			array_initializer(token_ptr, typ, init);
 		}
-	} else if is_kind(token_ptr, Tokenkind::StringTk) {
-		string_initializer(token_ptr, typ, init);
 	} else {
+		if is_kind(token_ptr, Tokenkind::StringTk) && typ.array_size.is_some() && ![Type::Char, Type::Ptr, Type::Array].contains(&typ.make_deref().unwrap().typ) {
+			error_with_token!("文字列リテラルで\"{}\"型の変数を初期化することはできません", &*token_ptr.borrow(), typ);
+		}
 		init.insert(typ, &assign(token_ptr));
 	}
 } 
 
-fn _initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
-	if typ.is_char_1d_array() {
-		let braced = consume(token_ptr, "{");
-		let ptr = Rc::clone(token_ptr);
-		if let Some(body) = consume_literal(token_ptr) {
-			char_array_initializer(body, typ.array_size, init, ptr);
-		}
-		if braced && !consume(token_ptr, "}") { error_with_token!("char の1次元配列を文字列リテラルで初期化する場合は1つのみ配置してください。", &token_ptr.borrow()); }
-	} else {
-		if consume(token_ptr, "{") {
-			if typ.typ != Type::Array {
-				// スカラ値に代入することになるため、最初の要素以外読み飛ばす
-				let mut _init = Initializer::default();
-				array_initializer(token_ptr, typ, &mut _init);
-				init.insert(typ, _init.node.as_ref().unwrap());
-			} else {
-				array_initializer(token_ptr, typ, init);
-			}
-		} else if is_kind(token_ptr, Tokenkind::StringTk) {
-			if typ.array_size.is_some() && ![Type::Char, Type::Ptr, Type::Array].contains(&typ.ptr_to.as_ref().unwrap().borrow().typ) {
-				error_with_token!("文字列リテラルで\"{}\"型の変数を初期化することはできません", &*token_ptr.borrow(), typ);
-			}
-			string_initializer(token_ptr, typ, init);
-		} else {
-			init.insert(typ, &assign(token_ptr));
-		}
-	}
-} 
-
+// 生成規則:
+// char-array-initializer = string-literal
 fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Initializer, ptr: TokenRef) {
 	let elems = body.as_bytes().iter().map(|c| *c as i32);
 	let elem_typ = TypeCell::new(Type::Char);
-	// 配列は、どんな型であれ初期値の指定がない箇所は0で初期化されるため、終端'\0'としての (int)0 を生成するノードはここでは必要ない
-	if let Some(size) = array_size {
+	let size = 
+	if let Some(_size) = array_size {
+		// 配列は、どんな型であれ初期値の指定がない箇所は0で初期化されるため、固定長の場合は終端'\0'としての (int)0 を生成するノードは不要
 		let mut ix: usize = 0;
 		for e in elems {
-			if ix >= size { break; }
+			if ix >= _size { break; }
 			ix += 1;
 			init.push_element(Initializer::new(&elem_typ, &new_num(e, Rc::clone(&ptr))));
 		}
+		_size
 	} else {
 		for e in elems{
 			init.push_element(Initializer::new(&elem_typ, &new_num(e, Rc::clone(&ptr))));
 		}
-	}
-}
-
-// C99 以降の designator は現段階ではサポートしない
-// 生成規則:
-// array-initializer = (initializer ("," initializer)* ","? "}"
-fn _array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
-	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
-	let base_typ = TypeCell::default(); // TODO
-	let mut first_elem = Initializer::default();
-
-	if is_kind(token_ptr, Tokenkind::StringTk) {}
-
-
-	initializer(token_ptr, &elem_typ, &mut first_elem);
-
-	let elem_flatten_size = 1;
-	loop {
-		if is(token_ptr, "{") {
-			// 配列がネストの場合
-			let mut elem = Initializer::default();
-			initializer(token_ptr, &elem_typ, &mut elem);
-			init.push_element(elem);
-		} else {
-			// ネストが浅い場合
-			for _ in 0..elem_flatten_size {
-				let mut elem = Initializer::default();
-				initializer(token_ptr, &base_typ, &mut elem);
-				init.push_element(elem);
-				if is(token_ptr, "}") { break; }
-			}
-		}
-
-		if consume(token_ptr, ",") {
-			if !consume(token_ptr, "}") { continue; }
-
-		} else {
-			expect(token_ptr, "}");
-		}
-		break;
-	}
-
-	// 配列の Initializer の node は最初の要素を指すことにする
-	init.insert(typ, first_elem.node.as_ref().unwrap());
-	init.push_element(first_elem);
-}
-
-// 生成規則:
-// string-initializer = string-literal
-fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
-	// 今は w_char リテラルなどは扱わないため、int 配列を文字列リテラルで初期化することはできない
-	if typ.ptr_end.unwrap() != Type::Char {
-		error_with_token!("型\"{}\"は文字列リテラルで初期化できません", &*token_ptr.borrow(), typ);
-	}
-
-	let ptr = Rc::clone(token_ptr);
-	let elem_typ = typ.ptr_to.clone().unwrap();
-	let literal = expect_literal(token_ptr); 
-	
-	for c in literal.as_bytes().iter().map(|c | *c as i32) {
-		init.push_element(Initializer::new(&elem_typ.borrow(), &new_num(c, Rc::clone(&ptr))));
-	}
-
-	init.push_element(Initializer::new(&typ.make_deref().unwrap(), &new_num(0, Rc::clone(&ptr))));
-	let node_ptr = init.elements[0].borrow().node.clone().unwrap();
-	init.insert(typ, &node_ptr);
-	init.is_literal = true;
+		init.push_element(Initializer::new(&elem_typ, &new_num(0, Rc::clone(&ptr))));
+		init.elements.len()
+	};
+	// この関数が呼ばれている時点でネストが深すぎるということはないため、ここで持たせる node はなんでも良い
+	init.insert(&elem_typ.make_array_of(size), &new_num(0, Rc::clone(&ptr)));
 }
 
 // C99 以降の designator は現段階ではサポートしない
@@ -738,25 +668,38 @@ fn string_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initi
 // array-initializer = (initializer ("," initializer)* ","? "}"
 fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
-	let mut first_elem = Initializer::default();
-	initializer(token_ptr, &elem_typ, &mut first_elem);
+	loop {
+		if is(token_ptr, "{") || elem_typ.typ != Type::Array {
+			let mut elem = Initializer::default();
+			initializer(token_ptr, &elem_typ, &mut elem);
+			init.push_element(elem);
+		} else {
+			// この深さではまだ配列が来るべきであるにも関わらず、初期化文のネストが浅かった場合の処理
+			let (base_typ, elem_flatten_size) =
+			if is_kind(token_ptr, Tokenkind::StringTk) && elem_typ.get_base_cell().typ != Type::Ptr {
+				// 文字列リテラルかつ最小要素の型がポインタでない場合は、ベースの型を1次元配列とみなして読む(型チェックは initializer() で行うためここではスルー)
+				let _typ = elem_typ.get_last_level_array().unwrap();
+				let _flatten_size = elem_typ.flatten_size()/_typ.array_size.unwrap();
+				(_typ, _flatten_size)
+			} else {
+				(elem_typ.get_base_cell(), elem_typ.flatten_size())
+			};
+			for _ in 0..elem_flatten_size {
+				let mut elem = Initializer::default();
+				initializer(token_ptr, &base_typ, &mut elem);
+				init.push_element(elem);
+				let _ = consume(token_ptr, ",");
+				if is(token_ptr, "}") { break; }
+			}
+		}
+		let _ = consume(token_ptr, ",");
+		if consume(token_ptr, "}") { break; }
+	}
+
 	// 配列の Initializer の node は最初の要素を指すことにする
+	let first_elem = init.elements[0].borrow().clone();
 	init.insert(typ, first_elem.node.as_ref().unwrap());
 	init.push_element(first_elem);
-	
-	loop {
-		if consume(token_ptr, ",") {
-			if !consume(token_ptr, "}") {
-				let mut elem = Initializer::default();
-				initializer(token_ptr, &elem_typ, &mut elem);
-				init.push_element(elem);
-				continue;
-			}
-		} else {
-			expect(token_ptr, "}");
-		}
-		break;
-	}
 }
 
 // オフセットで直接代入したい場合の LvarNd
@@ -2105,8 +2048,8 @@ pub mod tests {
 		let src: &str = "
 			int x = {4, 5};
 			int X[4][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
-			char str[][2][2] = {\"str\"};
-			char str[] = {\"str\"};
+			char str[][2][2] = {{{{\"str\"}}}};
+			// char str[] = {\"str\"};
 		";
 		test_init(src);
 

@@ -144,6 +144,15 @@ impl TypeCell {
 		}
 	}
 
+	pub fn get_last_level_array(&self) -> Option<TypeCell> {
+		let (dim, typ) = self.array_dim();
+		if let Some(d) = dim.last() {
+			Some(typ.make_array_of(*d))
+		} else {
+			None
+		}
+	}
+
 	fn get_type_string(&self, s: impl Into<String>) -> String {
 		let s = s.into();
 		if let Some(deref) = &self.ptr_to {
