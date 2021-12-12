@@ -250,7 +250,7 @@ fn new_cast(expr: NodeRef, typ: TypeCell) -> NodeRef {
 	Rc::new(RefCell::new(Node { kind: Nodekind::CastNd, token: token, typ: typ, left: left, ..Default::default() }))
 }
 
-// 型を構文木全体に対して設定する関数 (ここで cast なども行う？)
+// 型を構文木全体に対して設定する関数
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
 
@@ -373,7 +373,6 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	let mut globals : Vec<NodeRef> = Vec::new();
 
 	while !at_eof(token_ptr) {
-		// トップレベル(グローバルスコープ)では、現在は関数宣言のみができる
 		globals.push(global(token_ptr));
 
 		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
@@ -384,7 +383,6 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	globals
 }
 
-// プロトタイプ宣言は現状ではサポートしない
 // 生成規則:
 // global = type ident global-suffix
 // global-suffix = "(" func-args ")" ("{" stmt* "}" | ";") | "[" array-suffix ";"
@@ -457,13 +455,20 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 			}
 		}
 
+		let mut is_flex = false;
 		if consume(token_ptr, "[") {
-			typ = array_suffix(token_ptr, typ).0;
+			let array_info = array_suffix(token_ptr, typ);
+			typ = array_info.0;
+			is_flex = array_info.1;
 		}
-		expect(token_ptr, ";");
 
-		new_gvar(name.clone(), typ.clone(), ptr)
-
+		// TODO: gvar_initializer
+		if consume(token_ptr, "=") {
+			gvar_initializer(token_ptr, name.clone(), typ.clone(), is_flex, ptr)
+		} else {
+			expect(token_ptr, ";");
+			new_gvar(name.clone(), typ.clone(), ptr)
+		}
 	};
 	// GLOBALS には定義したノードを直接保存する(プロトタイプ宣言済の場合は入れ替え)
 	let _ = GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
@@ -510,6 +515,26 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 	}
 	// args.len() != arg_types.len() ならば引数名が省略されており、プロトタイプ宣言であるとみなせる
 	(args, arg_typs)
+}
+
+// 生成規則としては lvar_initializer と同じ
+fn gvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, is_flex: bool, gvar_ptr: TokenRef) -> NodeRef {
+	if typ.is_array() && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
+	if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
+		error_with_token!("2次元以上の配列\"{}\"は単一の文字リテラルでは初期化できません。", &*token_ptr.borrow(), typ);
+	}
+
+	let mut init = Initializer::default();
+	initializer(token_ptr, &typ, &mut init);
+	if is_flex {
+		let _ = typ.array_size.insert(init.flex_elem_count());
+	}
+
+	// TODO: gvar に書き換え、compile time constant であることを確かめる必要がある
+	let gvar = new_gvar(name, typ.clone(), gvar_ptr);
+	// make_gvar_init()
+	// check_compile_time_constant()
+	gvar
 }
 
 // 生成規則:
