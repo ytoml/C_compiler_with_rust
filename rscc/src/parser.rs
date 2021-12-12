@@ -1,6 +1,6 @@
 // 再帰下降構文のパーサ
 use std::{cell::RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, LinkedList};
 use std::rc::Rc;
 use std::sync::Mutex;
 
@@ -23,7 +23,8 @@ use crate::{
 static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
-pub static LITERALS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static LITERALS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+pub static ORDERED_LITERALS: Lazy<Mutex<LinkedList<(String, String)>>> = Lazy::new(|| Mutex::new(LinkedList::new()));
 static LITERAL_COUNTS: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
 // 文字列リテラルを記憶
@@ -36,7 +37,8 @@ fn store_literal(body: impl Into<String>) -> String {
 	} else {
 		let id = *literal_access.1;
 		let _name = format!(".LC{}", id);
-		literal_access.0.insert(body, _name.clone());
+		literal_access.0.insert(body.clone(), _name.clone());
+		ORDERED_LITERALS.try_lock().unwrap().push_back((body, _name.clone()));
 		*literal_access.1 += 1;
 		_name
 	};

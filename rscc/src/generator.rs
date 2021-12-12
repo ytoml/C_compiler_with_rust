@@ -5,12 +5,12 @@ use crate::{
 		cast, get_ctrl_count, get_func_count, reg_ax, reg_di, word_ptr
 	},
 	node::{Nodekind, NodeRef},
-	parser::LITERALS,
+	parser::ORDERED_LITERALS,
 	typecell::Type
 };
 
 pub fn load_literals() {
-	let literals_access = LITERALS.try_lock().unwrap();
+	let literals_access = ORDERED_LITERALS.try_lock().unwrap();
 	if literals_access.is_empty() { return; }
 
 	asm_write!("\t.section .rodata"); // read-only data
