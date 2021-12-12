@@ -11,7 +11,7 @@ Rui Ueyama さんの
 ```
 で実行できるようにする予定です。
 
-現在、上記記事の step27 まで実装しており、
+現在、上記記事の step は全て実装済みで、
 - 基本的な単項、二項演算
 	- `+=` のような演算代入や前置/後置のインクリメント/デクリメントにも対応
 	- `sizeof` にも対応していますが、現在整数型を `int` しかサポートしていないため、 `int` として扱われます。
@@ -21,6 +21,7 @@ Rui Ueyama さんの
 	- ポインタは全く同じ型どうしの場合のみに引き算ができ、それらのアドレスオフセットが変数いくつ分になるかが評価値となります。
 	- スタックにプッシュする値を全て8バイトで処理している関係で、符号拡張などが甘い部分があります。今後修正予定です。
 - 配列型の変数と添字によるアクセス
+- ローカル変数宣言時の初期化;
 - グローバル変数
 - 文字列リテラル及び char リテラル
 	- utf-8 です
@@ -65,8 +66,12 @@ int main() {
 	char *str = "This is test script";
 	showChar(str[13], str[14], str[15], str[16], str[17], str[18]);
 
+	char str2[] = {"This is test script",}, str3[] = "rustcc";
+	showChar(str2[13], str2[14], str2[15], str2[16], str2[17], str2[18]);
+	showChar(str3[0], str3[1], str3[2], str3[3], str3[4], str3[5]);
+
 	char lf = 10;
-	printf_wrap("This is test script for step%d%c", 'a'-70, lf);
+	printf_wrap("This is test script for step%d%c", 'a'-69, lf);
 
 	return x;
 }
@@ -85,12 +90,14 @@ int fib(int N) {
 I got 99 as argument.
 I got 24000 as argument.
 I got 8 as argument.
-I got 274903112992 as argument.
-I got 274903113392 as argument.
-I got 274903116992 as argument.
+I got 274903117088 as argument.
+I got 274903117488 as argument.
+I got 274903121088 as argument.
 I got 55 as argument.
 I got 3996334433 as argument.
 showChar called, message is "script"
-This is test script for step27
+showChar called, message is "script"
+showChar called, message is "rustcc"
+This is test script for step28
 55
 ```
