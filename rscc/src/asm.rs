@@ -69,6 +69,7 @@ pub fn reg_di(size: usize) -> &'static str {
 pub fn word_ptr(size: usize) -> &'static str {
 	match size {
 		1 => { "BYTE PTR" }
+		2 => { "WORD PTR" }
 		4 => { "DWORD PTR" }
 		8 => { "QWORD PTR" }
 		_ => { panic!("{}", UNSUPPORTED_REG_SIZE); }

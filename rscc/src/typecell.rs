@@ -68,8 +68,25 @@ pub struct TypeCell {
 }
 
 impl TypeCell {
+
+	#[inline]
 	pub fn new(typ: Type) -> Self {
 		TypeCell { typ: typ, ..Default::default()}
+	}
+
+	#[inline]
+	pub fn is_array(&self) -> bool {
+		self.typ == Type::Array
+	}
+	
+	#[inline]
+	pub fn is_non_array(&self) -> bool {
+		self.typ != Type::Array
+	}
+
+	#[inline]
+	pub fn is_one_of(&self, types: &[Type]) -> bool {
+		types.contains(&self.typ)
 	}
 
 	pub fn make_ptr_to(&self) -> Self {
@@ -100,15 +117,38 @@ impl TypeCell {
 		}
 	}
 
-	pub fn make_deref(&self) -> Self {
-		if ![Type::Array, Type::Ptr].contains(&self.typ) { panic!("not able to extract element from non-array"); } 
-		(*self.ptr_to.clone().unwrap().borrow()).clone()
+	#[inline]
+	pub fn make_deref(&self) -> Result<Self, ()> {
+		if self.is_one_of(&[Type::Array, Type::Ptr]) {
+			Ok((*self.ptr_to.clone().unwrap().borrow()).clone())
+		} else { Err(()) }
 	}
 
+	#[inline]
+	pub fn get_base_cell(&self) -> Self {
+		if let Some(_typ) = self.ptr_end {
+			Self::new(_typ)
+		} else {
+			panic!("cannot extract base type from non-pointer.");
+		}
+	}
+
+	#[inline]
 	pub fn make_func(ret_typ: Self, arg_typs: Vec<TypeCellRef>) -> Self {
 		let _ret_typ = Some(Rc::new(RefCell::new(ret_typ)));
 		let _arg_typs = Some(arg_typs);
 		TypeCell { typ: Type::Func, ret_typ: _ret_typ, arg_typs: _arg_typs, ..Default::default() }
+	}
+
+	#[inline]
+	pub fn flatten_size(&self) -> usize {
+		let (dim, _) = self.array_dim();
+		dim.iter().product::<usize>()
+	}
+
+	#[inline]
+	pub fn is_char_1d_array(&self) -> bool {
+		self.typ == Type::Array && self.make_deref().unwrap().typ == Type::Char
 	}
 
 	pub fn bytes(&self) -> usize {
@@ -121,11 +161,24 @@ impl TypeCell {
 		}
 	}
 
+	pub fn get_last_level_array(&self) -> Option<TypeCell> {
+		let (dim, typ) = self.array_dim();
+		if let Some(d) = dim.last() {
+			Some(typ.make_array_of(*d))
+		} else {
+			None
+		}
+	}
+
 	fn get_type_string(&self, s: impl Into<String>) -> String {
 		let s = s.into();
 		if let Some(deref) = &self.ptr_to {
-			let string = if let Some(size) = self.array_size {
-				format!("{}[{}]", s, size)
+			let string = if self.typ == Type::Array {
+				if let Some(size) = self.array_size {
+					format!("{}[{}]", s, size)
+				} else {
+					format!("{}[]", s)
+				}
 			} else if deref.borrow().typ == Type::Array {
 				format!(" ({}*)", s)
 			} else {

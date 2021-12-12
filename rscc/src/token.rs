@@ -169,9 +169,9 @@ impl Display for Token {
 }
 
 // トークンのポインタを読み進める
+#[inline]
 pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 	let tmp_ptr;
-
 	// next が None なら exit
 	match token_ptr.borrow().next.as_ref() {
 		Some(ptr) => {

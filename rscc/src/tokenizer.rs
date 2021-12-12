@@ -89,10 +89,11 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 				}
 
 				// C ではソース上での文字列リテラルの改行は認められていないので、行ごとのループ内でリテラルを読む処理を完結させて良い
+				let line_offset = lookat; // 文字列の先頭を指すように　line_offset を押さえておく
 				match read_str_literal(&string, &mut lookat, len) {
 					Ok(literal) => {
 						if let Some(body) = literal {
-							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::StringTk, body, file_num, line_num, lookat))));
+							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::StringTk, body, file_num, line_num, line_offset))));
 							token_ptr_exceed(&mut token_ptr);
 							continue;
 						}
@@ -106,7 +107,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 				match read_char_literal(&string, &mut lookat, len) {
 					Ok(encoded) => {
 						if let Some(val) = encoded {
-							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, val.to_string(), file_num, line_num, lookat))));
+							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, val.to_string(), file_num, line_num, line_offset))));
 							token_ptr_exceed(&mut token_ptr);
 							continue;
 						}
@@ -410,24 +411,44 @@ pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
 pub fn consume(token_ptr: &mut TokenRef, op: &str) -> bool {
-	if token_ptr.borrow().kind != Tokenkind::ReservedTk || token_ptr.borrow().body.as_ref().unwrap() != op {
-		false
-	} else {
+	if is(token_ptr, op) {
 		token_ptr_exceed(token_ptr);
 		true
+	} else {
+		false
 	}
+}
+
+#[inline]
+pub fn is(token_ptr: &mut TokenRef, op: &str) -> bool {
+	token_ptr.borrow().kind == Tokenkind::ReservedTk && token_ptr.borrow().body.as_ref().unwrap() == op 
+}
+
+// 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
+pub fn consume_number(token_ptr: &mut TokenRef) -> Option<i32> {
+	if token_ptr.borrow().kind == Tokenkind::NumTk {
+		Some(expect_number(token_ptr))
+	} else {
+		None
+	}
+}
+
+#[inline]
+pub fn is_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
+	token_ptr.borrow().kind == kind
 }
 
 // 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
-	if token_ptr.borrow().kind != kind {
-		false
-	} else {
+	if is_kind(token_ptr, kind) {
 		token_ptr_exceed(token_ptr);
 		true
+	} else {
+		false
 	}
 }
 
+#[inline]
 pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	if is_type(token_ptr) {
 		Some(expect_type(token_ptr))
@@ -436,6 +457,26 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	}
 }
 
+pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
+	if is_kind(token_ptr, Tokenkind::StringTk) {
+		let literal = token_ptr.borrow().body.clone().unwrap();
+		token_ptr_exceed(token_ptr);
+		literal
+	} else {
+		error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
+	}
+}
+
+#[inline]
+pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<String> {
+	if is_kind(token_ptr, Tokenkind::StringTk) {
+		Some(expect_literal(token_ptr))
+	} else {
+		None
+	}
+}
+
+#[inline]
 pub fn is_type(token_ptr: &mut TokenRef) -> bool {
 	token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains_key(token_ptr.borrow().body.as_ref().unwrap()) 
 }
