@@ -532,6 +532,8 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
+	if LOCALS.try_lock().unwrap().contains_key(&name) { error_with_token!("既に宣言された変数です。", &ptr.borrow()); }
+
 	let mut is_flex = false;
 
 	if consume(token_ptr, "[") {
@@ -545,6 +547,7 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	} else {
 		// 初期化しない場合は何もアセンブリを吐かない
 		if is_flex { error_with_token!("初期化しない場合は完全な配列サイズが必要です。", &ptr.borrow()); }
+		let _ = new_lvar(name, ptr, typ, true);
 		nop()
 	}
 }

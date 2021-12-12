@@ -89,10 +89,11 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 				}
 
 				// C ではソース上での文字列リテラルの改行は認められていないので、行ごとのループ内でリテラルを読む処理を完結させて良い
+				let line_offset = lookat; // 文字列の先頭を指すように　line_offset を押さえておく
 				match read_str_literal(&string, &mut lookat, len) {
 					Ok(literal) => {
 						if let Some(body) = literal {
-							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::StringTk, body, file_num, line_num, lookat))));
+							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::StringTk, body, file_num, line_num, line_offset))));
 							token_ptr_exceed(&mut token_ptr);
 							continue;
 						}
@@ -106,7 +107,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 				match read_char_literal(&string, &mut lookat, len) {
 					Ok(encoded) => {
 						if let Some(val) = encoded {
-							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, val.to_string(), file_num, line_num, lookat))));
+							token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(Tokenkind::NumTk, val.to_string(), file_num, line_num, line_offset))));
 							token_ptr_exceed(&mut token_ptr);
 							continue;
 						}
