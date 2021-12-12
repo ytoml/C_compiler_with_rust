@@ -562,7 +562,10 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 		typ = array_suffix(token_ptr, typ).0;
 	}
 
-	(typ.make_array_of(size), is_flex)
+	// flex な場合は　array_size を None にする
+	let mut array_typ = typ.make_array_of(size);
+	if is_flex { let _ = array_typ.array_size.take(); }
+	(array_typ, is_flex)
 }
 
 // グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
@@ -622,7 +625,6 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 	if consume(token_ptr, "{") {
 		if typ.typ != Type::Array {
 			// スカラ値に代入することになるため、最初の要素以外読み飛ばす
-			eprintln!("{}", typ);
 			let mut _init = Initializer::default();
 			array_initializer(token_ptr, typ, &mut _init);
 			init.insert(typ, _init.node.as_ref().unwrap());
@@ -699,7 +701,6 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initia
 	// 配列の Initializer の node は最初の要素を指すことにする
 	let first_elem = init.elements[0].borrow().clone();
 	init.insert(typ, first_elem.node.as_ref().unwrap());
-	init.push_element(first_elem);
 }
 
 // オフセットで直接代入したい場合の LvarNd
@@ -819,7 +820,7 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		let mut children: Vec<Option<NodeRef>> = vec![];
 		loop {
 			if !consume(token_ptr, "}") {
-				if at_eof(token_ptr) {exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。");}
+				if at_eof(token_ptr) { exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。"); }
 				let _stmt = stmt(token_ptr);
 				confirm_type(&_stmt);
 				children.push(Some(_stmt));
@@ -2046,9 +2047,10 @@ pub mod tests {
 	#[test]
 	fn init() {
 		let src: &str = "
-			int x = {4, 5};
-			int X[4][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
-			char str[][2][2] = {{{{\"str\"}}}};
+			// int x = {4, 5};
+			// int X[][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
+			// char str[][2][2] = {{{{\"str\"}}}};
+			char str2[][2][2] = {\"str\", \"abcd\", \"pqrs\"};
 			// char str[] = {\"str\"};
 		";
 		test_init(src);
