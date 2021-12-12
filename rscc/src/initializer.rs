@@ -34,6 +34,12 @@ impl Initializer {
 	}
 	
 	#[inline]
+	pub fn append_elements(&mut self, elem: Initializer) {
+		let mut append_elems = elem.elements.clone();
+		self.elements.append(&mut append_elems);
+	}
+
+	#[inline]
 	pub fn is_element(&self) -> bool {
 		self.elements.is_empty()
 	}
@@ -42,7 +48,7 @@ impl Initializer {
 	// parser::make_lvar_init と似たような処理
 	pub fn flex_elem_count(&self) -> usize {
 		if self.is_element() { panic!("invalid function on elemental initializer"); }
-		let elem_flatten_size = self.elements[0].borrow().typ.as_ref().unwrap().flatten_size();
+		let elem_flatten_size = self.typ.as_ref().unwrap().make_deref().unwrap().flatten_size();
 		let mut count = 0;
 		let mut ix = 0;
 		while ix < self.elements.len() {

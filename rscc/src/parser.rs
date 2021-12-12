@@ -571,7 +571,7 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 // グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
 fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, is_flex: bool, lvar_ptr: TokenRef) -> NodeRef {
-	if typ.typ == Type::Array && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
+	if typ.typ == Type::Array && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
 		error_with_token!("2次元以上の配列\"{}\"は単一の文字リテラルでは初期化できません。", &*token_ptr.borrow(), typ);
 	}
@@ -617,6 +617,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 			if braced { expect(token_ptr, "{"); }
 			let _ = expect_literal(token_ptr);
 			char_array_initializer(body, typ.array_size, init, ptr);
+			let _ = consume(token_ptr, ",");
 			if braced && !consume(token_ptr, "}") { error_with_token!("char の1次元配列を文字列リテラルで初期化する場合は1つのみ配置してください。", &token_ptr.borrow()); }
 			return;
 		}
@@ -632,7 +633,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 			array_initializer(token_ptr, typ, init);
 		}
 	} else {
-		if is_kind(token_ptr, Tokenkind::StringTk) && typ.array_size.is_some() && ![Type::Char, Type::Ptr, Type::Array].contains(&typ.make_deref().unwrap().typ) {
+		if is_kind(token_ptr, Tokenkind::StringTk) && typ.typ == Type::Array && ![Type::Char, Type::Ptr, Type::Array].contains(&typ.make_deref().unwrap().typ) {
 			error_with_token!("文字列リテラルで\"{}\"型の変数を初期化することはできません", &*token_ptr.borrow(), typ);
 		}
 		init.insert(typ, &assign(token_ptr));
@@ -652,6 +653,11 @@ fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Ini
 			if ix >= _size { break; }
 			ix += 1;
 			init.push_element(Initializer::new(&elem_typ, &new_num(e, Rc::clone(&ptr))));
+		}
+		while ix < _size {
+			ix += 1;
+			// 0 パディング
+			init.push_element(Initializer::new(&elem_typ, &new_num(0, Rc::clone(&ptr))));
 		}
 		_size
 	} else {
@@ -689,7 +695,12 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initia
 			for _ in 0..elem_flatten_size {
 				let mut elem = Initializer::default();
 				initializer(token_ptr, &base_typ, &mut elem);
-				init.push_element(elem);
+				// base_typ が Array (つまり上記で文字リテラルを読んでいてかつポインタ型配列でない)の場合には、要素数カウントを正しく行うため、elem.elements を init.elements に append する
+				if base_typ.typ == Type::Array {
+					init.append_elements(elem);
+				} else {
+					init.push_element(elem);
+				}
 				let _ = consume(token_ptr, ",");
 				if is(token_ptr, "}") { break; }
 			}
@@ -765,13 +776,17 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRe
 				// flatten して読む
 				for _ in 0..elem_flatten_size {
 					let _expr = init.elements[ix].borrow().node.clone().unwrap();
-					let _assign = assign_op(
-						Nodekind::AssignNd,
-						direct_offset_lvar(offset - finised_bytes, &base_typ),
-						_expr,
-						Rc::clone(&ptr)
-					);
-					node_ptr = new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&ptr));
+					let _val = _expr.borrow().val.clone();
+					// ゼロクリアが必ず入るため、0 を代入するだけのノードは無視する
+					if _val.is_none() || _val.unwrap() != 0 {
+						let _assign = assign_op(
+							Nodekind::AssignNd,
+							direct_offset_lvar(offset - finised_bytes, &base_typ),
+							_expr,
+							Rc::clone(&ptr)
+						);
+						node_ptr = new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&ptr));
+					}
 					ix += 1;
 					finised_bytes += base_bytes;
 					if ix >= init.elements.len() { break; }
@@ -792,12 +807,18 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRe
 		node_ptr
 		
 	} else {
-		assign_op(
-			Nodekind::AssignNd,
-			direct_offset_lvar(offset, typ),
-			Rc::clone(init.node.as_ref().unwrap()),
-			ptr
-		)
+		let node_ptr = init.node.as_ref().unwrap();
+		let val = node_ptr.borrow().val.clone();
+		if val.is_none() || val.unwrap() != 0 {
+			assign_op(
+				Nodekind::AssignNd,
+				direct_offset_lvar(offset, typ),
+				Rc::clone(node_ptr),
+				ptr
+			)
+		} else {
+			nop()
+		}
 	}
 }
 
@@ -2047,11 +2068,12 @@ pub mod tests {
 	#[test]
 	fn init() {
 		let src: &str = "
-			// int x = {4, 5};
-			// int X[][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9};
-			// char str[][2][2] = {{{{\"str\"}}}};
-			char str2[][2][2] = {\"str\", \"abcd\", \"pqrs\"};
-			// char str[] = {\"str\"};
+			int x = {4, 5};
+			int X[4][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9, };
+			char str[][2][2] = {{{{\"str\", }}}};
+			char str2[][2][3] = {\"s\", \"abcd\", \"pqrs\"};
+			char str3[] = {\"str\", };
+			int str4[][2] = {\"str\"};
 		";
 		test_init(src);
 

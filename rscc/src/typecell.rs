@@ -156,8 +156,12 @@ impl TypeCell {
 	fn get_type_string(&self, s: impl Into<String>) -> String {
 		let s = s.into();
 		if let Some(deref) = &self.ptr_to {
-			let string = if let Some(size) = self.array_size {
-				format!("{}[{}]", s, size)
+			let string = if self.typ == Type::Array {
+				if let Some(size) = self.array_size {
+					format!("{}[{}]", s, size)
+				} else {
+					format!("{}[]", s)
+				}
 			} else if deref.borrow().typ == Type::Array {
 				format!(" ({}*)", s)
 			} else {
