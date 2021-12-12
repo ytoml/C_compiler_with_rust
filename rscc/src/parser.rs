@@ -294,7 +294,7 @@ fn confirm_type(node: &NodeRef) {
 			let right = node.right.clone().unwrap();
 			let left_typ = left.borrow().typ.clone().unwrap();
 			
-			if left_typ.typ == Type::Array {
+			if left_typ.is_array() {
 				error_with_node!("左辺値は代入可能な型である必要がありますが、配列型\"{}\"が指定されています。", &left.borrow(), left_typ);
 			}
 			let right = new_cast(right, left_typ.clone());
@@ -571,7 +571,7 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 // グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
 // ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
 fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, is_flex: bool, lvar_ptr: TokenRef) -> NodeRef {
-	if typ.typ == Type::Array && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
+	if typ.is_array() && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
 		error_with_token!("2次元以上の配列\"{}\"は単一の文字リテラルでは初期化できません。", &*token_ptr.borrow(), typ);
 	}
@@ -624,7 +624,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 	} 
 
 	if consume(token_ptr, "{") {
-		if typ.typ != Type::Array {
+		if typ.is_non_array() {
 			// スカラ値に代入することになるため、最初の要素以外読み飛ばす
 			let mut _init = Initializer::default();
 			array_initializer(token_ptr, typ, &mut _init);
@@ -633,7 +633,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 			array_initializer(token_ptr, typ, init);
 		}
 	} else {
-		if is_kind(token_ptr, Tokenkind::StringTk) && typ.typ == Type::Array && ![Type::Char, Type::Ptr, Type::Array].contains(&typ.make_deref().unwrap().typ) {
+		if is_kind(token_ptr, Tokenkind::StringTk) && typ.is_array() && !typ.make_deref().unwrap().is_one_of(&[Type::Char, Type::Ptr, Type::Array]) {
 			error_with_token!("文字列リテラルで\"{}\"型の変数を初期化することはできません", &*token_ptr.borrow(), typ);
 		}
 		init.insert(typ, &assign(token_ptr));
@@ -671,58 +671,7 @@ fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Ini
 	init.insert(&elem_typ.make_array_of(size), &new_num(0, Rc::clone(&ptr)));
 }
 
-// C99 以降の designator は現段階ではサポートしない
-// 生成規則:
-// array-initializer = (initializer ("," initializer)* ","? "}"
-fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
-	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
-	loop {
-		if is(token_ptr, "{") || elem_typ.typ != Type::Array {
-			let mut elem = Initializer::default();
-			initializer(token_ptr, &elem_typ, &mut elem);
-			init.push_element(elem);
-		} else {
-			// この深さではまだ配列が来るべきであるにも関わらず、初期化文のネストが浅かった場合の処理
-			let (base_typ, elem_flatten_size) =
-			if is_kind(token_ptr, Tokenkind::StringTk) && elem_typ.get_base_cell().typ != Type::Ptr {
-				// 文字列リテラルかつ最小要素の型がポインタでない場合は、ベースの型を1次元配列とみなして読む(型チェックは initializer() で行うためここではスルー)
-				let _typ = elem_typ.get_last_level_array().unwrap();
-				let _flatten_size = elem_typ.flatten_size()/_typ.array_size.unwrap();
-				(_typ, _flatten_size)
-			} else {
-				(elem_typ.get_base_cell(), elem_typ.flatten_size())
-			};
-			for _ in 0..elem_flatten_size {
-				let mut elem = Initializer::default();
-				initializer(token_ptr, &base_typ, &mut elem);
-				// base_typ が Array (つまり上記で文字リテラルを読んでいてかつポインタ型配列でない)の場合には、要素数カウントを正しく行うため、elem.elements を init.elements に append する
-				if base_typ.typ == Type::Array {
-					init.append_elements(elem);
-				} else {
-					init.push_element(elem);
-				}
-				let _ = consume(token_ptr, ",");
-				if is(token_ptr, "}") { break; }
-			}
-		}
-		let _ = consume(token_ptr, ",");
-		if consume(token_ptr, "}") { break; }
-	}
-
-	// 配列の Initializer の node は最初の要素を指すことにする
-	let first_elem = init.elements[0].borrow().clone();
-	init.insert(typ, first_elem.node.as_ref().unwrap());
-}
-
-// オフセットで直接代入したい場合の LvarNd
-#[inline]
-fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(typ.clone()), offset: Some(offset), is_local: true, ..Default::default() }))
-}
-
-// Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
-// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
-// ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
+// 配列の初期化について
 // 要素数が足りない時:
 // "int x[3] = {1, 2};" -> x[0] = 1, x[1] = 2, x[2] = 0;
 // - これは単に0埋めである
@@ -759,8 +708,62 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // はスカラの初期化と同様に2つ目の要素を飛ばせばよさそうに見えるが、 gcc では コンパイルエラーとなる。
 // gcc では char str[] = "abc", "def"; のようにパースされているのかもしれないが、よく分からない。
 // clang では3行上の例は valid な文法としてコンパイル可能。
+// 
+// C99 以降の designator は現段階ではサポートしない
+// 生成規則:
+// array-initializer = (initializer ("," initializer)* ","? "}"
+fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
+	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
+	loop {
+		if is(token_ptr, "{") || elem_typ.is_non_array() {
+			let mut elem = Initializer::default();
+			initializer(token_ptr, &elem_typ, &mut elem);
+			init.push_element(elem);
+		} else {
+			// この深さではまだ配列が来るべきであるにも関わらず、初期化文のネストが浅かった場合の処理
+			let (base_typ, elem_flatten_size) =
+			if is_kind(token_ptr, Tokenkind::StringTk) && elem_typ.get_base_cell().typ != Type::Ptr {
+				// 文字列リテラルかつ最小要素の型がポインタでない場合は、ベースの型を1次元配列とみなして読む(型チェックは initializer() で行うためここではスルー)
+				let _typ = elem_typ.get_last_level_array().unwrap();
+				let _flatten_size = elem_typ.flatten_size()/_typ.array_size.unwrap();
+				(_typ, _flatten_size)
+			} else {
+				(elem_typ.get_base_cell(), elem_typ.flatten_size())
+			};
+			for _ in 0..elem_flatten_size {
+				let mut elem = Initializer::default();
+				initializer(token_ptr, &base_typ, &mut elem);
+				// base_typ が Array (つまり上記で文字リテラルを読んでいてかつポインタ型配列でない)の場合には、要素数カウントを正しく行うため、elem.elements を init.elements に append する
+				if base_typ.is_array() {
+					init.append_elements(elem);
+				} else {
+					init.push_element(elem);
+				}
+				let _ = consume(token_ptr, ",");
+				if is(token_ptr, "}") { break; }
+			}
+		}
+		let _ = consume(token_ptr, ",");
+		if consume(token_ptr, "}") { break; }
+	}
+
+	// 配列の Initializer の node は最初の要素を指すことにする
+	let first_elem = init.elements[0].borrow().clone();
+	init.insert(typ, first_elem.node.as_ref().unwrap());
+}
+
+// オフセットで直接代入したい場合の LvarNd
+#[inline]
+fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(typ.clone()), offset: Some(offset), is_local: true, ..Default::default() }))
+}
+
+// Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
+// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
+// ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
+
 fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRef) -> NodeRef {
-	if typ.typ == Type::Array {
+	if typ.is_array() {
 		let elem_typ = typ.make_deref().unwrap();
 		let elem_bytes = elem_typ.bytes();
 		let elem_flatten_size = elem_typ.flatten_size();
@@ -2073,7 +2076,7 @@ pub mod tests {
 			char str[][2][2] = {{{{\"str\", }}}};
 			char str2[][2][3] = {\"s\", \"abcd\", \"pqrs\"};
 			char str3[] = {\"str\", };
-			int str4[][2] = {\"str\"};
+			// int str4[][2] = {\"str\"}; // invalid
 		";
 		test_init(src);
 

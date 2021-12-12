@@ -68,8 +68,25 @@ pub struct TypeCell {
 }
 
 impl TypeCell {
+
+	#[inline]
 	pub fn new(typ: Type) -> Self {
 		TypeCell { typ: typ, ..Default::default()}
+	}
+
+	#[inline]
+	pub fn is_array(&self) -> bool {
+		self.typ == Type::Array
+	}
+	
+	#[inline]
+	pub fn is_non_array(&self) -> bool {
+		self.typ != Type::Array
+	}
+
+	#[inline]
+	pub fn is_one_of(&self, types: &[Type]) -> bool {
+		types.contains(&self.typ)
 	}
 
 	pub fn make_ptr_to(&self) -> Self {
@@ -102,7 +119,7 @@ impl TypeCell {
 
 	#[inline]
 	pub fn make_deref(&self) -> Result<Self, ()> {
-		if [Type::Array, Type::Ptr].contains(&self.typ) {
+		if self.is_one_of(&[Type::Array, Type::Ptr]) {
 			Ok((*self.ptr_to.clone().unwrap().borrow()).clone())
 		} else { Err(()) }
 	}
