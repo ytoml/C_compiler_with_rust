@@ -462,13 +462,14 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 			is_flex = array_info.1;
 		}
 
-		// TODO: gvar_initializer
+		let gvar =
 		if consume(token_ptr, "=") {
 			gvar_initializer(token_ptr, name.clone(), typ.clone(), is_flex, ptr)
 		} else {
-			expect(token_ptr, ";");
 			new_gvar(name.clone(), typ.clone(), ptr)
-		}
+		};
+		expect(token_ptr, ";");
+		gvar
 	};
 	// GLOBALS には定義したノードを直接保存する(プロトタイプ宣言済の場合は入れ替え)
 	let _ = GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
@@ -495,7 +496,7 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 		loop {
 			if !consume(token_ptr, ",") {break;}
 			if argc >= 6 {
-				exit_eprintln!("現在7つ以上の引数はサポートされていません。");
+				error_with_token!("現在7つ以上の引数はサポートされていません。", &token_ptr.borrow());
 			}
 			let typ = expect_type(token_ptr); // 型宣言の読み込み
 			arg_typs.push(Rc::new(RefCell::new(typ.clone())));
@@ -530,11 +531,96 @@ fn gvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 		let _ = typ.array_size.insert(init.flex_elem_count());
 	}
 
-	// TODO: gvar に書き換え、compile time constant であることを確かめる必要がある
 	let gvar = new_gvar(name, typ.clone(), gvar_ptr);
-	// make_gvar_init()
-	// check_compile_time_constant()
+	make_gvar_init(init, &typ);
 	gvar
+}
+
+fn make_gvar_init(init: Initializer, typ: &TypeCell) {
+	// TODO
+	let mut label: Option<String> = None;
+	if typ.is_array() {
+
+	} else {
+		eval_const(&init.node.clone().unwrap(), &mut label);
+	}
+} 
+
+macro_rules! eval_const_left {
+	($node: expr, $label: expr) => {
+		eval_const(&($node).borrow().left.clone().unwrap(), ($label))
+	};
+}
+
+macro_rules! eval_const_right {
+	($node: expr, $label: expr) => {
+		eval_const(&($node).borrow().right.clone().unwrap(), ($label))
+	};
+}
+
+// コンパイル時定数の処理
+// label はグローバル変数への参照があった場合にどの変数を参照しているかを持つ
+fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
+	confirm_type(node);
+	let typ = node.borrow().typ.clone().unwrap();
+	let kind = node.borrow().kind;
+	match kind {
+		Nodekind::AddNd		=> { eval_const_left!(node, label) + eval_const_right!(node, label) }
+		Nodekind::SubNd		=> { 
+			let left_val = eval_const_left!(node, label);
+			let left_label = label.clone();
+			let right_val = eval_const_right!(node, label);
+			match (left_label, &label) {
+				(Some(l), Some(r)) => {
+					// コンパイル時のポインタ同士の引き算は、同じラベル同士でのみ可能(打ち消し合うのでラベルをクリアする)
+					if l != *r { error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow().right.as_ref().unwrap().borrow()); }
+					let _ = label.take();
+				}
+				_ => {}
+			}
+			left_val - right_val
+		}
+		Nodekind::MulNd		=> { eval_const_left!(node, label) * eval_const_right!(node, label) }
+		Nodekind::DivNd		=> { eval_const_left!(node, label) / eval_const_right!(node, label) }
+		Nodekind::ModNd		=> { eval_const_left!(node, label) % eval_const_right!(node, label) }
+		Nodekind::LShiftNd	=> { eval_const_left!(node, label) << eval_const_right!(node, label) }
+		Nodekind::RShiftNd	=> { eval_const_left!(node, label) >> eval_const_right!(node, label) }
+		Nodekind::BitAndNd	=> { eval_const_left!(node, label) & eval_const_right!(node, label) }
+		Nodekind::BitOrNd	=> { eval_const_left!(node, label) | eval_const_right!(node, label) }
+		Nodekind::BitXorNd	=> { eval_const_left!(node, label) ^ eval_const_right!(node, label) }
+		Nodekind::BitNotNd	=> { !eval_const_left!(node, label) }
+		Nodekind::LogAndNd	=> { if eval_const_left!(node, label) == 0 || eval_const_right!(node, label) == 0 { 0 } else { 1 } }
+		Nodekind::LogOrNd	=> { if eval_const_left!(node, label) == 0 && eval_const_right!(node, label) == 0 { 0 } else { 1 } }
+		Nodekind::LogNotNd	=> { if eval_const_left!(node, label) == 0 { 1 } else { 0 } }
+		Nodekind::CastNd	=> {
+			let val = eval_const_left!(node, label);
+			match typ.typ.bytes() {
+				1 => { if typ.is_unsigned { val as	u8 as i64 } else { val as  i8 as i64 }}
+				2 => { if typ.is_unsigned { val as u16 as i64 } else { val as i16 as i64 }}
+				4 => { if typ.is_unsigned { val as u32 as i64 } else { val as i32 as i64 }}
+				_ => { val }
+			}
+		}
+		Nodekind::AddrNd	=> { eval_label(&node.borrow().left.clone().unwrap(), label) }
+		Nodekind::NumNd		=> { node.borrow().val.unwrap() as i64 }
+		_ => { error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow()); }
+	}
+}
+
+// グローバル変数のアドレス評価時などに使用
+fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
+	let kind = node.borrow().kind;
+	match kind {
+		Nodekind::DerefNd	=> { eval_const_left!(node, label) }
+		Nodekind::LvarNd	=> {
+			// 初期化時に仮で生成される変数はグローバルスコープでも(!is_local な) LvarNd であることに注意
+			// また、 Initializer のパース時に定義されていないグローバル変数は弾かれるため、ここでは宣言チェック不要
+			if node.borrow().is_local { error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow()); }
+			let _ = label.insert(node.borrow().name.clone().unwrap());
+			0
+		} 
+		_ => { error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow()); }
+	}
 }
 
 // 生成規則:
@@ -577,7 +663,6 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	}
 }
 
-// 配列の次元を後ろから処理したい
 // 生成規則:
 // array-suffix = num "]" ("[" array-suffix)?
 fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool) {
@@ -586,6 +671,7 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (TypeCell, bool)
 	if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
 	expect(token_ptr, "]");
 
+	// 配列の次元は後ろから処理する
 	if consume(token_ptr, "[") {
 		let ptr_err = token_ptr.clone();
 		if consume(token_ptr, "]") { error_with_token!("2次元目以降の要素サイズは必ず指定する必要があります。", &ptr_err.borrow()); }
@@ -791,8 +877,7 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
 // int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
 // ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
-
-fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRef) -> NodeRef {
+fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: TokenRef) -> NodeRef {
 	if typ.is_array() {
 		let elem_typ = typ.make_deref().unwrap();
 		let elem_bytes = elem_typ.bytes();
@@ -816,9 +901,9 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRe
 							Nodekind::AssignNd,
 							direct_offset_lvar(offset - finised_bytes, &base_typ),
 							_expr,
-							Rc::clone(&ptr)
+							Rc::clone(&lvar_ptr)
 						);
-						node_ptr = new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&ptr));
+						node_ptr = new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&lvar_ptr));
 					}
 					ix += 1;
 					finised_bytes += base_bytes;
@@ -829,8 +914,8 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRe
 				node_ptr = new_binary(
 					Nodekind::CommaNd,
 					node_ptr,
-					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finised_bytes, Rc::clone(&ptr)),
-					Rc::clone(&ptr)
+					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finised_bytes, Rc::clone(&lvar_ptr)),
+					Rc::clone(&lvar_ptr)
 				);
 				ix += 1;
 				finised_bytes += elem_bytes;
@@ -847,7 +932,7 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, ptr: TokenRe
 				Nodekind::AssignNd,
 				direct_offset_lvar(offset, typ),
 				Rc::clone(node_ptr),
-				ptr
+				lvar_ptr
 			)
 		} else {
 			nop()
@@ -2099,7 +2184,7 @@ pub mod tests {
 	}
 
 	#[test]
-	fn init() {
+	fn lvar_init() {
 		let src: &str = "
 			int x = {4, 5};
 			int X[4][2][1] = {1, {2, 3}, x, 5, {6}, 7, 8, 9, };
@@ -2118,6 +2203,26 @@ pub mod tests {
 			search_tree(&node_ptr);
 			count += 1;
 		} 
+	}
+
+	#[test]
+	fn gvar_init() {
+		let src: &str = "
+			int x = {4+10, 5};
+			int y = 10;
+			int *p = &x - &x + &y; // valid
+			// int *q = &x - &y; // invalid
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
 	}
 
 	// wip() を「サポートしている構文を全て使用したテスト」と定めることにする
