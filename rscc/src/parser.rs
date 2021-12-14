@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 
 use crate::{
 	initializer::Initializer,
-	node::{Node, Nodekind, NodeRef},
+	node::{Node, Nodekind, NodeRef, InitData},
 	token::{Tokenkind, TokenRef},
 	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
 	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
@@ -531,18 +531,63 @@ fn gvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 		let _ = typ.array_size.insert(init.flex_elem_count());
 	}
 
-	let gvar = new_gvar(name, typ.clone(), gvar_ptr);
-	make_gvar_init(init, &typ);
+	let mut gvar = new_gvar(name, typ.clone(), gvar_ptr);
+	make_gvar_init(init, &typ, &mut gvar);
 	gvar
 }
 
-fn make_gvar_init(init: Initializer, typ: &TypeCell) {
-	// TODO
-	let mut label: Option<String> = None;
+fn make_gvar_init(init: Initializer, typ: &TypeCell, gvar: &mut NodeRef) {
 	if typ.is_array() {
-
+		let total_bytes = typ.bytes();
+		let elem_typ = typ.make_deref().unwrap();
+		let elem_bytes = elem_typ.bytes();
+		let elem_flatten_size = elem_typ.flatten_size();
+		let base_typ = typ.get_base_cell();
+		let base_bytes = base_typ.bytes();
+		let mut ix = 0;
+		let mut finished_bytes = 0;
+		while finished_bytes < total_bytes && ix < init.elements.len() {
+			let elem = Rc::clone(&init.elements[ix]);
+			if elem.borrow().is_element() {
+				// flatten して読む
+				for _ in 0..elem_flatten_size {
+					let _expr = init.elements[ix].borrow().node.clone().unwrap();
+					let mut label: Option<String> = None;
+					let val = eval_const(&_expr, &mut label);
+					gvar.borrow_mut().init_data.push(InitData::new(base_bytes, val, label));
+					ix += 1;
+					finished_bytes += base_bytes;
+					if finished_bytes >= total_bytes || ix >= init.elements.len() { break; }
+				}
+				
+			} else {
+				make_gvar_init(elem.borrow().clone(), &elem_typ, gvar);
+				ix += 1;
+				finished_bytes += elem_bytes;
+			}
+			// 毎要素、後ろの0をまとめる
+			let mut gvar_bor = gvar.borrow_mut();
+			let init_data = &mut gvar_bor.init_data;
+			let last_data = init_data.last().clone().unwrap();
+			let mut zero_end = last_data.val == 0 && last_data.label.is_none();
+			if zero_end {
+				let mut zeros = InitData::new(0, 0, None);
+				while zero_end && init_data.len() > 0 {
+					let merge_data = init_data.pop().unwrap();
+					zeros.size += merge_data.size;
+					if let Some(last_data) = init_data.last().clone() {
+						zero_end = last_data.val == 0 && last_data.label.is_none();
+					}
+				}
+				init_data.push(zeros);
+			}
+		}
+		// 初期化値が指定されていない残りの要素を0埋め
+		if finished_bytes < total_bytes { gvar.borrow_mut().init_data.push(InitData::new(total_bytes - finished_bytes, 0, None)); }
 	} else {
-		eval_const(&init.node.clone().unwrap(), &mut label);
+		let mut label: Option<String> = None;
+		let val = eval_const(&init.node.clone().unwrap(), &mut label);
+		gvar.borrow_mut().init_data.push(InitData::new(typ.bytes(), val, label));
 	}
 } 
 
@@ -879,6 +924,7 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
 fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: TokenRef) -> NodeRef {
 	if typ.is_array() {
+		let total_bytes = typ.bytes();
 		let elem_typ = typ.make_deref().unwrap();
 		let elem_bytes = elem_typ.bytes();
 		let elem_flatten_size = elem_typ.flatten_size();
@@ -887,8 +933,8 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: To
 		let mut node_ptr = nop();
 
 		let mut ix = 0;
-		let mut finised_bytes = 0;
-		while finised_bytes/elem_bytes < typ.array_size.unwrap() && ix < init.elements.len() {
+		let mut finished_bytes = 0;
+		while finished_bytes < total_bytes && ix < init.elements.len() {
 			let elem = Rc::clone(&init.elements[ix]);
 			if elem.borrow().is_element() {
 				// flatten して読む
@@ -899,26 +945,25 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: To
 					if _val.is_none() || _val.unwrap() != 0 {
 						let _assign = assign_op(
 							Nodekind::AssignNd,
-							direct_offset_lvar(offset - finised_bytes, &base_typ),
+							direct_offset_lvar(offset - finished_bytes, &base_typ),
 							_expr,
 							Rc::clone(&lvar_ptr)
 						);
 						node_ptr = new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&lvar_ptr));
 					}
 					ix += 1;
-					finised_bytes += base_bytes;
-					if ix >= init.elements.len() { break; }
+					finished_bytes += base_bytes;
+					if finished_bytes >= total_bytes || ix >= init.elements.len() { break; }
 				}
-
 			} else {
 				node_ptr = new_binary(
 					Nodekind::CommaNd,
 					node_ptr,
-					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finised_bytes, Rc::clone(&lvar_ptr)),
+					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finished_bytes, Rc::clone(&lvar_ptr)),
 					Rc::clone(&lvar_ptr)
 				);
 				ix += 1;
-				finised_bytes += elem_bytes;
+				finished_bytes += elem_bytes;
 			}
 		}
 
@@ -2211,7 +2256,11 @@ pub mod tests {
 			int x = {4+10, 5};
 			int y = 10;
 			int *p = &x - &x + &y; // valid
-			// int *q = &x - &y; // invalid
+			int *q = &y + 10; // valid
+			// int *r = &x - &y; // invalid
+			int z[][2][10] = {{1, 4, 5, {10, x}}, 2, 3, 4, 2}; // valid
+			// int w[][2][10] = {{1, 4, 5, {10, xx}}, 2, 3, 4, 2}; // invalid
+			char c[10][1000] = {\"aaaa\", \"sddd\", {\'c\'}};
 		";
 		test_init(src);
 
