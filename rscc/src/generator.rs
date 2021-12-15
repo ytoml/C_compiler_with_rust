@@ -66,13 +66,46 @@ pub fn gen_expr(node: &NodeRef) {
 				// 上の stmts の処理で return が書かれることになっているので、エピローグなどはここに書く必要はない
 			} else {
 				// 現在はグローバル変数の初期化はサポートしないため、常に .bss で指定
-				let bytes = node.typ.as_ref().unwrap().bytes();
+				let typ = node.typ.clone().unwrap();
+				let bytes = typ.bytes();
+				let is_initialized = node.init_data.len() > 0;
 				asm_write!("\t.globl {}", name);
-				asm_write!("\t.bss");
+				if is_initialized {
+					let is_ptr = if typ.is_array() { typ.get_base_cell().is_pointer() } else { typ.is_pointer() };
+					if is_ptr {
+						asm_write!("\t.section .data.rel.local");
+					}
+					asm_write!("\t.data");
+				} else {
+					asm_write!("\t.bss");
+				}
 				asm_write!("\t.type {}, @object", name);
 				asm_write!("\t.size {}, {}", name, bytes);
 				asm_write!("{}:", name);
-				asm_write!("\t.zero {}", bytes);
+				if node.init_data.len() > 0 {
+					for data in &node.init_data {
+						if let Some(label) = &data.label {
+							if data.size != 8 { panic!("something wrong with initializing data size"); }
+							if data.val == 0 { asm_write!(".quad {}", label); }
+							else if data.val > 0 { asm_write!(".quad {}+{}", label, data.val); }
+							else { asm_write!(".quad {}{}", label, data.val); }
+						} else {
+							if data.val == 0 {
+								asm_write!("\t.zero {}", data.size);
+							} else {
+								match data.size {
+								1 => { asm_write!("\t.byte {}", data.val); }
+								2 => { asm_write!("\t.value {}", data.val); }
+								4 => { asm_write!("\t.long {}", data.val); }
+								8 => { asm_write!("\t.quad {}", data.val); }
+								_ => { panic!("something wrong with initializing data size"); }
+								}
+							}
+						}
+					}
+				} else {
+					asm_write!("\t.zero {}", bytes);
+				}
 			}
 			return;
 		}

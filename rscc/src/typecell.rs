@@ -91,6 +91,11 @@ impl TypeCell {
 	}
 
 	#[inline]
+	pub fn is_pointer(&self) -> bool {
+		self.typ != Type::Ptr
+	}
+
+	#[inline]
 	pub fn is_one_of(&self, types: &[Type]) -> bool {
 		types.contains(&self.typ)
 	}
