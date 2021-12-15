@@ -92,7 +92,7 @@ impl TypeCell {
 
 	#[inline]
 	pub fn is_pointer(&self) -> bool {
-		self.typ != Type::Ptr
+		self.typ == Type::Ptr
 	}
 
 	#[inline]
