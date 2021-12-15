@@ -493,6 +493,12 @@ pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
 	}
 }
 
+#[inline]
+pub fn is_func(token_ptr: &TokenRef) -> bool {
+	let ptr = &mut Rc::clone(token_ptr);
+	consume_type(ptr).is_some() && consume_ident(ptr).is_some() && is(ptr, "(")
+}
+
 // EOFかどうかを判断する関数
 pub fn at_eof(token_ptr: &TokenRef) -> bool{
 	token_ptr.borrow().kind == Tokenkind::EOFTk

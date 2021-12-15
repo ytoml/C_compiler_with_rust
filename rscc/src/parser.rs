@@ -10,7 +10,7 @@ use crate::{
 	initializer::Initializer,
 	node::{Node, Nodekind, NodeRef, InitData},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_func, is_kind, is_type},
 	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -206,7 +206,9 @@ fn new_func(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token_
 // グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
 #[inline]
 fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token_ptr: TokenRef) -> NodeRef {
-	Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }))
+	let glob = Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token_ptr), typ:typ, name: Some(name.clone()), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }));
+	let _ = GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
+	glob
 }
 
 #[inline]
@@ -220,7 +222,7 @@ fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stm
 }
 
 #[inline]
-fn proto_funcdec(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
+fn proto_func(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef {
 	_global(name, None, Some(func_typ), vec![], None, None, token_ptr)
 }
 
@@ -384,97 +386,80 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 // 生成規則:
-// global = type ident global-suffix
-// global-suffix = "(" func-args ")" ("{" stmt* "}" | ";") | "[" array-suffix ";"
+// global = function | global-variable
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
-	let mut typ = expect_type(token_ptr); // 型宣言の読み込み
-	let ptr =  token_ptr.clone();
+	let glob = 
+	if is_func(token_ptr) {
+		function(token_ptr)
+	} else {
+		global_variable(token_ptr)
+	};
+	glob
+}
+
+// 生成規則: 
+// function = type ident "(" func-args ")" ("{", stmt* "}") 
+fn function(token_ptr: &mut TokenRef) -> NodeRef {
+	let mut typ = expect_type(token_ptr);
+	let ptr = Rc::clone(token_ptr);
 	let name = expect_ident(token_ptr);
 
+	expect(token_ptr, "(");
+	let (args, arg_typs) = func_args(token_ptr);
+	let must_be_proto = args.len() != arg_typs.len();
+
 	// 関数宣言の場合は typ は戻り値の型である
-	let glob = 
-	if consume(token_ptr, "(") {
-		let (args, arg_typs) = func_args(token_ptr);
-		let must_be_proto = args.len() != arg_typs.len();
-		typ = TypeCell::make_func(typ, arg_typs);
-		expect(token_ptr, ")");
+	typ = TypeCell::make_func(typ, arg_typs);
+	expect(token_ptr, ")");
 
-		let (defined, line_num, line_offset) = 
-		if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
-			let decl = node.token.as_ref().unwrap().borrow();
-			let (_num, _offset) = (decl.line_num, decl.line_offset);
-			if node.typ.is_some() { error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, _num, _offset); }
-			(node.stmts.is_some(), _num, _offset)
-		} else { (false , 0, 0) };
+	let (defined, line_num, line_offset) = 
+	if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
+		let decl = node.token.as_ref().unwrap().borrow();
+		let (_num, _offset) = (decl.line_num, decl.line_offset);
+		if node.typ.is_some() { error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, _num, _offset); }
+		(node.stmts.is_some(), _num, _offset)
+	} else { (false , 0, 0) };
 
-		if consume(token_ptr, "{") {
-			if must_be_proto { error_with_token!("関数の定義時には引数名を省略できません。", &*ptr.borrow()); }
-			// 既に宣言されている場合
-			{
-				let mut glb_access = GLOBALS.try_lock().unwrap();
-				if let Some(node) = glb_access.get(&name) {
-					if defined { error_with_token!("関数\"{}\"は位置[{}, {}]で既に定義義されています。", &*ptr.borrow(), name, line_num, line_offset); }
-					// プロトタイプ宣言時と引数の整合をチェック
-					if typ != *node.func_typ.as_ref().unwrap(){ error_with_token!("プロトタイプ宣言との互換性がありません。(宣言位置: [{}, {}])", &*ptr.borrow(), line_num, line_offset); }
-				} else {
-					// プロトタイプ宣言がない場合は、再帰のことを考えて定義のパース前に GLOBALS に一旦プロトタイプ宣言の体で保存する
-					let _ = glb_access.insert(name.clone(), proto_funcdec(name.clone(), typ.clone(), ptr.clone()).borrow().clone());
-				}
+	if consume(token_ptr, "{") {
+		if must_be_proto { error_with_token!("関数の定義時には引数名を省略できません。", &*ptr.borrow()); }
+		// 既に宣言されている場合をケア
+		let node = GLOBALS.try_lock().unwrap().get(&name).cloned().unwrap_or(Node::default());
+		match node.kind {
+			Nodekind::GlobalNd => {
+				if defined { error_with_token!("関数\"{}\"は位置[{}, {}]で既に定義義されています。", &*ptr.borrow(), name, line_num, line_offset); }
+				// プロトタイプ宣言時と引数の整合をチェック
+				if typ != *node.func_typ.as_ref().unwrap(){ error_with_token!("プロトタイプ宣言との互換性がありません。(宣言位置: [{}, {}])", &*ptr.borrow(), line_num, line_offset); }
 			}
-
-			let mut stmts : Vec<NodeRef> = Vec::new();
-			let mut has_return : bool = false;
-			while !consume(token_ptr, "}") {
-				has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
-				let stmt_ = stmt(token_ptr);
-				confirm_type(&stmt_);
-				stmts.push(stmt_);
+			Nodekind::DefaultNd => {
+				// プロトタイプ宣言がない場合は、再帰のことを考えて定義のパース前に GLOBALS に一旦プロトタイプ宣言の体で保存する
+				let _ = proto_func(name.clone(), typ.clone(), ptr.clone()).borrow().clone();
 			}
-
-			if !has_return {
-				stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
-			}
-
-			let mut max_offset_access = LVAR_MAX_OFFSET.try_lock().unwrap();
-			align!(*max_offset_access, 8usize);
-			let max_offset = *max_offset_access;
-
-			new_funcdec(name.clone(), typ.clone(), args, stmts, max_offset, ptr)
-
-		} else {
-			expect(token_ptr, ";");
-			proto_funcdec(name.clone(), typ, ptr)
+			_ => { panic!("unreachable"); }
 		}
+
+		let mut stmts : Vec<NodeRef> = Vec::new();
+		let mut has_return : bool = false;
+		while !consume(token_ptr, "}") {
+			has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+			let stmt_ = stmt(token_ptr);
+			confirm_type(&stmt_);
+			stmts.push(stmt_);
+		}
+
+		if !has_return {
+			stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
+		}
+
+		let mut max_offset_access = LVAR_MAX_OFFSET.try_lock().unwrap();
+		align!(*max_offset_access, 8usize);
+		let max_offset = *max_offset_access;
+
+		new_funcdec(name.clone(), typ.clone(), args, stmts, max_offset, ptr)
+
 	} else {
-		if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
-			let decl = node.token.as_ref().unwrap().borrow();
-			if node.typ.is_some() {
-				error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
-			} else {
-				error_with_token!("\"{}\"は位置[{}, {}]で既に関数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
-			}
-		}
-
-		let mut is_flex = false;
-		if consume(token_ptr, "[") {
-			let array_info = array_suffix(token_ptr, typ);
-			typ = array_info.0;
-			is_flex = array_info.1;
-		}
-
-		let gvar =
-		if consume(token_ptr, "=") {
-			gvar_initializer(token_ptr, name.clone(), typ.clone(), is_flex, ptr)
-		} else {
-			new_gvar(name.clone(), typ.clone(), ptr)
-		};
 		expect(token_ptr, ";");
-		gvar
-	};
-	// GLOBALS には定義したノードを直接保存する(プロトタイプ宣言済の場合は入れ替え)
-	let _ = GLOBALS.try_lock().unwrap().insert(name, glob.borrow().clone());
-
-	glob
+		proto_func(name.clone(), typ, ptr)
+	}
 }
 
 // 生成規則:
@@ -516,6 +501,51 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 	}
 	// args.len() != arg_types.len() ならば引数名が省略されており、プロトタイプ宣言であるとみなせる
 	(args, arg_typs)
+}
+
+// 生成規則:
+// global-variable = type gvar-decl ("," gvar-decl)* ";"
+fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
+	let typ = expect_type(token_ptr);
+	let mut node_ptr = gvar_decl(token_ptr, typ.clone());
+	loop {
+		let ptr_comma = token_ptr.clone();
+		if !consume(token_ptr, ",") { break; }
+		node_ptr = new_binary(Nodekind::CommaNd, node_ptr, gvar_decl(token_ptr, typ.clone()), ptr_comma)
+	}
+	expect(token_ptr,";");
+	
+	node_ptr
+}
+
+// 生成規則:
+// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
+fn gvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+	let ptr = token_ptr.clone();
+	let name = expect_ident(token_ptr);
+	if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
+		let decl = node.token.as_ref().unwrap().borrow();
+		if node.typ.is_some() {
+			error_with_token!("\"{}\"は位置[{}, {}]で既にグローバル変数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
+		} else {
+			error_with_token!("\"{}\"は位置[{}, {}]で既に関数として宣言されています。", &*ptr.borrow(), name, decl.line_num, decl.line_offset);
+		}
+	}
+
+	let mut is_flex = false;
+	if consume(token_ptr, "[") {
+		let array_info = array_suffix(token_ptr, typ);
+		typ = array_info.0;
+		is_flex = array_info.1;
+	}
+
+	let gvar =
+	if consume(token_ptr, "=") {
+		gvar_initializer(token_ptr, name.clone(), typ.clone(), is_flex, ptr)
+	} else {
+		new_gvar(name.clone(), typ.clone(), ptr)
+	};
+	gvar
 }
 
 // 生成規則としては lvar_initializer と同じ
@@ -691,7 +721,6 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	if LOCALS.try_lock().unwrap().contains_key(&name) { error_with_token!("既に宣言された変数です。", &ptr.borrow()); }
 
 	let mut is_flex = false;
-
 	if consume(token_ptr, "[") {
 		let array_info = array_suffix(token_ptr, typ);
 		typ = array_info.0;
@@ -2260,7 +2289,7 @@ pub mod tests {
 			// int *r = &x - &y; // invalid
 			int z[][2][10] = {{1, 4, 5, {10, x}}, 2, 3, 4, 2}; // valid
 			// int w[][2][10] = {{1, 4, 5, {10, xx}}, 2, 3, 4, 2}; // invalid
-			char c[10][1000] = {\"aaaa\", \"sddd\", {\'c\'}};
+			char c[10][1000] = {\"abcd\", \"str\", {\'c\'}}, d[] = \"compiler\";
 		";
 		test_init(src);
 
