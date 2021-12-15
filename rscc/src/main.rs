@@ -43,7 +43,7 @@ fn main() {
 		}
 
 		// 最後に一気に書き込み
-		println!("{}", *ASMCODE.try_lock().unwrap());
+		print!("{}", *ASMCODE.try_lock().unwrap());
 
     } else {
 		// fileが指定されていない場合、exit

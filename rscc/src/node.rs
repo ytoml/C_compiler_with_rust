@@ -74,6 +74,7 @@ pub struct Node {
 
 	// グローバル変数等で使用
 	pub name: Option<String>,
+	pub init_data: Vec<InitData>,
 
 	// 関数に使用
 	pub func_typ: Option<TypeCell>,
@@ -85,14 +86,24 @@ pub struct Node {
 	pub is_local: bool,
 }
 
+// グローバル変数の初期化で使用
+#[derive(Clone, Debug, Default)]
+pub struct InitData {
+	pub size: usize,
+	pub val: i64,
+	pub label: Option<String>,
+}
+
 // 並列で処理することがないものとして、グローバル変数の都合で Send/Sync を使う
 unsafe impl Send for Node {}
 unsafe impl Sync for Node {}
+unsafe impl Send for InitData {}
+unsafe impl Sync for InitData {}
 
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, func_typ: None, args: vec![], stmts: None, max_offset: None, is_local: false }
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, init_data: vec![], func_typ: None, args: vec![], stmts: None, max_offset: None, is_local: false }
 	}
 }
 
@@ -149,7 +160,30 @@ impl Display for Node {
 		if let Some(e) = self.stmts.as_ref() {s = format!("{}stmts: exist({})\n", s, e.len());}
 		if let Some(e) = self.max_offset.as_ref() {s = format!("{}max_offset: {}\n", s, e);}
 
+		if self.init_data.len() > 0 {
+			s = format!("{}init_data: exist\n", s);
+			for data in &self.init_data {
+				s = format!("{}{}\n", s, data);
+			}
+		}
+
 		write!(f, "{}", s)
+	}
+}
+
+impl InitData {
+	pub fn new(size: usize, val: impl Into<i64>, label: Option<String>) -> Self {
+		InitData { size: size, val: val.into(), label: label }
+	}
+}
+
+impl Display for InitData {
+	fn fmt(&self, f:&mut Formatter) -> Result {
+		if let Some(l) = &self.label {
+			write!(f, "[size, val, label] = [{}, {}, {}]", self.size, self.val, l)
+		} else {
+			write!(f, "[size, val] = [{}, {}]", self.size, self.val)
+		}
 	}
 }
 

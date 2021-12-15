@@ -22,7 +22,7 @@ Rui Ueyama さんの
 	- スタックにプッシュする値を全て8バイトで処理している関係で、符号拡張などが甘い部分があります。今後修正予定です。
 - 配列型の変数と添字によるアクセス
 - ローカル変数宣言時の初期化;
-- グローバル変数
+- グローバル変数及びその初期化
 - 文字列リテラル及び char リテラル
 	- utf-8 です
 - for, while, if による制御構文
@@ -35,9 +35,11 @@ Rui Ueyama さんの
 
 ```C
 int fib(int);
-int MEMO[100];
+int MEMO[100] = {1, 2, 3};
 int X[10][20][30];
-char c[10];
+int x, xx;
+int *p = &x;
+char c[10][1000] = {"abcd", "str", {'c'}}, d[] = "compiler";
 
 int main() {
 	int i, x;
@@ -45,7 +47,8 @@ int main() {
 	int **pp = &p;
 	***X = 10;
 
-	for(i=0; i < 100; i++) {
+	for(i=0; i < 3; i++) {
+		print_helper(MEMO[i]);
 		MEMO[i] = 0;
 	}
 	
@@ -62,6 +65,9 @@ int main() {
 	
 	print_helper((x = 19, x = fib(*&(**pp))));
 	print_helper(fib(50));
+
+	showChar(c[0][0], c[0][1], c[0][2], c[0][3], 101, 102);
+	showChar(d[0], d[1], d[2], d[3], d[4], d[5]);
 
 	char *str = "This is test script";
 	showChar(str[13], str[14], str[15], str[16], str[17], str[18]);
@@ -87,14 +93,19 @@ int fib(int N) {
 ```
 上記のプログラムの出力は、リンクさせる関数内でどう表示するかにもよりますが、例えば以下のようになります。ただし、最後の行は exit status を表示しています。
 ```
+I got 1 as argument.
+I got 2 as argument.
+I got 3 as argument.
 I got 99 as argument.
 I got 24000 as argument.
 I got 8 as argument.
-I got 274903117088 as argument.
-I got 274903117488 as argument.
-I got 274903121088 as argument.
+I got 274903129376 as argument.
+I got 274903129776 as argument.
+I got 274903133376 as argument.
 I got 55 as argument.
 I got 3996334433 as argument.
+showChar called, message is "abcdef"
+showChar called, message is "compil"
 showChar called, message is "script"
 showChar called, message is "script"
 showChar called, message is "rustcc"

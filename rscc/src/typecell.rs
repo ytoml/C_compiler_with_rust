@@ -16,6 +16,7 @@ pub enum Type {
 }
 
 impl Type {
+	#[inline]
 	pub fn bytes(&self) -> usize {
 		match self {
 			Type::Invalid => { panic!("cannot extract size of invalid type."); }
@@ -65,13 +66,18 @@ pub struct TypeCell {
 	// self.typ == Type::Func
 	pub ret_typ: Option<TypeCellRef>,
 	pub arg_typs: Option<Vec<TypeCellRef>>,
+	pub is_unsigned: bool,
 }
 
 impl TypeCell {
 
 	#[inline]
 	pub fn new(typ: Type) -> Self {
-		TypeCell { typ: typ, ..Default::default()}
+		let is_unsigned = match typ {
+			Type::Func | Type::Ptr => { true }
+			_ => { false }
+		};
+		TypeCell { typ: typ, is_unsigned: is_unsigned, ..Default::default()}
 	}
 
 	#[inline]
@@ -82,6 +88,11 @@ impl TypeCell {
 	#[inline]
 	pub fn is_non_array(&self) -> bool {
 		self.typ != Type::Array
+	}
+
+	#[inline]
+	pub fn is_pointer(&self) -> bool {
+		self.typ == Type::Ptr
 	}
 
 	#[inline]
@@ -200,7 +211,7 @@ impl TypeCell {
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None}
+		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None, is_unsigned: false }
 	}
 }
 
