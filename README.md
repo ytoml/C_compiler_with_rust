@@ -42,10 +42,18 @@ int *p = &x;
 char c[10][1000] = {"abcd", "str", {'c'}}, d[] = "compiler";
 
 int main() {
-	int i, x;
 	int *p = &X[0][0][0];
 	int **pp = &p;
 	***X = 10;
+	int a = 0;
+	int i = 4, x;
+
+	for (int i = 0; i < 10 ; i++) {
+		int i = 10;
+		a++;
+	}
+	print_helper(a);
+	print_helper(i);
 
 	for(i=0; i < 3; i++) {
 		print_helper(MEMO[i]);
@@ -93,15 +101,17 @@ int fib(int N) {
 ```
 上記のプログラムの出力は、リンクさせる関数内でどう表示するかにもよりますが、例えば以下のようになります。ただし、最後の行は exit status を表示しています。
 ```
+I got 10 as argument.
+I got 4 as argument.
 I got 1 as argument.
 I got 2 as argument.
 I got 3 as argument.
 I got 99 as argument.
 I got 24000 as argument.
 I got 8 as argument.
-I got 274903129376 as argument.
-I got 274903129776 as argument.
-I got 274903133376 as argument.
+I got 274903129360 as argument.
+I got 274903129760 as argument.
+I got 274903133360 as argument.
 I got 55 as argument.
 I got 3996334433 as argument.
 showChar called, message is "abcdef"

@@ -84,6 +84,7 @@ pub struct Node {
 
 	// 変数時に使用
 	pub is_local: bool,
+	pub level: Option<usize>
 }
 
 // グローバル変数の初期化で使用
@@ -103,7 +104,7 @@ unsafe impl Sync for InitData {}
 // 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
-		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, init_data: vec![], func_typ: None, args: vec![], stmts: None, max_offset: None, is_local: false }
+		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, init_data: vec![], func_typ: None, args: vec![], stmts: None, max_offset: None, is_local: false, level: None }
 	}
 }
 
@@ -120,6 +121,7 @@ impl Display for Node {
 		};
 		s = format!("{}Nodekind : {:?}{}\n", s, self.kind, scope_attr);
 
+		if let Some(e) = self.level { s = format!("{}scope level: {}\n", s, e); }
 		if let Some(e) = self.typ.as_ref() {s = format!("{}type: {}\n", s, e);}
 		if let Some(e) = self.token.as_ref() {
 			let tok = (*e).borrow();

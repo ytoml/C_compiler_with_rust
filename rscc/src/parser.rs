@@ -20,7 +20,7 @@ use crate::{
 /// GLOBAL: グローバル変数名 -> 当該ノード
 /// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
 /// LITERALS: 文字リテラルと対応する内部変数名の対応
-static LOCALS: Lazy<Mutex<HashMap<String, (usize, TypeCell)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static LOCALS: Lazy<Mutex<Vec<HashMap<String, (usize, TypeCell)>>>> = Lazy::new(|| Mutex::new(vec![]));
 static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 static LITERALS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -121,15 +121,16 @@ fn get_alignment_base(typ: &TypeCell) -> usize {
 }
 
 // 左辺値に対応するノード: += などの都合で無名の変数を生成する場合があるため、token は Option で受ける
-fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>, is_local: bool) -> NodeRef {
+fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>, is_local: bool, level: usize) -> NodeRef {
 	let name: String = name.into();
-	let (offset, name): (Option<usize>, Option<String>) =
+	let (offset, name, level_): (Option<usize>, Option<String>, Option<usize>) =
 	if is_local {
 		let _offset: usize;
 		// デッドロック回避のため、フラグを用意してmatch内で再度LOCALS(<変数名, オフセット>のHashMap)にアクセスしないようにする
 		let mut not_found: bool = false;
 		let mut local_access = LOCALS.try_lock().unwrap();
-		match local_access.get(&name) {
+		let scope = &mut local_access[level];
+		match scope.get(&name) {
 			Some((offset_,_)) => {
 				_offset = *offset_;
 			}, 
@@ -154,25 +155,25 @@ fn _lvar(name: impl Into<String>, token: Option<TokenRef>, typ: Option<TypeCell>
 		if not_found {
 			// typ に渡されるのは Option だが LOCALS に保存するのは生の TypeCell なので let Some で分岐
 			if let Some(typ_) = typ.clone() {
-				local_access.insert(name, (_offset, typ_)); 
+				scope.insert(name, (_offset, typ_)); 
 			} else {
-				local_access.insert(name, (_offset, TypeCell::default()));
+				scope.insert(name, (_offset, TypeCell::default()));
 			}
 		}
-		(Some(_offset), None)
-	} else { (None, Some(name)) };
+		(Some(_offset), None, Some(level))
+	} else { (None, Some(name), None) };
 	
-	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, name: name, is_local: is_local, .. Default::default()}))
+	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: typ, token: token, offset: offset, name: name, is_local: is_local, level: level_, .. Default::default()}))
 }
 
 #[inline]
-fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, is_local: bool) -> NodeRef {
-	_lvar(name, Some(token_ptr), Some(typ), is_local)
+fn new_lvar(name: impl Into<String>, token_ptr: TokenRef, typ: TypeCell, is_local: bool, level: usize) -> NodeRef {
+	_lvar(name, Some(token_ptr), Some(typ), is_local, level)
 }
 
 macro_rules! tmp_lvar {
 	() => {
-		_lvar("", None, None, true)
+		_lvar("", None, None, true, 0)
 	};
 }
 
@@ -229,6 +230,22 @@ fn proto_func(name: String, func_typ: TypeCell, token_ptr: TokenRef) -> NodeRef 
 #[inline]
 fn nop() -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: Nodekind::NopNd, typ: Some(TypeCell::new(Type::Invalid)), ..Default::default()}))
+}
+
+fn enter_scope() {
+	LOCALS.try_lock().unwrap().push(HashMap::new());
+}
+
+fn leave_scope() {
+	let _ = LOCALS.try_lock().unwrap().pop();
+}
+
+fn current_scope() -> usize {
+	let n_scopes = LOCALS.try_lock().unwrap().len();
+	if n_scopes == 0 {
+		panic!("something wrong with scope, sufficient scope is not stacked.")
+	}
+	n_scopes - 1
 }
 
 // 計算時にキャストを自動的に行う
@@ -326,7 +343,6 @@ fn confirm_type(node: &NodeRef) {
 		Nodekind::LShiftNd | Nodekind::RShiftNd => {
 			let typ = arith_cast(&mut node);
 			if typ.ptr_end.is_some() {
-				// FYI: この辺の仕様はコンパイラによって違うかも？
 				error_with_node!("ポインタに対して行えない計算です。", &node);
 			}
 			let _ = node.typ.insert(typ);
@@ -375,10 +391,12 @@ pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	let mut globals : Vec<NodeRef> = Vec::new();
 
 	while !at_eof(token_ptr) {
+		enter_scope();
 		globals.push(global(token_ptr));
+		leave_scope();
+		assert_eq!(LOCALS.try_lock().unwrap().len(), 0);
 
 		// 関数宣言が終わるごとにローカル変数の管理情報をクリア(offset や name としてノードが持っているのでこれ以上必要ない)
-		LOCALS.try_lock().unwrap().clear();
 		*LVAR_MAX_OFFSET.try_lock().unwrap() = 0;
 	}
 	
@@ -398,7 +416,7 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 // 生成規則: 
-// function = type ident "(" func-args ")" ("{", stmt* "}") 
+// function = type ident "(" func-args ")" ("{" stmt* "}")?
 fn function(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut typ = expect_type(token_ptr);
 	let ptr = Rc::clone(token_ptr);
@@ -458,7 +476,8 @@ fn function(token_ptr: &mut TokenRef) -> NodeRef {
 
 	} else {
 		expect(token_ptr, ";");
-		proto_func(name.clone(), typ, ptr)
+		let _ = proto_func(name.clone(), typ, ptr);
+		nop()
 	}
 }
 
@@ -474,7 +493,7 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 
 		let ptr = token_ptr.clone();
 		if let Some(name) = consume_ident(token_ptr) {
-				args.push(Some(new_lvar(name, ptr, typ, true)));
+				args.push(Some(new_lvar(name, ptr, typ, true, 0)));
 		}
 		argc += 1;
 
@@ -488,7 +507,7 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 
 			let ptr = token_ptr.clone();
 			if let Some(name) = consume_ident(token_ptr) {
-				args.push(Some(new_lvar(name, ptr, typ, true)));
+				args.push(Some(new_lvar(name, ptr, typ, true, 0)));
 			}
 			argc += 1;
 		}
@@ -718,7 +737,7 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let ptr = token_ptr.clone();
 	let name = expect_ident(token_ptr);
-	if LOCALS.try_lock().unwrap().contains_key(&name) { error_with_token!("既に宣言された変数です。", &ptr.borrow()); }
+	if LOCALS.try_lock().unwrap().last().unwrap().contains_key(&name) { error_with_token!("既に宣言された変数です。", &ptr.borrow()); }
 
 	let mut is_flex = false;
 	if consume(token_ptr, "[") {
@@ -732,7 +751,7 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	} else {
 		// 初期化しない場合は何もアセンブリを吐かない
 		if is_flex { error_with_token!("初期化しない場合は完全な配列サイズが必要です。", &ptr.borrow()); }
-		let _ = new_lvar(name, ptr, typ, true);
+		let _ = new_lvar(name, ptr, typ, true, current_scope());
 		nop()
 	}
 }
@@ -772,7 +791,7 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 		let _ = typ.array_size.insert(init.flex_elem_count());
 	}
 
-	let lvar = new_lvar(name, lvar_ptr.clone(), typ.clone(), true);
+	let lvar = new_lvar(name, lvar_ptr.clone(), typ.clone(), true, current_scope());
 	let offset = lvar.borrow().offset.unwrap();
 	match typ.typ {
 		Type::Array => {
@@ -784,12 +803,12 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 			new_binary(
 				Nodekind::CommaNd,
 				zero_clear,
-				make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr)),
+				make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr), false),
 				lvar_ptr
 			)
 		}
 		_ => {
-			make_lvar_init(init, &typ, offset, lvar_ptr)
+			make_lvar_init(init, &typ, offset, lvar_ptr, true)
 		}
 	}
 }
@@ -951,7 +970,7 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
 // int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
 // ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
-fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: TokenRef) -> NodeRef {
+fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: TokenRef, is_scalar: bool) -> NodeRef {
 	if typ.is_array() {
 		let total_bytes = typ.bytes();
 		let elem_typ = typ.make_deref().unwrap();
@@ -988,7 +1007,7 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: To
 				node_ptr = new_binary(
 					Nodekind::CommaNd,
 					node_ptr,
-					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finished_bytes, Rc::clone(&lvar_ptr)),
+					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finished_bytes, Rc::clone(&lvar_ptr), false),
 					Rc::clone(&lvar_ptr)
 				);
 				ix += 1;
@@ -1001,7 +1020,8 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: To
 	} else {
 		let node_ptr = init.node.as_ref().unwrap();
 		let val = node_ptr.borrow().val.clone();
-		if val.is_none() || val.unwrap() != 0 {
+		// スカラ値の初期化時は0でもちゃんと初期化を行う AssignNd を生成する必要がある
+		if val.is_none() || val.unwrap() != 0 || is_scalar {
 			assign_op(
 				Nodekind::AssignNd,
 				direct_offset_lvar(offset, typ),
@@ -1030,6 +1050,7 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 	} else if is_type(token_ptr) {
 		declaration(token_ptr)
 	} else if consume(token_ptr, "{") {
+		enter_scope();
 		let mut children: Vec<Option<NodeRef>> = vec![];
 		loop {
 			if !consume(token_ptr, "}") {
@@ -1041,6 +1062,7 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 				break;
 			}
 		}
+		leave_scope();
 		new_block(children)
 
 	} else if consume(token_ptr, "if") {
@@ -1065,9 +1087,12 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 
 	} else if consume(token_ptr, "for") {
 		expect(token_ptr, "(");
+		enter_scope();
 		// consumeできた場合exprが何も書かれていないことに注意
 		let init: Option<NodeRef> =
-		if consume(token_ptr, ";") {None} else {
+		if is_type(token_ptr) {
+			Some(declaration(token_ptr))
+		} else if consume(token_ptr, ";") {None} else {
 			let _init = Some(expr(token_ptr));
 			expect(token_ptr, ";");
 			_init
@@ -1088,6 +1113,7 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		};
 
 		let branch: Option<NodeRef> = Some(stmt(token_ptr));
+		leave_scope();
 		
 		new_ctrl(Nodekind::ForNd, init, enter, routine, branch, None)
 
@@ -1614,14 +1640,24 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 			}
 		} else {
 			// グローバル変数については、外部ソースとのリンクは禁止として、LOCALS, GLOBALS に当たらなければエラーになるようにする
-			let typ: TypeCell;
+			let mut typ: TypeCell = TypeCell::default();
 			let mut is_local = false;
+			let mut level = 0;
 			{
 				let lvar_access = LOCALS.try_lock().unwrap();
-				if lvar_access.contains_key(&name) {
-					typ = lvar_access.get(&name).unwrap().1.clone();
-					is_local = true;
-				} else {
+				let mut found_at_local = false;
+				for (_level, scope) in lvar_access.iter().enumerate().rev() {
+					
+					if scope.contains_key(&name) {
+						typ = scope.get(&name).unwrap().1.clone();
+						level = _level;
+						found_at_local = true;
+						is_local = true;
+						break;
+					}
+				}
+
+				if !found_at_local {
 					let glb_access = GLOBALS.try_lock().unwrap();
 					if glb_access.contains_key(&name) {
 						let glob = glb_access.get(&name).unwrap();
@@ -1632,7 +1668,7 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				}
 			}
 
-			let mut node_ptr = new_lvar(name, ptr.clone(), typ.clone(), is_local);
+			let mut node_ptr = new_lvar(name, ptr.clone(), typ.clone(), is_local, level);
 			while consume(token_ptr, "[") {
 				let index_ptr = token_ptr.clone();
 				let index = expr(token_ptr);
@@ -1645,7 +1681,7 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	} else if let Some(literal) = consume_literal(token_ptr) {
 		let size = literal.len() + 1;
 		let name = store_literal(literal);
-		new_lvar(name, ptr, TypeCell::new(Type::Char).make_array_of(size), false)
+		new_lvar(name, ptr, TypeCell::new(Type::Char).make_array_of(size), false, 0)
 	} else {
 		new_num(expect_number(token_ptr), ptr)
 	}
@@ -2290,6 +2326,34 @@ pub mod tests {
 			int z[][2][10] = {{1, 4, 5, {10, x}}, 2, 3, 4, 2}; // valid
 			// int w[][2][10] = {{1, 4, 5, {10, xx}}, 2, 3, 4, 2}; // invalid
 			char c[10][1000] = {\"abcd\", \"str\", {\'c\'}}, d[] = \"compiler\";
+		";
+		test_init(src);
+
+		let mut token_ptr = tokenize(0);
+		let node_heads = program(&mut token_ptr);
+		let mut count: usize = 1;
+		for node_ptr in node_heads {
+			println!("declare{}{}", count, ">".to_string().repeat(REP));
+			search_tree(&node_ptr);
+			count += 1;
+		}
+	}
+
+	#[test]
+	fn scope() {
+		let src: &str = "
+		int main() {
+			int a = {0};
+			int i = 10;
+			for (int i = 0; i < 10; i++) {
+				int i = 10;
+				a++;
+			}
+			print_helper(i);
+			print_helper(a);
+
+			return 0;
+		}
 		";
 		test_init(src);
 

@@ -366,21 +366,25 @@ pub fn gen_expr(node: &NodeRef) {
 			let begin: String = format!(".LBegin{}", c);
 			let end: String = format!(".LEnd{}", c);
 
-			if let Some(ptr) = node.borrow().init.as_ref() {
-				gen_expr(ptr);
+			if let Some(init) = node.borrow().init.as_ref() {
+				gen_expr(init);
 			}
 
 			asm_write!("{}:", begin);
 
-			gen_expr(node.borrow().enter.as_ref().unwrap());
-			operate!("pop", "rax");
-			operate!("cmp", "rax", 0); // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
-			operate!("je", end);
+			if let Some(enter) = &node.borrow().enter {
+				gen_expr(enter);
+				operate!("pop", "rax");
+				operate!("cmp", "rax", 0); // falseは0なので、cmp rax, 0が真ならエンドに飛ぶ
+				operate!("je", end);
+			}
 			
 			gen_expr(node.borrow().branch.as_ref().unwrap()); // for文内の処理
 			operate!("pop", "rax"); // 今のコードでは各stmtはpush raxを最後にすることになっているので、popが必要
 			
-			gen_expr(node.borrow().routine.as_ref().unwrap()); // インクリメントなどの処理
+			if let Some(routine) = &node.borrow().routine {
+				gen_expr(routine); // インクリメントなどの処理
+			}
 			operate!("jmp", begin);
 
 			// if文と同じ理由でpushが必要
