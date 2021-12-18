@@ -803,12 +803,12 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 			new_binary(
 				Nodekind::CommaNd,
 				zero_clear,
-				make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr)),
+				make_lvar_init(init, &typ, offset, Rc::clone(&lvar_ptr), false),
 				lvar_ptr
 			)
 		}
 		_ => {
-			make_lvar_init(init, &typ, offset, lvar_ptr)
+			make_lvar_init(init, &typ, offset, lvar_ptr, true)
 		}
 	}
 }
@@ -970,7 +970,7 @@ fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 // Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
 // int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
 // ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
-fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: TokenRef) -> NodeRef {
+fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: TokenRef, is_scalar: bool) -> NodeRef {
 	if typ.is_array() {
 		let total_bytes = typ.bytes();
 		let elem_typ = typ.make_deref().unwrap();
@@ -1007,7 +1007,7 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: To
 				node_ptr = new_binary(
 					Nodekind::CommaNd,
 					node_ptr,
-					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finished_bytes, Rc::clone(&lvar_ptr)),
+					make_lvar_init(elem.borrow().clone(), &elem_typ, offset - finished_bytes, Rc::clone(&lvar_ptr), false),
 					Rc::clone(&lvar_ptr)
 				);
 				ix += 1;
@@ -1020,7 +1020,8 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, lvar_ptr: To
 	} else {
 		let node_ptr = init.node.as_ref().unwrap();
 		let val = node_ptr.borrow().val.clone();
-		if val.is_none() || val.unwrap() != 0 {
+		// スカラ値の初期化時は0でもちゃんと初期化を行う AssignNd を生成する必要がある
+		if val.is_none() || val.unwrap() != 0 || is_scalar {
 			assign_op(
 				Nodekind::AssignNd,
 				direct_offset_lvar(offset, typ),
@@ -2342,7 +2343,7 @@ pub mod tests {
 	fn scope() {
 		let src: &str = "
 		int main() {
-			int a = 0;
+			int a = {0};
 			int i = 10;
 			for (int i = 0; i < 10; i++) {
 				int i = 10;
