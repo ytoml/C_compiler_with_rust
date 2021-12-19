@@ -12,13 +12,12 @@ mod options;
 mod parser;
 mod token;
 mod tokenizer;
-mod typecell; // type が予約語だったので typecell とした
+mod typecell;
 mod utils;
 use asm::ASMCODE;
-use generator::{gen_expr, load_literals};
+use generator::generate;
 use options::Opts;
-use parser::program;
-use token::TokenRef;
+use parser::parse;
 use tokenizer::tokenize;
 use globals::{CODES, FILE_NAMES};
 
@@ -31,20 +30,10 @@ fn main() {
         let f: File = File::open(path.as_str()).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
 		code_load(reader, path);
-		
-		// トークナイズしてトークンリストを生成したのち、構文木を生成
-		let mut token_ptr: TokenRef = tokenize(0);
-		let node_heads = program(&mut token_ptr);
-
-		// 構文木が複数(関数の数)生成されているはずなのでそれぞれについて回す
-		load_literals();
-		for node_ptr in node_heads {
-			gen_expr(&node_ptr);
-		}
+		run_cc();
 
 		// 最後に一気に書き込み
-		print!("{}", *ASMCODE.try_lock().unwrap());
-
+		print!("{}", ASMCODE.try_lock().unwrap());
     } else {
 		// fileが指定されていない場合、exit
 		exit_eprintln!("{}{}を指定してください。", "ソース", "ファイル");
@@ -60,6 +49,12 @@ fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 		code.push(line.unwrap()+"\n");
 	}
 	CODES.try_lock().unwrap().push(code);
+}
+
+fn run_cc() {
+	let head = tokenize(0);
+	let trees = parse(head);
+	generate(trees);
 }
 
 #[cfg(test)]

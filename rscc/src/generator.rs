@@ -9,7 +9,14 @@ use crate::{
 	typecell::Type
 };
 
-pub fn load_literals() {
+pub fn generate(trees: Vec<NodeRef>) {
+	load_literals();
+	for tree in trees {
+		gen_expr(&tree);
+	}
+}
+
+fn load_literals() {
 	let literals_access = ORDERED_LITERALS.try_lock().unwrap();
 	if literals_access.is_empty() { return; }
 
@@ -21,7 +28,7 @@ pub fn load_literals() {
 }
 
 // 各計算結果が rax に保持された形になるようなコードを出力
-pub fn gen_expr(node: &NodeRef) {
+fn gen_expr(node: &NodeRef) {
 	let kind =  node.borrow().kind;
 	match kind {
 		Nodekind::GlobalNd => {
@@ -546,7 +553,7 @@ fn zero_clear(mut offset: usize, mut bytes: usize) {
 #[cfg(test)]
 mod tests {
 	use crate::parser::{
-		expr, program,
+		expr, parse,
 		tests::parse_stmts,
 	};
 	use crate::tokenizer::tokenize;
@@ -885,11 +892,9 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr = tokenize(0);
-		let node_heads = program(&mut token_ptr);
-		for node_ptr in node_heads {
-			gen_expr(&node_ptr);
-		}
+		let head = tokenize(0);
+		let trees = parse(head);
+		generate(trees);
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
@@ -905,11 +910,9 @@ mod tests {
 		";
 		test_init(src);
 
-		let mut token_ptr = tokenize(0);
-		let node_heads = program(&mut token_ptr);
-		for node_ptr in node_heads {
-			gen_expr(&node_ptr);
-		}
+		let head = tokenize(0);
+		let trees = parse(head);
+		generate(trees);
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 
@@ -917,19 +920,17 @@ mod tests {
 	fn zero_clear_() {
 		let src: &str = "
 			int main() {
-			char X[][9][33] = {{1}, 3};
-			char Y[127] = {0};
-			int Z[15] = {0};
-			return 0;
-		}
+				char X[][9][33] = {{1}, 3};
+				char Y[127] = {0};
+				int Z[15] = {0};
+				return 0;
+			}
 		";
 		test_init(src);
 
-		let mut token_ptr = tokenize(0);
-		let node_heads = program(&mut token_ptr);
-		for node_ptr in node_heads {
-			gen_expr(&node_ptr);
-		}
+		let head = tokenize(0);
+		let trees = parse(head);
+		generate(trees);
 		println!("{}", ASMCODE.try_lock().unwrap());
 	}
 }

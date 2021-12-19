@@ -15,6 +15,10 @@ use crate::{
 	exit_eprintln, error_with_token, error_with_node
 };
 
+pub fn parse(mut head: TokenRef) -> Vec<NodeRef> {
+	program(&mut head)
+}
+
 /// @static
 /// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
 /// GLOBAL: グローバル変数名 -> 当該ノード
@@ -387,7 +391,7 @@ fn confirm_type(node: &NodeRef) {
 
 // 生成規則: 
 // program = global*
-pub fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
+fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	let mut globals : Vec<NodeRef> = Vec::new();
 
 	while !at_eof(token_ptr) {
