@@ -175,7 +175,7 @@ pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 	// next が None なら exit
 	match token_ptr.borrow().next.as_ref() {
 		Some(ptr) => {
-			tmp_ptr = ptr.clone();
+			tmp_ptr = Rc::clone(ptr);
 		},
 		None => {
 			exit_eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", token_ptr.borrow().kind);

@@ -34,9 +34,8 @@ impl Initializer {
 	}
 	
 	#[inline]
-	pub fn append_elements(&mut self, elem: Initializer) {
-		let mut append_elems = elem.elements.clone();
-		self.elements.append(&mut append_elems);
+	pub fn append_elements(&mut self, elem: &Initializer) {
+		self.elements.append(&mut elem.elements.clone());
 	}
 
 	#[inline]

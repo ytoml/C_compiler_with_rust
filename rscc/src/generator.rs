@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use crate::{
 	asm_write, error_with_node, exit_eprintln, lea, mov, movsx, mov_to, mov_from, mov_from_glb, mov_glb_addr, mov_op, operate,
 	asm::{
@@ -33,7 +34,7 @@ fn gen_expr(node: &NodeRef) {
 	match kind {
 		Nodekind::GlobalNd => {
 			let node = node.borrow();
-			let name = node.name.as_ref().unwrap().clone();
+			let name = node.name.clone().unwrap();
 			if let Some(_) = &node.func_typ {
 				// プロトタイプ宣言は無視して OK
 				if node.stmts.is_none() { return; }
@@ -213,7 +214,7 @@ fn gen_expr(node: &NodeRef) {
 		Nodekind::DerefNd => {
 			// gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
 			// 配列との整合をとるために *& の場合に打ち消す必要がある
-			let left = node.borrow().left.clone().unwrap();
+			let left = Rc::clone(node.borrow().left.as_ref().unwrap());
 			if left.borrow().kind == Nodekind::AddrNd {
 				gen_expr(left.borrow().left.as_ref().unwrap());
 			} else {
@@ -363,7 +364,7 @@ fn gen_expr(node: &NodeRef) {
 		}
 		Nodekind::ZeroClrNd => {
 			// これは特殊な Node で、現時点では left に LvarNd が繋がっているパターンしかあり得ない
-			let left = node.borrow().left.clone().unwrap();
+			let left = Rc::clone(node.borrow().left.as_ref().unwrap());
 			let offset = left.borrow().offset.unwrap();
 			let bytes = left.borrow().typ.clone().unwrap().bytes();
 			zero_clear(offset, bytes);
@@ -375,8 +376,8 @@ fn gen_expr(node: &NodeRef) {
 		_ => {}// 他のパターンなら、ここでは何もしない
 	} 
 
-	let left = node.borrow().left.clone().unwrap();
-	let right = node.borrow().right.clone().unwrap();
+	let left = Rc::clone(node.borrow().left.as_ref().unwrap());
+	let right = Rc::clone(node.borrow().right.as_ref().unwrap());
 	gen_expr(&left);
 	operate!("push", "rax");
 	gen_expr(&right);

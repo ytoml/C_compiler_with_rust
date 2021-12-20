@@ -19,7 +19,7 @@ use crate::{
 pub fn tokenize(file_num: usize) -> TokenRef {
 	// Rcを使って読み進める
 	let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
-	let mut token_head_ptr: TokenRef = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
+	let mut token_head_ptr: TokenRef = Rc::clone(&token_ptr);
 	let mut err_profile: (bool, usize, usize, &str) = (false, 0, 0, "");
 	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
 	{
@@ -376,7 +376,7 @@ pub fn expect_ident(token_ptr: &mut TokenRef) -> String {
 	if token_ptr.borrow().kind != Tokenkind::IdentTk {
 		error_with_token!("識別子を期待した位置で\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
 	}
-	let body = token_ptr.borrow_mut().body.as_ref().unwrap().clone();
+	let body = token_ptr.borrow_mut().body.clone().unwrap();
 	token_ptr_exceed(token_ptr);
 	
 	body
@@ -483,7 +483,7 @@ pub fn is_type(token_ptr: &mut TokenRef) -> bool {
 
 pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
 	if token_ptr.borrow().kind == Tokenkind::IdentTk {
-		let body = token_ptr.borrow_mut().body.as_ref().unwrap().clone();
+		let body = token_ptr.borrow_mut().body.clone().unwrap();
 		token_ptr_exceed(token_ptr);
 
 		Some(body)
