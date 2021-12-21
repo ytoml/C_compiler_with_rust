@@ -57,6 +57,7 @@ pub fn reg_ax(size: usize) -> &'static str {
 	}
 }
 
+#[allow(dead_code)]
 pub fn reg_di(size: usize) -> &'static str {
 	match size {
 		1 => { "dil" }
