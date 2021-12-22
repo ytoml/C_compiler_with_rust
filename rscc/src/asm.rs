@@ -22,6 +22,7 @@ pub static ARGS_REGISTERS: Lazy<Mutex<HashMap<usize, Vec<&str>>>> = Lazy::new(||
 static CTRL_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 static FUNC_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 
+/// キャストが生じる場合の操作をクエリするためのテーブル
 pub static CAST_TABLE: Lazy<Mutex<Vec<Vec<&str>>>> = Lazy::new(|| { Mutex::new(
 	vec![
 		//	I8		I32		U64

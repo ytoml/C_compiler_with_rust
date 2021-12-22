@@ -28,7 +28,7 @@ fn load_literals() {
 	}
 }
 
-// 各計算結果が rax に保持された形になるようなコードを出力
+/// 各計算結果が rax に保持された形になるようなコードを出力
 fn gen_expr(node: &NodeRef) {
 	let kind =  node.borrow().kind;
 	match kind {
@@ -458,7 +458,7 @@ fn gen_expr(node: &NodeRef) {
 	}
 }
 
-// アドレスを生成し、 rax に保存
+/// アドレスを生成し、 rax に保存する
 fn gen_addr(node: &NodeRef) {
 	let node = node.borrow();
 	let kind = node.kind;
@@ -483,7 +483,7 @@ fn gen_addr(node: &NodeRef) {
 	}
 }
 
-// 関数呼び出し時の引数の処理を行う関数
+/// 関数呼び出し時の引数の処理を行う
 fn push_args(args: &Vec<Option<NodeRef>>) {
 	let argc =  args.len();
 	if argc > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
@@ -520,7 +520,7 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 	}
 }
 
-// rbp - offset から rbp - offset + bytes までゼロクリアを行う
+/// rbp - offset から rbp - offset + bytes までゼロクリアを行う
 fn zero_clear(mut offset: usize, mut bytes: usize) {
 	if bytes >= 128 {
 		lea!("rdi", "rbp", offset);

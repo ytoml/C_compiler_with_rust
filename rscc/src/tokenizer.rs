@@ -15,7 +15,7 @@ use crate::{
 	utils::{strtol, is_digit, error_at},
 };
 
-// 入力文字列のトークナイズ
+/// 入力文字列のトークナイズ
 pub fn tokenize(file_num: usize) -> TokenRef {
 	// Rcを使って読み進める
 	let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));

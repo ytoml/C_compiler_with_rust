@@ -67,9 +67,9 @@ pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 	val
 }
 
-// エラー位置を報告し、exit_eprintln! する関数
 const RED: usize = 31;
 const LIGHTBLUE: usize = 36;
+/// エラー位置を報告し、exit_eprintln! する関数
 pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize) -> ! {
 	// ファイル名には今のところこの関数でしかアクセスしないので、デッドロックの検査はしない
 	let file_name = &FILE_NAMES.try_lock().unwrap()[file_num];

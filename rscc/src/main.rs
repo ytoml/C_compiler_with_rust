@@ -40,7 +40,7 @@ fn main() {
     }
 }
 
-// ファイルの情報を、グローバル変数の CODES と FILE_NAME に渡す
+/// ファイルの情報を、グローバル変数の CODES と FILE_NAME に渡す
 fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 	FILE_NAMES.try_lock().unwrap().push(file_name.into());
 	let mut code = vec!["".to_string()]; // コードの行の index を1始まりにするため空文字を入れておく

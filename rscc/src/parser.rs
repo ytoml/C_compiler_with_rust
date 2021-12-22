@@ -19,19 +19,20 @@ pub fn parse(mut head: TokenRef) -> Vec<NodeRef> {
 	program(&mut head)
 }
 
-/// @static
-/// LOCALS: ローカル変数名 -> (BP からのオフセット,  型)
-/// GLOBAL: グローバル変数名 -> 当該ノード
-/// LVAR_MAX_OFFSET: ローカル変数の最大オフセット 
-/// LITERALS: 文字リテラルと対応する内部変数名の対応
+/// ローカル変数名 -> (BP からのオフセット,  型)
 static LOCALS: Lazy<Mutex<Vec<HashMap<String, (usize, TypeCell)>>>> = Lazy::new(|| Mutex::new(vec![]));
+
+/// グローバル変数名 -> 当該ノード
 static GLOBALS: Lazy<Mutex<HashMap<String, Node>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 static LVAR_MAX_OFFSET: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+
+/// 文字列 -> 対応する内部変数名
 static LITERALS: Lazy<Mutex<HashMap<String, String>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// 単にリテラルのセクションの変数名を正しい順番で保持するためのリスト
 pub static ORDERED_LITERALS: Lazy<Mutex<LinkedList<(String, String)>>> = Lazy::new(|| Mutex::new(LinkedList::new()));
 static LITERAL_COUNT: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
 
-// 文字列リテラルを記憶
 fn store_literal(body: impl Into<String>) -> String {
 	LITERALS.try_lock().unwrap()
 		.entry(body.into())
@@ -178,14 +179,13 @@ fn new_ctrl(kind: Nodekind,
 	Rc::new(RefCell::new(Node{ kind: kind, init: init, enter: enter, routine: routine, branch: branch, els: els, ..Default::default()}))
 }
 
-// 関数呼び出しのノード
 #[inline]
 fn new_funcall(name: &String, func_typ: &TypeCell, args: Vec<Option<NodeRef>>, token: &TokenRef) -> NodeRef {
 	if func_typ.typ != Type::Func { panic!("new_funcall can be called only with function TypeCell"); }
 	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(Rc::clone(token)), name: Some(name.clone()), func_typ:Some(func_typ.clone()), args: args, ..Default::default()}))
 }
 
-// グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
+/// グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
 #[inline]
 fn _global(name: &String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token: &TokenRef) -> NodeRef {
 	let glob = Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(Rc::clone(token)), typ:typ, name: Some(name.clone()), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }));
@@ -229,7 +229,7 @@ fn current_scope() -> usize {
 	n_scopes - 1
 }
 
-// 計算時にキャストを自動的に行う
+/// 計算時の暗黙のキャストを行う関数
 fn arith_cast(node: &mut Node) -> TypeCell {
 	let left = Rc::clone(node.left.as_ref().unwrap());
 	let right = Rc::clone(node.right.as_ref().unwrap());
@@ -241,7 +241,6 @@ fn arith_cast(node: &mut Node) -> TypeCell {
 	typ
 }
 
-// cast を行う
 fn new_cast(expr: &NodeRef, typ: &TypeCell) -> NodeRef {
 	confirm_type(&expr);
 	let token = expr.borrow().token.clone();
@@ -250,7 +249,7 @@ fn new_cast(expr: &NodeRef, typ: &TypeCell) -> NodeRef {
 	Rc::new(RefCell::new(Node { kind: Nodekind::CastNd, token: token, typ: typ, left: left, ..Default::default() }))
 }
 
-// 型を構文木全体に対して設定する関数
+/// 型を構文木全体に対して設定する関数
 fn confirm_type(node: &NodeRef) {
 	if let Some(_) = &node.borrow().typ { return; }
 
@@ -347,8 +346,8 @@ fn confirm_type(node: &NodeRef) {
 	}
 }
 
-// 生成規則: 
-// program = global*
+/// 生成規則: 
+/// program = global*
 fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	let mut globals : Vec<NodeRef> = Vec::new();
 	while !at_eof(token_ptr) {
@@ -363,8 +362,8 @@ fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 	globals
 }
 
-// 生成規則:
-// global = function | global-variable
+/// 生成規則:
+/// global = function | global-variable
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
 	let glob = 
 	if is_func(token_ptr) {
@@ -375,8 +374,8 @@ fn global(token_ptr: &mut TokenRef) -> NodeRef {
 	glob
 }
 
-// 生成規則: 
-// function = type ident "(" func-args ")" ("{" stmt* "}")?
+/// 生成規則: 
+/// function = type ident "(" func-args ")" ("{" stmt* "}")?
 fn function(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut typ = expect_type(token_ptr);
 	let ptr = Rc::clone(token_ptr);
@@ -441,9 +440,9 @@ fn function(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-// 生成規則:
-// func-args = arg ("," arg)* | null
-// arg = type ident?
+/// 生成規則:
+/// func-args = arg ("," arg)* | null
+/// arg = type ident?
 fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef>) {
 	let mut args: Vec<Option<NodeRef>> = vec![];
 	let mut arg_typs: Vec<TypeCellRef> = vec![];
@@ -482,8 +481,8 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 	(args, arg_typs)
 }
 
-// 生成規則:
-// global-variable = type gvar-decl ("," gvar-decl)* ";"
+/// 生成規則:
+/// global-variable = type gvar-decl ("," gvar-decl)* ";"
 fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
 	let typ = expect_type(token_ptr);
 	let mut node_ptr = gvar_decl(token_ptr, &typ);
@@ -497,8 +496,8 @@ fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
+/// 生成規則:
+/// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
 fn gvar_decl(token_ptr: &mut TokenRef, typ: &TypeCell) -> NodeRef {
 	let ptr = Rc::clone(token_ptr);
 	let name = expect_ident(token_ptr);
@@ -526,7 +525,7 @@ fn gvar_decl(token_ptr: &mut TokenRef, typ: &TypeCell) -> NodeRef {
 	gvar
 }
 
-// 生成規則としては lvar_initializer と同じ
+/// 生成規則としては lvar_initializer と同じ
 fn gvar_initializer(token_ptr: &mut TokenRef, name: &String, typ: &TypeCell, is_flex: bool, gvar_ptr: &TokenRef) -> NodeRef {
 	let mut typ = typ.clone();
 	if typ.is_array() && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
@@ -612,8 +611,8 @@ macro_rules! eval_const_right {
 	};
 }
 
-// コンパイル時定数の処理
-// label はグローバル変数への参照があった場合にどの変数を参照しているかを持つ
+/// コンパイル時定数の処理を行う関数
+/// label はグローバル変数への参照があった場合にどの変数を参照しているかを持つ
 fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
 	confirm_type(node);
 	let typ = node.borrow().typ.clone().unwrap();
@@ -661,7 +660,7 @@ fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
 	}
 }
 
-// グローバル変数のアドレス評価時などに使用
+/// グローバル変数のアドレス評価時などに使用する関数
 fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
 	let kind = node.borrow().kind;
 	match kind {
@@ -677,8 +676,8 @@ fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
 	}
 }
 
-// 生成規則:
-// declaration = type lvar-decl ("," lvar-decl )* ";"
+/// 生成規則:
+/// declaration = type lvar-decl ("," lvar-decl )* ";"
 fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 	let typ = expect_type(token_ptr);
 	let mut node_ptr = lvar_decl(token_ptr, &typ);
@@ -692,8 +691,8 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
+/// 生成規則:
+/// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
 fn lvar_decl(token_ptr: &mut TokenRef, typ: &TypeCell) -> NodeRef {
 	let mut typ = typ.clone();
 	let ptr = Rc::clone(token_ptr);
@@ -715,8 +714,8 @@ fn lvar_decl(token_ptr: &mut TokenRef, typ: &TypeCell) -> NodeRef {
 	}
 }
 
-// 生成規則:
-// array-suffix = num "]" ("[" array-suffix)?
+/// 生成規則:
+/// array-suffix = num "]" ("[" array-suffix)?
 fn array_suffix(token_ptr: &mut TokenRef, typ: &mut TypeCell) -> bool {
 	let ptr_err = Rc::clone(token_ptr);
 	let (size, is_flex) = if let Some(num) = consume_number(token_ptr) { (num as usize, false) } else { (0, true) };
@@ -736,8 +735,7 @@ fn array_suffix(token_ptr: &mut TokenRef, typ: &mut TypeCell) -> bool {
 	is_flex
 }
 
-// グローバル変数の初期化時には一度この文法で読んだのち、各要素がコンパイル時定数であるかどうかを後で処理する必要がある(ちなみに、読み飛ばす部分に配置されたコンパイル時非定数は無視されてコンパイルが通る)
-// ローカル変数では、規則 initializer により Initializer を生成し、AssignNd に変換する
+/// 規則 initializer により Initializer を生成し、AssignNd による代入へと変換する
 fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, is_flex: bool, lvar_ptr: &TokenRef) -> NodeRef {
 	if typ.is_array() && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") { error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow()); }
 	if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
@@ -772,8 +770,8 @@ fn lvar_initializer(token_ptr: &mut TokenRef, name: String, mut typ: TypeCell, i
 	}
 }
 
-// 生成規則:
-// initializer = "{" array-initializer | char-array-initializer | assign
+/// 生成規則:
+/// initializer = "{" array-initializer | char-array-initializer | assign
 fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	// char の1次元配列のみ文字列リテラルで初期化できるため、特別扱い
 	if typ.is_char_1d_array() {
@@ -808,8 +806,8 @@ fn initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer)
 	}
 } 
 
-// 生成規則:
-// char-array-initializer = string-literal
+/// 生成規則:
+/// char-array-initializer = string-literal
 fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Initializer, ptr: TokenRef) {
 	let elems = body.as_bytes().iter().map(|c| *c as i32);
 	let elem_typ = TypeCell::new(Type::Char);
@@ -856,7 +854,7 @@ fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Ini
 // - 例えば、 int x = {{2, 3}, 4}; なども valid であり、これは単に int x = 2; と同じ
 // 
 // 文字列リテラルによる初期化のルール
-// char str[] = "abc"; と char str[] = {"abc"}; は char str[] = {'a', 'b', 'c', '\0'}; と同じ(1つめが例外的表現)
+// [`char str[] = "abc"; と char str[] = {"abc"};`] は char str[] = {'a', 'b', 'c', '\0'}; と同じ(1つめが例外的表現)
 // 「ネストが深すぎる時」に該当する場合を除き、文字列リテラルを char 配列以外の初期化に使用することはできない
 // また、2次以上の配列を中括弧なしの文字列で初期化することはできない
 // 
@@ -877,9 +875,9 @@ fn char_array_initializer(body: String, array_size: Option<usize>,init: &mut Ini
 // gcc では char str[] = "abc", "def"; のようにパースされているのかもしれないが、よく分からない。
 // clang では3行上の例は valid な文法としてコンパイル可能。
 // 
-// C99 以降の designator は現段階ではサポートしない
-// 生成規則:
-// array-initializer = (initializer ("," initializer)* ","? "}"
+/// 生成規則:
+/// array-initializer = (initializer ("," initializer)* ","? "}"
+///	C99 以降の designator は現段階ではサポートしない
 fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initializer) {
 	let elem_typ = if let Ok(_typ) = typ.make_deref() { _typ } else { typ.clone() };
 	loop {
@@ -920,15 +918,15 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: &TypeCell, init: &mut Initia
 	init.insert(typ, first_elem.node.as_ref().unwrap());
 }
 
-// オフセットで直接代入したい場合の LvarNd
+/// オフセットで直接代入したい場合の LvarNd
 #[inline]
 fn direct_offset_lvar(offset: usize, typ: &TypeCell) -> NodeRef {
 	Rc::new(RefCell::new(Node{ kind: Nodekind::LvarNd, typ: Some(typ.clone()), offset: Some(offset), is_local: true, ..Default::default() }))
 }
 
-// Initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
-// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
-// ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
+/// initializer が存在する要素に対応する部分のみノードを作る(この時、flex であっても先に要素数は確定しており typ.array_size を利用して処理できる)
+/// int x[2] = {1, 2}; のようなパターンは int x[2]; x[0] = 1, x[1] = 2; のように展開する
+/// ただし、それぞれの要素アクセスのためにわざわざポインタ計算を生成せず、単に各要素が格納されるべき位置に対応するベースポインタからオフセットを持つローカル変数であるとみなす
 fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, is_scalar: bool, lvar_ptr: &TokenRef) -> NodeRef {
 	if typ.is_array() {
 		let total_bytes = typ.bytes();
@@ -993,14 +991,14 @@ fn make_lvar_init(init: Initializer, typ: &TypeCell, offset: usize, is_scalar: b
 	}
 }
 
-// 生成規則:
-// stmt = expr? ";"
-//		| declaration
-//		| "{" stmt* "}" 
-//		| "if" "(" expr ")" stmt ("else" stmt)?
-//		| "while" "(" expr ")" stmt
-//		| "for" "(" expr? ";" expr? ";" expr? ")" stmt
-//		| "return" expr? ";"
+/// 生成規則:
+/// stmt = expr? ";"
+///		| declaration
+///		| "{" stmt* "}" 
+///		| "if" "(" expr ")" stmt ("else" stmt)?
+///		| "while" "(" expr ")" stmt
+///		| "for" "(" expr? ";" expr? ";" expr? ")" stmt
+///		| "return" expr? ";"
 fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = Rc::clone(token_ptr);
 	if consume(token_ptr, ";") {
@@ -1093,8 +1091,8 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-// 生成規則:
-// expr = assign ("," expr)? 
+/// 生成規則:
+/// expr = assign ("," expr)? 
 pub fn expr(token_ptr: &mut TokenRef) -> NodeRef {
 	let node_ptr: NodeRef = assign(token_ptr);
 	let ptr = Rc::clone(token_ptr);
@@ -1105,12 +1103,12 @@ pub fn expr(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-// 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
-// 生成規則:
-// assign = logor (assign-op assign)?
-// assign-op = "="
-//			| "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
-//			| "<<=" | ">>="
+/// 生成規則:
+/// assign = logor (assign-op assign)?
+/// assign-op = "="
+///			| "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
+///			| "<<=" | ">>="
+/// 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
 fn assign(token_ptr: &mut TokenRef) -> NodeRef {
 	let node_ptr: NodeRef = logor(token_ptr);
 	let ptr = Rc::clone(token_ptr);
@@ -1141,7 +1139,7 @@ fn assign(token_ptr: &mut TokenRef) -> NodeRef {
 	} 
 }
 
-// a += b; -->  tmp = &a, *tmp = *tmp + b;
+/// a += b; -->  tmp = &a, *tmp = *tmp + b; と読み替える
 fn assign_op(kind: Nodekind, left: &NodeRef, right: &NodeRef, token: &TokenRef) -> NodeRef {
 	// 左右の型を確定させておく
 	confirm_type(left);
@@ -1184,8 +1182,8 @@ fn assign_op(kind: Nodekind, left: &NodeRef, right: &NodeRef, token: &TokenRef) 
 	assign_
 }
 
-// 生成規則:
-// logor = logand ("||" logand)*
+/// 生成規則:
+/// logor = logand ("||" logand)*
 fn logor(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = logand(token_ptr);
 	loop {
@@ -1196,8 +1194,8 @@ fn logor(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// logand = bitor ("&&" bitor)*
+/// 生成規則:
+/// logand = bitor ("&&" bitor)*
 fn logand(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = bitor(token_ptr);
 	loop {
@@ -1208,8 +1206,8 @@ fn logand(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// bitor = bitxor ("|" bitxor)*
+/// 生成規則:
+/// bitor = bitxor ("|" bitxor)*
 fn bitor(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = bitxor(token_ptr);
 	loop{
@@ -1220,8 +1218,8 @@ fn bitor(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// bitxor = bitand ("^" bitand)*
+/// 生成規則:
+/// bitxor = bitand ("^" bitand)*
 fn bitxor(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = bitand(token_ptr);
 	loop{
@@ -1232,8 +1230,8 @@ fn bitxor(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// bitand = equality ("&" equality)*
+/// 生成規則:
+/// bitand = equality ("&" equality)*
 fn bitand(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = equality(token_ptr);
 	loop{
@@ -1244,8 +1242,8 @@ fn bitand(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// equality = relational ("==" relational | "!=" relational)?
+/// 生成規則:
+/// equality = relational ("==" relational | "!=" relational)?
 fn equality(token_ptr: &mut TokenRef) -> NodeRef {
 	let node_ptr: NodeRef = relational(token_ptr);
 	let ptr = Rc::clone(token_ptr);
@@ -1258,8 +1256,8 @@ fn equality(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-// 生成規則:
-// relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
+/// 生成規則:
+/// relational = shift ("<" shift | "<=" shift | ">" shift | ">=" shift)*
 fn relational(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = shift(token_ptr);
 	loop {
@@ -1279,8 +1277,8 @@ fn relational(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// shift = add ("<<" add | ">>" add)*
+/// 生成規則:
+/// shift = add ("<<" add | ">>" add)*
 fn shift(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = add(token_ptr);
 	loop {
@@ -1365,8 +1363,8 @@ fn new_sub(left: &NodeRef, right: &NodeRef, token: &TokenRef) -> NodeRef {
 	sub_
 }
 
-// 生成規則:
-// add = mul ("+" mul | "-" mul)*
+/// 生成規則:
+/// add = mul ("+" mul | "-" mul)*
 fn add(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = mul(token_ptr);
 	loop {
@@ -1384,8 +1382,8 @@ fn add(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
-// 生成規則:
-// mul = unary ("*" unary | "/" unary | "%" unary)*
+/// 生成規則:
+/// mul = unary ("*" unary | "/" unary | "%" unary)*
 fn mul(token_ptr: &mut TokenRef) -> NodeRef {
 	let mut node_ptr: NodeRef = unary(token_ptr);
 	loop {
@@ -1406,14 +1404,14 @@ fn mul(token_ptr: &mut TokenRef) -> NodeRef {
 	node_ptr
 }
 
+/// !+x; や ~-y; は valid
+/// unary = tailed 
+///		| ("sizeof") ( "(" (type | expr) ")" | unary)
+///		| ("~" | "!") unary
+///		| ("*" | "&") unary 
+///		| ("+" | "-") unary
+///		| ("++" | "--") unary 
 // TODO: *+x; *-y; みたいな構文を禁止したい
-// !+x; や ~-y; は valid
-// unary = tailed 
-//		| ("sizeof") ( "(" (type | expr) ")" | unary)
-//		| ("~" | "!") unary
-//		| ("*" | "&") unary 
-//		| ("+" | "-") unary
-//		| ("++" | "--") unary 
 fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = Rc::clone(token_ptr);
 	if consume(token_ptr, "sizeof") {
@@ -1467,9 +1465,9 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-// 生成規則:
-// tailed = primary (primary-tail)?
-// primary-tail = "++" | "--"
+/// 生成規則:
+/// tailed = primary (primary-tail)?
+/// primary-tail = "++" | "--"
 fn tailed(token_ptr: &mut TokenRef) -> NodeRef {
 	let node_ptr: NodeRef = primary(token_ptr);
 	let ptr = Rc::clone(token_ptr);
@@ -1484,7 +1482,7 @@ fn tailed(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
-// ++a; -> a+=1; および a++; -> (a+=1)-1; と読み替える
+/// ++a; -> a+=1; および a++; -> (a+=1)-1; と読み替える
 fn inc_dec(node: &NodeRef, is_inc: bool, is_prefix: bool, token: &TokenRef) -> NodeRef {
 	let kind = if is_inc { Nodekind::AddNd } else { Nodekind::SubNd };
 	confirm_type(node);
@@ -1502,8 +1500,8 @@ fn inc_dec(node: &NodeRef, is_inc: bool, is_prefix: bool, token: &TokenRef) -> N
 	}
 }
 
-// 生成規則:
-// params = assign ("," assign)* | null
+/// 生成規則:
+/// params = assign ("," assign)* | null
 fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 	let mut args: Vec<Option<NodeRef>> = vec![];
 	if !consume(token_ptr, ")") {
@@ -1524,11 +1522,11 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 	args
 }
 
-// 生成規則: 
-// primary = num
-//			| string-literal
-//			| ident ( "(" params ")" | "[" expr "]")?
-//			| "(" expr ")"
+/// 生成規則: 
+/// primary = num
+///			| string-literal
+///			| ident ( "(" params ")" | "[" expr "]")?
+///			| "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	let ptr = Rc::clone(token_ptr);
 	if consume(token_ptr, "(") {
