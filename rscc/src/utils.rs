@@ -67,8 +67,8 @@ pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 	val
 }
 
-const RED: usize = 31;
-const LIGHTBLUE: usize = 36;
+pub const RED: usize = 31;
+pub const LIGHTBLUE: usize = 36;
 /// エラー位置を報告し、exit_eprintln! する関数
 pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize) -> ! {
 	// ファイル名には今のところこの関数でしかアクセスしないので、デッドロックの検査はしない
@@ -79,7 +79,7 @@ pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize)
 			let code_line = &codes[file_num][line_num];
 			let all_space = code_line.chars().map(|c| if c == '\t' {'\t'} else {' '}).collect::<String>();
 			let space = &all_space[..line_offset];
-			eprintln!("\x1b[{}mRSCC: Compile Error\x1b[m", RED);
+			eprintln!("\x1b[{}mrscc: Compile Error\x1b[m", RED);
 			eprintln!("\x1b[{}m{}:{}:{}\x1b[m", LIGHTBLUE, file_name, line_num, line_offset);
 			eprint!("{}", code_line); // code_line には \n が含まれるので eprint! を使う
 			exit_eprintln!("{}\x1b[{}m^\x1b[m {}", space, RED, msg);

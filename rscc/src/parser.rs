@@ -1608,6 +1608,7 @@ pub mod tests {
 	static REP: usize = 40;
 
 	fn test_init(src: &str) {
+		enter_scope();
 		let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string()+"\n").collect();
 		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
