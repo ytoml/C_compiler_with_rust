@@ -5,7 +5,7 @@ use clap::Clap;
     name = "rscc",
     version = "0.0.0",
     author = "Yuna Tomida",
-    about = "Rust 製の C 言語コンパイラ"
+    about = "学習のためにCコンパイラをRustで自作します。"
 )]
 
 pub struct Opts {

@@ -119,7 +119,8 @@ impl TypeCell {
 	// 配列の次元と最小要素の型情報を取得
 	pub fn array_dim(&self) -> (Vec<usize>, Self) {
 		if let Some(size) = self.array_size {
-			let (mut dim, typ) = (self.ptr_to.as_ref().unwrap()).borrow().array_dim();
+			let element = self.ptr_to.clone(); // array_size が Some ならば必ず ptr_to も Some
+			let (mut dim, typ) = (element.as_ref().unwrap()).borrow().array_dim();
 			dim.insert(0, size);
 			(dim, typ)
 		} else {
@@ -130,7 +131,7 @@ impl TypeCell {
 	#[inline]
 	pub fn make_deref(&self) -> Result<Self, ()> {
 		if self.is_one_of(&[Type::Array, Type::Ptr]) {
-			Ok((*self.ptr_to.as_ref().unwrap().borrow()).clone())
+			Ok((*self.ptr_to.clone().unwrap().borrow()).clone())
 		} else { Err(()) }
 	}
 
@@ -144,8 +145,8 @@ impl TypeCell {
 	}
 
 	#[inline]
-	pub fn make_func(&self, arg_typs: Vec<TypeCellRef>) -> Self {
-		let _ret_typ = Some(Rc::new(RefCell::new(self.clone())));
+	pub fn make_func(ret_typ: Self, arg_typs: Vec<TypeCellRef>) -> Self {
+		let _ret_typ = Some(Rc::new(RefCell::new(ret_typ)));
 		let _arg_typs = Some(arg_typs);
 		TypeCell { typ: Type::Func, ret_typ: _ret_typ, arg_typs: _arg_typs, ..Default::default() }
 	}
@@ -239,12 +240,12 @@ impl PartialEq for TypeCell {
 }
 
 // 計算時、代入時などに暗黙のキャストを行うための処理
-pub fn get_common_type(left_typ: &TypeCell, right_typ: &TypeCell) -> TypeCell {
+pub fn get_common_type(left_typ: TypeCell, right_typ: TypeCell) -> TypeCell {
 	// 現在はポインタ、 int, char しかサポートされていない
 	// 右側"のみ"がポインタになることはない(そのようなノード生成が起きる前にエラーになる)ことに注意
-	if let Some(_typ) = &left_typ.ptr_to {
+	if let Some(_typ) = left_typ.ptr_to {
 		_typ.borrow().make_ptr_to()
-	} else if let Some(_typ) = &right_typ.ptr_to {
+	} else if let Some(_typ) = right_typ.ptr_to {
 		_typ.borrow().make_ptr_to()
 	} else {
 		// int 以下のサイズの数は全て int にキャストされる
@@ -269,7 +270,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn eq_test() {
+	fn typecell_eq() {
 		let mut t1 = TypeCell::new(Type::Int);
 		let mut t2 = TypeCell::new(Type::Int);
 		assert_eq!(t1, t2);

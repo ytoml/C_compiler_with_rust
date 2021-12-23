@@ -12,8 +12,8 @@ pub type TokenRef = Rc<RefCell<Token>>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tokenkind {
-	DefaultTk,	// Default 用の kind
-	HeadTk,		// 先頭にのみ使用する kind
+	DefaultTk,	// Default用のkind
+	HeadTk,		// 先頭にのみ使用するkind
 	IdentTk,	// 識別子
 	ReservedTk,	// 記号
 	StringTk,	// 文字列リテラル
@@ -39,18 +39,19 @@ impl Display for Tokenkind {
 	}
 }
 
+// Rc<RefCell<T>>により共有可能な参照(ポインタ風)を持たせる
 #[derive(Debug)]
 pub struct Token {
 	pub kind: Tokenkind,
 	pub val: Option<i32>,  
 	pub body: Option<String>,
-	pub len: usize,				// 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
+	pub len: usize,							// 1文字でないトークンもあるので、文字列の長さを保持しておく(非負)
 	pub next: Option<TokenRef>,	// Tokenは単純に単方向非循環LinkedListを構成することしかしないため、リークは起きないものと考える(循環の可能性があるなら、Weakを使うべき)
 
 	// エラーメッセージ用
-	pub file_num: usize,		// ファイルの番号
-	pub line_num: usize,		// コード内の行数
-	pub line_offset: usize,		// 行内のオフセット
+	pub file_num: usize,					// ファイルの番号
+	pub line_num: usize,					// コード内の行数
+	pub line_offset: usize,					// 行内のオフセット
 }
 
 impl Default for Token {
@@ -59,6 +60,7 @@ impl Default for Token {
 	}
 }
 
+// 構造体に String をうまく持たせるような new メソッド
 impl Token {
 	pub fn new(kind: Tokenkind, body: impl Into<String>, file_num: usize, line_num: usize, line_offset: usize) -> Token {
 		let body: String = body.into();
@@ -79,6 +81,7 @@ impl Token {
 				}
 			}
 			Tokenkind::NumTk => {
+				// NumTk と共に数字以外の値が渡されることはないものとして、 unwrap で処理
 				let val = body.parse::<i32>().unwrap();
 				Token {
 					kind: kind,
@@ -131,7 +134,7 @@ impl Token {
 					.. Default::default()
 				}
 			}
-			_ => { panic!("invalid type of token."); } // DefaultTk を new で生成させない
+			_ => { panic!("invalid type of token."); } // DefaultTkの場合(想定されていない)
 		}
 	}
 }
@@ -165,14 +168,14 @@ impl Display for Token {
 	}
 }
 
-/// トークンのポインタを読み進める
+// トークンのポインタを読み進める
 #[inline]
 pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 	let tmp_ptr;
 	// next が None なら exit
 	match token_ptr.borrow().next.as_ref() {
 		Some(ptr) => {
-			tmp_ptr = Rc::clone(ptr);
+			tmp_ptr = ptr.clone();
 		},
 		None => {
 			exit_eprintln!("次のポインタを読めません。(現在のポインタのkind:{:?})", token_ptr.borrow().kind);
@@ -181,7 +184,7 @@ pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 	*token_ptr = tmp_ptr;
 }
 
-/// エラーメッセージ送出時に println! 等と同様の可変長引数を実現するためのマクロ
+// $tok は &Token を渡す
 #[macro_export]
 macro_rules! error_with_token {
 	($fmt: expr, $tok: expr) => (
@@ -195,7 +198,6 @@ macro_rules! error_with_token {
 	);
 }
 
-/// エラー送出のためのラッパー
 pub fn error_tok(msg: &str, token: &Token) -> ! {
 	// token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
 	error_at(msg, token.file_num, token.line_num, token.line_offset-token.len);

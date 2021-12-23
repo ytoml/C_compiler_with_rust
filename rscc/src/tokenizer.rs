@@ -9,21 +9,21 @@ use once_cell::sync::Lazy;
 
 use crate::{
 	error_with_token,
-	globals::SRC,
+	globals::CODES,
 	token::{Token, Tokenkind, TokenRef, token_ptr_exceed},
 	typecell::{Type, TypeCell},
 	utils::{strtol, is_digit, error_at},
 };
 
-/// 入力文字列のトークナイズ
+// 入力文字列のトークナイズ
 pub fn tokenize(file_num: usize) -> TokenRef {
 	// Rcを使って読み進める
 	let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
-	let mut token_head_ptr: TokenRef = Rc::clone(&token_ptr);
+	let mut token_head_ptr: TokenRef = token_ptr.clone(); // Rcなのでcloneしても中身は同じものを指す
 	let mut err_profile: (bool, usize, usize, &str) = (false, 0, 0, "");
-	// error_at を使うタイミングで SRC のロックが外れているようにスコープを調整
+	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
 	{
-		let code = &mut SRC.try_lock().unwrap()[file_num];
+		let code = &mut CODES.try_lock().unwrap()[file_num];
 		let mut is_block_comment =  false;
 		for (line_num, string) in (&*code).iter().enumerate() {
 
@@ -170,8 +170,8 @@ static SPACES: Lazy<Mutex<Vec<char>>> = Lazy::new(|| Mutex::new(vec![
 // 現在は int のみサポート
 static TYPES: Lazy<Mutex<HashMap<String, Type>>> = Lazy::new(||{
 	let mut map = HashMap::new();
-	let _ = map.insert(String::from("int"), Type::Int);
-	let _ = map.insert(String::from("char"), Type::Char);
+	map.insert(String::from("int"), Type::Int);
+	map.insert(String::from("char"), Type::Char);
 	Mutex::new(map)
 });
 
@@ -360,15 +360,56 @@ fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
 
 /* ------------------------------------------------- トークン処理用関数(parserからの呼び出しを含むためpubが必要) ------------------------------------------------- */
 
-// is: 次の Token がある性質のものであるかを判定(-> bool)
-// consume: 次の Token がある性質のものであるかを判定(-> Option<_>)
-// expect: 次の Token がある性質のものであるかを判定、違う場合は error
+// 次のトークンが数字であることを期待して次のトークンを読む関数
+pub fn expect_number(token_ptr: &mut TokenRef) -> i32 {
+	if token_ptr.borrow().kind != Tokenkind::NumTk {
+		error_with_token!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", &*token_ptr.borrow(),token_ptr.borrow().body.as_ref().unwrap());
+	}
+	let val = token_ptr.borrow().val.unwrap();
+	token_ptr_exceed(token_ptr);
+	
+	val
+}
 
-#[inline]
-pub fn is(token_ptr: &mut TokenRef, op: &str) -> bool { token_ptr.borrow().kind == Tokenkind::ReservedTk && token_ptr.borrow().body.as_ref().unwrap() == op }
+// 次のトークンが識別子(変数など)であることを期待して次のトークンを読む関数
+pub fn expect_ident(token_ptr: &mut TokenRef) -> String {
+	if token_ptr.borrow().kind != Tokenkind::IdentTk {
+		error_with_token!("識別子を期待した位置で\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
+	}
+	let body = token_ptr.borrow_mut().body.as_ref().unwrap().clone();
+	token_ptr_exceed(token_ptr);
+	
+	body
+}
+
+//  予約済みトークンを期待し、(文字列で)指定して読む関数(失敗するとexitする)
+pub fn expect(token_ptr: &mut TokenRef, op: &str) {
+	if token_ptr.borrow().kind != Tokenkind::ReservedTk || token_ptr.borrow().body.as_ref().unwrap() != op {
+		error_with_token!("\"{}\"を期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), op, token_ptr.borrow().body.as_ref().unwrap());
+	}
+	token_ptr_exceed(token_ptr);
+}
+
+pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
+	let types_access =  TYPES.try_lock().unwrap();
+	if token_ptr.borrow().kind == Tokenkind::ReservedTk && types_access.contains_key(token_ptr.borrow().body.as_ref().unwrap()) {
+
+		let base: Type = *types_access.get(token_ptr.borrow().body.as_ref().unwrap()).unwrap();
+		token_ptr_exceed(token_ptr);
+
+		let mut cell = TypeCell::new(base);
+
+		while consume(token_ptr, "*") {
+			cell = cell.make_ptr_to();	
+		}
+
+		cell	
+	} else {
+		error_with_token!("型の指定が必要です。", &*token_ptr.borrow());
+	}
+}
 
 // 期待する次のトークンを(文字列で)指定して読む関数(失敗するとfalseを返す)
-#[inline]
 pub fn consume(token_ptr: &mut TokenRef, op: &str) -> bool {
 	if is(token_ptr, op) {
 		token_ptr_exceed(token_ptr);
@@ -379,80 +420,25 @@ pub fn consume(token_ptr: &mut TokenRef, op: &str) -> bool {
 }
 
 #[inline]
-pub fn expect(token_ptr: &mut TokenRef, op: &str) {
-	if !consume(token_ptr, op) {
-		error_with_token!("\"{}\"を期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), op, token_ptr.borrow().body.as_ref().unwrap());
-	}
+pub fn is(token_ptr: &mut TokenRef, op: &str) -> bool {
+	token_ptr.borrow().kind == Tokenkind::ReservedTk && token_ptr.borrow().body.as_ref().unwrap() == op 
 }
 
-#[inline]
-fn is_number(token_ptr: &mut TokenRef) -> bool { token_ptr.borrow().kind == Tokenkind::NumTk }
-
-#[inline]
+// 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_number(token_ptr: &mut TokenRef) -> Option<i32> {
-	if is_number(token_ptr) {
-		let val = token_ptr.borrow().val.unwrap();
-		token_ptr_exceed(token_ptr);
-		Some(val)
+	if token_ptr.borrow().kind == Tokenkind::NumTk {
+		Some(expect_number(token_ptr))
 	} else {
 		None
 	}
 }
 
 #[inline]
-pub fn expect_number(token_ptr: &mut TokenRef) -> i32 {
-	if let Some(val) = consume_number(token_ptr) { val }
-	else { error_with_token!("数字であるべき位置で数字以外の文字\"{}\"が発見されました。", &*token_ptr.borrow(),token_ptr.borrow().body.as_ref().unwrap()); }
+pub fn is_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
+	token_ptr.borrow().kind == kind
 }
 
-#[inline]
-fn is_ident(token_ptr: &mut TokenRef) -> bool { token_ptr.borrow().kind == Tokenkind::IdentTk }
-
-#[inline]
-pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
-	if is_ident(token_ptr) {
-		let body = token_ptr.borrow().body.clone().unwrap();
-		token_ptr_exceed(token_ptr);
-		Some(body)
-	} else {
-		None
-	}
-}
-
-#[inline]
-pub fn expect_ident(token_ptr: &mut TokenRef) -> String {
-	if let Some(body) = consume_ident(token_ptr) { body }
-	else{ error_with_token!("識別子を期待した位置で\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap()); }
-}
-
-#[inline]
-pub fn is_type(token_ptr: &mut TokenRef) -> bool { is_kind(token_ptr, Tokenkind::ReservedTk) && TYPES.try_lock().unwrap().contains_key(token_ptr.borrow().body.as_ref().unwrap()) }
-
-#[inline]
-pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
-	if is_type(token_ptr) {
-		let base: Type = *TYPES.try_lock().unwrap().get(token_ptr.borrow().body.as_ref().unwrap()).unwrap();
-		token_ptr_exceed(token_ptr);
-		let mut cell = TypeCell::new(base);
-		while consume(token_ptr, "*") {
-			cell = cell.make_ptr_to();	
-		}
-		Some(cell)
-	} else {
-		None
-	}
-}
-
-#[inline]
-pub fn expect_type(token_ptr: &mut TokenRef) -> TypeCell {
-	if let Some(typ) = consume_type(token_ptr) { typ }
-	else { error_with_token!("型の指定が必要です。", &*token_ptr.borrow()); }
-}
-
-#[inline]
-pub fn is_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool { token_ptr.borrow().kind == kind }
-
-#[inline]
+// 期待する次のトークンを(Tokenkindで)指定して読む関数(失敗するとfalseを返す)
 pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
 	if is_kind(token_ptr, kind) {
 		token_ptr_exceed(token_ptr);
@@ -463,20 +449,48 @@ pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
 }
 
 #[inline]
-pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<String> {
+pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
+	if is_type(token_ptr) {
+		Some(expect_type(token_ptr))
+	} else {
+		None
+	}
+}
+
+pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
 	if is_kind(token_ptr, Tokenkind::StringTk) {
 		let literal = token_ptr.borrow().body.clone().unwrap();
 		token_ptr_exceed(token_ptr);
-		Some(literal)
+		literal
+	} else {
+		error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap());
+	}
+}
+
+#[inline]
+pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<String> {
+	if is_kind(token_ptr, Tokenkind::StringTk) {
+		Some(expect_literal(token_ptr))
 	} else {
 		None
 	}
 }
 
 #[inline]
-pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
-	if let Some(literal) = consume_literal(token_ptr) { literal }
-	else { error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap()); }
+pub fn is_type(token_ptr: &mut TokenRef) -> bool {
+	token_ptr.borrow().kind == Tokenkind::ReservedTk && TYPES.try_lock().unwrap().contains_key(token_ptr.borrow().body.as_ref().unwrap()) 
+}
+
+pub fn consume_ident(token_ptr: &mut TokenRef) -> Option<String> {
+	if token_ptr.borrow().kind == Tokenkind::IdentTk {
+		let body = token_ptr.borrow_mut().body.as_ref().unwrap().clone();
+		token_ptr_exceed(token_ptr);
+
+		Some(body)
+
+	} else {
+		None
+	}
 }
 
 #[inline]
@@ -485,12 +499,14 @@ pub fn is_func(token_ptr: &TokenRef) -> bool {
 	consume_type(ptr).is_some() && consume_ident(ptr).is_some() && is(ptr, "(")
 }
 
-#[inline]
-pub fn at_eof(token_ptr: &TokenRef) -> bool { token_ptr.borrow().kind == Tokenkind::EOFTk }
+// EOFかどうかを判断する関数
+pub fn at_eof(token_ptr: &TokenRef) -> bool{
+	token_ptr.borrow().kind == Tokenkind::EOFTk
+}
 
 #[cfg(test)]
 mod tests {
-	use crate::globals::{SRC, FILE_NAMES};
+	use crate::globals::{CODES, FILE_NAMES};
 	use super::*;
 
 	fn test_init(src: &str) {
@@ -498,7 +514,7 @@ mod tests {
 		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
 		code.append(&mut src_);
-		SRC.try_lock().unwrap().push(code);
+		CODES.try_lock().unwrap().push(code);
 	}
 
 	#[test]

@@ -95,12 +95,13 @@ pub struct InitData {
 	pub label: Option<String>,
 }
 
-/// 並列で処理することがないものとして、グローバル変数の都合で Send/Sync を使う
+// 並列で処理することがないものとして、グローバル変数の都合で Send/Sync を使う
 unsafe impl Send for Node {}
 unsafe impl Sync for Node {}
 unsafe impl Send for InitData {}
 unsafe impl Sync for InitData {}
 
+// 初期化を簡単にするためにデフォルトを定義
 impl Default for Node {
 	fn default() -> Node {
 		Node {kind: Nodekind::DefaultNd, token: None, typ: None, val: None, offset: None, left: None, right: None, init: None, enter: None, routine: None, branch: None, els: None, children: vec![], name: None, init_data: vec![], func_typ: None, args: vec![], stmts: None, max_offset: None, is_local: false, level: None }
@@ -188,7 +189,7 @@ impl Display for InitData {
 	}
 }
 
-/// エラーメッセージ送出時に println! 等と同様の可変長引数を実現するためのマクロ
+// $tok は &Token を渡す
 #[macro_export]
 macro_rules! error_with_node {
 	($fmt: expr, $tok: expr) => (
@@ -202,7 +203,6 @@ macro_rules! error_with_node {
 	);
 }
 
-/// エラー送出のためのラッパー
 pub fn error_nod(msg: &str, node: &Node) -> ! {
 	// token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
 	error_tok(msg, &*node.token.as_ref().unwrap().borrow());

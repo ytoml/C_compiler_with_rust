@@ -1,4 +1,4 @@
-use crate::globals::{SRC, FILE_NAMES};
+use crate::globals::{CODES, FILE_NAMES};
 
 // Errorの報告をするマクロ(ほぼeprint!のラッパ)
 // これを使う際は使う側でuseが必要なことに注意
@@ -63,57 +63,28 @@ pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
 			return val;
 		}
 		c = string[*index];
-	}
+	} 
 	val
 }
 
-pub const RED: usize = 31;
-pub const LIGHTBLUE: usize = 36;
-/// エラー位置を報告し、exit_eprintln! する関数
+// エラー位置を報告し、exit_eprintln! する関数
+const RED: usize = 31;
+const LIGHTBLUE: usize = 36;
 pub fn error_at(msg: &str, file_num: usize, line_num: usize, line_offset: usize) -> ! {
 	// ファイル名には今のところこの関数でしかアクセスしないので、デッドロックの検査はしない
 	let file_name = &FILE_NAMES.try_lock().unwrap()[file_num];
 
-	match SRC.try_lock() {
+	match CODES.try_lock() {
 		Ok(codes) => {
 			let code_line = &codes[file_num][line_num];
 			let all_space = code_line.chars().map(|c| if c == '\t' {'\t'} else {' '}).collect::<String>();
 			let space = &all_space[..line_offset];
-			eprintln!("\x1b[{}mrscc: Compile Error\x1b[m", RED);
+			eprintln!("\x1b[{}mRSCC: Compile Error\x1b[m", RED);
 			eprintln!("\x1b[{}m{}:{}:{}\x1b[m", LIGHTBLUE, file_name, line_num, line_offset);
 			eprint!("{}", code_line); // code_line には \n が含まれるので eprint! を使う
 			exit_eprintln!("{}\x1b[{}m^\x1b[m {}", space, RED, msg);
 		}
-		// ここのエラーが出ないように SRC の lock をとった状態でエラー関係の関数やマクロを呼ばないことにする
+		// ここのエラーが出ないように CODES の lock をとった状態でエラー関係の関数やマクロを呼ばないことにする
 		Err(e) => { panic!("{:#?}", e);}
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn is_digit_test() {
-		for c in '0'..'9' {
-			assert!(is_digit(&c));
-		}
-
-		for c in ' '..'/' {
-			assert!(!is_digit(&c));
-		}
-	}
-
-	#[test]
-	fn strtol_test() {
-		let mut index = 0;
-		let string = "1928319u32".chars().collect::<Vec<char>>();
-		let val = strtol(&string, &mut index);
-		assert_eq!(val, 1928319);
-
-		index = 0;
-		let string = "abcde".chars().collect::<Vec<char>>();
-		let val = strtol(&string, &mut index);
-		assert_eq!(val, 0)
 	}
 }
