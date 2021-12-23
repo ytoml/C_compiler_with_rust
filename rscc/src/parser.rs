@@ -1598,7 +1598,6 @@ pub mod tests {
 	static REP: usize = 40;
 
 	fn test_init(src: &str) {
-		enter_scope();
 		let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string()+"\n").collect();
 		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
@@ -1632,11 +1631,13 @@ pub mod tests {
 
 	pub fn parse_stmts(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 		let mut stmts :Vec<NodeRef> = Vec::new();
+		enter_scope();
 		while !at_eof(token_ptr) {
 			let stmt_ = stmt(token_ptr);
 			confirm_type(&stmt_);
 			stmts.push(stmt_);
 		}
+		leave_scope();
 		stmts
 	}
 
