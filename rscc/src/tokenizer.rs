@@ -9,7 +9,7 @@ use once_cell::sync::Lazy;
 
 use crate::{
 	error_with_token,
-	globals::CODES,
+	globals::SRC,
 	token::{Token, Tokenkind, TokenRef, token_ptr_exceed},
 	typecell::{Type, TypeCell},
 	utils::{strtol, is_digit, error_at},
@@ -21,9 +21,9 @@ pub fn tokenize(file_num: usize) -> TokenRef {
 	let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk,"", 0, 0, 0)));
 	let mut token_head_ptr: TokenRef = Rc::clone(&token_ptr);
 	let mut err_profile: (bool, usize, usize, &str) = (false, 0, 0, "");
-	// error_at を使うタイミングで CODES のロックが外れているようにスコープを調整
+	// error_at を使うタイミングで SRC のロックが外れているようにスコープを調整
 	{
-		let code = &mut CODES.try_lock().unwrap()[file_num];
+		let code = &mut SRC.try_lock().unwrap()[file_num];
 		let mut is_block_comment =  false;
 		for (line_num, string) in (&*code).iter().enumerate() {
 
@@ -490,7 +490,7 @@ pub fn at_eof(token_ptr: &TokenRef) -> bool { token_ptr.borrow().kind == Tokenki
 
 #[cfg(test)]
 mod tests {
-	use crate::globals::{CODES, FILE_NAMES};
+	use crate::globals::{SRC, FILE_NAMES};
 	use super::*;
 
 	fn test_init(src: &str) {
@@ -498,7 +498,7 @@ mod tests {
 		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
 		code.append(&mut src_);
-		CODES.try_lock().unwrap().push(code);
+		SRC.try_lock().unwrap().push(code);
 	}
 
 	#[test]

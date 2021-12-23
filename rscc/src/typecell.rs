@@ -269,7 +269,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn typecell_eq() {
+	fn eq_test() {
 		let mut t1 = TypeCell::new(Type::Int);
 		let mut t2 = TypeCell::new(Type::Int);
 		assert_eq!(t1, t2);

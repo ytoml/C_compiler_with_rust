@@ -1602,7 +1602,7 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 #[cfg(test)]
 pub mod tests {
 	use crate::tokenizer::tokenize;
-	use crate::globals::{CODES, FILE_NAMES};
+	use crate::globals::{SRC, FILE_NAMES};
 	use super::*;
 	
 	static REP: usize = 40;
@@ -1613,7 +1613,7 @@ pub mod tests {
 		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
 		code.append(&mut src_);
-		CODES.try_lock().unwrap().push(code);
+		SRC.try_lock().unwrap().push(code);
 	}
 
 	fn search_tree(tree: &NodeRef) {

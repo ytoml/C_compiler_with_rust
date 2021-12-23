@@ -558,7 +558,7 @@ mod tests {
 		tests::parse_stmts,
 	};
 	use crate::tokenizer::tokenize;
-	use crate::globals::{CODES, FILE_NAMES};
+	use crate::globals::{SRC, FILE_NAMES};
 	use super::*;
 
 	fn test_init(src: &str) {
@@ -566,7 +566,7 @@ mod tests {
 		FILE_NAMES.try_lock().unwrap().push("test".to_string());
 		let mut code = vec!["".to_string()];
 		code.append(&mut src_);
-		CODES.try_lock().unwrap().push(code);
+		SRC.try_lock().unwrap().push(code);
 	}
 
 	#[test]

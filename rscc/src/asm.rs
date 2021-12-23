@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use crate::typecell::{Type, get_raw_type};
 
 const UNSUPPORTED_REG_SIZE: &str = "unsupported register size";
+const I32I8: &str = "\tmovsbl eax, al";
 
 pub static ASMCODE: Lazy<Mutex<String>> = Lazy::new(|| Mutex::new(
 	"\t.intel_syntax noprefix\n\t.text\n.LText0:\n".to_string()
@@ -32,9 +33,6 @@ pub static CAST_TABLE: Lazy<Mutex<Vec<Vec<&str>>>> = Lazy::new(|| { Mutex::new(
 	]
 )});
 
-const I32I8: &str = "movsbl eax, al";
-
-// CTRL_COUNT にアクセスして分岐ラベルのための値を得つつインクリメントする
 pub fn get_ctrl_count() -> u32 {
 	let mut count = CTRL_COUNT.try_lock().unwrap();
 	let c = *count;
@@ -49,9 +47,11 @@ pub fn get_func_count() -> u32 {
 	c
 }
 
+#[inline]
 pub fn reg_ax(size: usize) -> &'static str {
 	match size {
 		1 => { "al" }
+		2 => { "ax" }
 		4 => { "eax" }
 		8 => { "rax" }
 		_ => { panic!("{}", UNSUPPORTED_REG_SIZE); }
@@ -62,12 +62,14 @@ pub fn reg_ax(size: usize) -> &'static str {
 pub fn reg_di(size: usize) -> &'static str {
 	match size {
 		1 => { "dil" }
+		2 => { "di" }
 		4 => { "edi" }
 		8 => { "rdi" }
 		_ => { panic!("{}", UNSUPPORTED_REG_SIZE); }
 	}
 }
 
+#[inline]
 pub fn word_ptr(size: usize) -> &'static str {
 	match size {
 		1 => { "BYTE PTR" }
@@ -85,7 +87,7 @@ pub fn cast(from: Type, to: Type) {
 	let cast_asm = cast_access[t1][t2];
 	if cast_asm != "" { 
 		use crate::asm_write;
-		asm_write!("\t{}", cast_asm);
+		asm_write!("{}", cast_asm);
 	}
 }
 
@@ -200,4 +202,80 @@ macro_rules! lea {
 	($operand1:expr, $operand2:expr, $offset:expr) => {
 		asm_write!("\tlea {}, [{}-{}]", $operand1, $operand2, $offset)
 	};
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn cast_test() {
+		ASMCODE.try_lock().unwrap().clear();
+		cast(Type::Int, Type::Int);
+		assert_eq!(
+			*ASMCODE.try_lock().unwrap(),
+			String::new()
+		);
+
+		ASMCODE.try_lock().unwrap().clear();
+		cast(Type::Int, Type::Ptr);
+		assert_eq!(
+			*ASMCODE.try_lock().unwrap(),
+			String::new()
+		);
+
+		ASMCODE.try_lock().unwrap().clear();
+		cast(Type::Char, Type::Ptr);
+		assert_eq!(
+			*ASMCODE.try_lock().unwrap(),
+			format!("{}\n", I32I8)
+		);
+	}
+
+	#[test]
+	fn get_count_test() {
+		for i in 0..1000 {
+			assert_eq!(get_ctrl_count(), i);
+			assert_eq!(get_func_count(), i);
+		}
+	}
+
+	#[test]
+	fn reg_and_word_test() {
+		for (i, reg) in [(1, "al"), (2, "ax"), (4, "eax"), (8, "rax")] {
+			assert_eq!(reg_ax(i), reg);
+		}
+
+		for (i, reg) in [(1, "dil"), (2, "di"), (4, "edi"), (8, "rdi")] {
+			assert_eq!(reg_di(i), reg);
+		}
+		
+		for (i, reg) in [(1, "BYTE PTR"), (2, "WORD PTR"), (4, "DWORD PTR"), (8, "QWORD PTR")] {
+			assert_eq!(word_ptr(i), reg);
+		}
+	}
+
+	#[test]
+	#[should_panic]
+	fn reg_ax_panic() {
+		for i in [1, 2, 4, 8, 16] {
+			let _ = reg_ax(i);
+		}
+	}
+
+	#[test]
+	#[should_panic]
+	fn reg_di_panic() {
+		for i in [1, 2, 4, 8, 16] {
+			let _ = reg_di(i);
+		}
+	}
+
+	#[test]
+	#[should_panic]
+	fn reg_word_panic() {
+		for i in [1, 2, 4, 8, 16] {
+			let _ = word_ptr(i);
+		}
+	}
 }

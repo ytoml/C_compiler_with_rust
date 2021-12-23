@@ -20,7 +20,7 @@ use generator::generate;
 use options::Opts;
 use parser::parse;
 use tokenizer::tokenize;
-use globals::{CODES, FILE_NAMES};
+use globals::{SRC, FILE_NAMES};
 
 pub fn compile() -> String {
 	let opts = Opts::parse();
@@ -43,7 +43,7 @@ pub fn compile_src(path: &str) -> std::io::Result<String> {
 	Ok(ASMCODE.try_lock().unwrap().drain(..).collect::<String>())
 }
 
-/// ファイルの情報を、グローバル変数の CODES と FILE_NAME に渡す
+/// ファイルの情報を、グローバル変数の SRC と FILE_NAME に渡す
 fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 	FILE_NAMES.try_lock().unwrap().push(file_name.into());
 	let mut code = vec!["".to_string()]; // コードの行の index を1始まりにするため空文字を入れておく
@@ -51,7 +51,7 @@ fn code_load(reader: BufReader<File>, file_name:impl Into<String>) {
 		// tokenizer の便利のため、各行の "\n" を復活させておく
 		code.push(line.unwrap()+"\n");
 	}
-	CODES.try_lock().unwrap().push(code);
+	SRC.try_lock().unwrap().push(code);
 }
 
 fn run() {
@@ -65,16 +65,21 @@ mod tests {
 	use std::io::BufReader;
 	use std::fs::File;
 
-	use crate::globals::{CODES, FILE_NAMES};
+	use crate::globals::{SRC, FILE_NAMES};
 	use super::code_load;
 
 	#[test]
-	fn code_concat_test() {
-		let path = "./csrc/src.txt";
+	fn code_load_test() {
+		let path = "./csrc/loadtest.c";
 		let f: File = File::open(path).unwrap();
         let reader: BufReader<File> = BufReader::new(f);
+
 		code_load(reader,path);
-		println!("{:#?}", CODES.try_lock().unwrap());
-		println!("{:#?}", FILE_NAMES.try_lock().unwrap());
+		let src = SRC.try_lock().unwrap();
+		let filenames = FILE_NAMES.try_lock().unwrap();
+		assert_eq!(src.len(), 1);
+		assert_eq!(src[0].len(), 67);
+		assert_eq!(filenames.len(), 1);
+		assert_eq!(filenames[0], path);
 	}
 }
