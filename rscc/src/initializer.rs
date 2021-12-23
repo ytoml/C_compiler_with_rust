@@ -18,14 +18,14 @@ pub struct Initializer {
 
 impl Initializer {
 	#[inline]
-	pub fn new(typ: &TypeCell, node: &NodeRef) -> Self {
-		Initializer { node: Some(Rc::clone(node)), typ: Some(typ.clone()), ..Default::default() }
+	pub fn new(typ: TypeCell, node: NodeRef) -> Self {
+		Initializer { node: Some(node), typ: Some(typ), ..Default::default() }
 	}
 
 	#[inline]
-	pub fn insert(&mut self, typ: &TypeCell, node: &NodeRef) {
-		let _ = self.typ.insert(typ.clone());
-		let _ = self.node.insert(Rc::clone(node));
+	pub fn insert(&mut self, typ: TypeCell, node: NodeRef) {
+		let _ = self.typ.insert(typ);
+		let _ = self.node.insert(node);
 	}
 
 	#[inline]
