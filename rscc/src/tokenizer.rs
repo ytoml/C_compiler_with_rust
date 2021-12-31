@@ -433,11 +433,7 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	if is_type(token_ptr) {
 		let base: Type = *TYPES.try_lock().unwrap().get(token_ptr.borrow().body.as_ref().unwrap()).unwrap();
 		token_ptr_exceed(token_ptr);
-		let mut cell = TypeCell::new(base);
-		while consume(token_ptr, "*") {
-			cell = cell.make_ptr_to();	
-		}
-		Some(cell)
+		Some(TypeCell::new(base))
 	} else {
 		None
 	}
