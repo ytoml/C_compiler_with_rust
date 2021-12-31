@@ -496,7 +496,7 @@ fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 /// 生成規則:
-/// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
+/// gvar-decl = ident ("[" array-suffix)? ("=" initializer)?
 fn gvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
 	let name = expect_ident(token_ptr);
@@ -670,6 +670,38 @@ fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
 			0
 		} 
 		_ => { error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow()); }
+	}
+}
+
+/// 生成規則:
+/// declarator = pointers ("(" declarator ")" | ident ) type-suffix
+fn declarator(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (String, TypeCell) {
+	typ = pointers(token_ptr, typ);
+	
+
+	(String::new(), TypeCell::default())
+}
+
+/// 生成規則: 
+/// pointers = ("*")*
+fn pointers(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
+	while consume(token_ptr, "*") {
+		typ = typ.make_ptr_to();
+	}
+	typ
+}
+
+/// 生成規則: 
+/// type-suffix = "(" func-args | "[" array-suffix | null
+fn type_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
+	if consume(token_ptr, "(") {
+		let (_, arg_typs) = func_args(token_ptr);
+		typ.make_func(arg_typs)
+	} else if consume(token_ptr, "[") {
+		let is_flex = array_suffix(token_ptr, &mut typ);
+		typ
+	} else {
+		typ
 	}
 }
 
