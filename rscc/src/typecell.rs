@@ -206,8 +206,8 @@ impl TypeCell {
 				} else {
 					format!("{}[]", s)
 				}
-			} else if deref.borrow().typ == Type::Array {
-				format!(" ({}*)", s)
+			} else if deref.borrow().is_array() {
+				format!("({}*)", s)
 			} else {
 				format!("*{}", s)
 			};
@@ -218,7 +218,7 @@ impl TypeCell {
 			for (ix, arg) in self.arg_typs.as_ref().unwrap().iter().enumerate() {
 				args_str = if ix == 0 { format!("{}", arg.borrow()) } else { format!("{}, {}", args_str, arg.borrow()) };
 			}
-			format!("{} __func({}){}", ret_typ, args_str,s)
+			format!("{} ({}func)({})", ret_typ, s, args_str)
 		} else {
 			format!("{}{}", self.typ, s)
 		}
