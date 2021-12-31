@@ -66,6 +66,8 @@ pub struct TypeCell {
 	// self.typ == Type::Func
 	pub ret_typ: Option<TypeCellRef>,
 	pub arg_typs: Option<Vec<TypeCellRef>>,
+	pub is_abstract: bool,
+
 	pub is_unsigned: bool,
 }
 
@@ -225,7 +227,7 @@ impl TypeCell {
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None, is_unsigned: false }
+		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None, is_abstract: false, is_unsigned: false }
 	}
 }
 
@@ -248,7 +250,6 @@ impl PartialEq for TypeCell {
 			}
 		} else {
 			self.typ == other.typ && self.ret_typ == other.ret_typ && self.arg_typs == other.arg_typs
-
 		}
 	}
 }

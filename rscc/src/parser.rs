@@ -10,7 +10,7 @@ use crate::{
 	initializer::Initializer,
 	node::{Node, Nodekind, NodeRef, InitData},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_func, is_kind, is_type},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
 	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -362,31 +362,30 @@ fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 /// 生成規則:
-/// global = function | global-variable
+/// global = type (function | global-variable)
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
+	let typ = expect_type(token_ptr);
 	let glob = 
 	if is_func(token_ptr) {
-		function(token_ptr)
+		function(token_ptr, typ)
 	} else {
-		global_variable(token_ptr)
+		global_variable(token_ptr, typ)
 	};
 	glob
 }
 
+#[inline]
+pub fn is_func(token_ptr: &TokenRef) -> bool {
+	let ptr = &mut Rc::clone(token_ptr);
+	let dummy = TypeCell::default();
+	declarator(ptr, dummy).1.typ == Type::Func
+}
+
 /// 生成規則: 
-/// function = type ident "(" func-args ")" ("{" stmt* "}")?
-fn function(token_ptr: &mut TokenRef) -> NodeRef {
-	let mut typ = expect_type(token_ptr);
+/// function = func-declarator ("{" stmt* "}")?
+fn function(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
-	let name = expect_ident(token_ptr);
-
-	expect(token_ptr, "(");
-	let (args, arg_typs) = func_args(token_ptr);
-	let must_be_proto = args.len() != arg_typs.len();
-
-	// 関数宣言の場合は typ は戻り値の型である
-	typ = TypeCell::new(typ.typ).make_func(arg_typs);
-	expect(token_ptr, ")");
+	let (name, typ, args) = func_declarator(token_ptr, typ);
 
 	let (defined, line_num, line_offset) = 
 	if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
@@ -397,7 +396,7 @@ fn function(token_ptr: &mut TokenRef) -> NodeRef {
 	} else { (false , 0, 0) };
 
 	if consume(token_ptr, "{") {
-		if must_be_proto { error_with_token!("関数の定義時には引数名を省略できません。", &*token.borrow()); }
+		if typ.is_abstract { error_with_token!("関数の定義時には引数名を省略できません。", &*token.borrow()); }
 		// 既に宣言されている場合をケア
 		let node = GLOBALS.try_lock().unwrap().get(&name).cloned().unwrap_or(Node::default());
 		match node.kind {
@@ -436,6 +435,32 @@ fn function(token_ptr: &mut TokenRef) -> NodeRef {
 		expect(token_ptr, ";");
 		let _ = proto_func(name, typ, token);
 		nop()
+	}
+}
+
+/// func-declarator = pointers func-name "(" func-args ")"
+fn func_declarator(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (String, TypeCell, Vec<Option<NodeRef>>) {
+	typ = pointers(token_ptr, typ);
+	let name = func_name(token_ptr);
+
+	expect(token_ptr, "(");
+	let (args, arg_typs) = func_args(token_ptr);
+	let is_abstract = args.len() != arg_typs.len();
+	typ = typ.make_func(arg_typs);
+	typ.is_abstract = is_abstract;
+	expect(token_ptr, ")");
+
+	(name, typ, args)
+}
+
+/// func-name = "(" func-name ")" | ident
+fn func_name(token_ptr: &mut TokenRef) -> String {
+	if consume(token_ptr, "(") {
+		let name = func_name(token_ptr);
+		expect(token_ptr, ")");
+		name
+	} else {
+		expect_ident(token_ptr)
 	}
 }
 
@@ -481,9 +506,8 @@ fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef
 }
 
 /// 生成規則:
-/// global-variable = type gvar-decl ("," gvar-decl)* ";"
-fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
-	let typ = expect_type(token_ptr);
+/// global-variable = gvar-decl ("," gvar-decl)* ";"
+fn global_variable(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let mut node_ptr = gvar_decl(token_ptr, typ.clone());
 	loop {
 		let comma_token = Rc::clone(token_ptr);

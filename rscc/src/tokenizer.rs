@@ -476,12 +476,6 @@ pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
 }
 
 #[inline]
-pub fn is_func(token_ptr: &TokenRef) -> bool {
-	let ptr = &mut Rc::clone(token_ptr);
-	consume_type(ptr).is_some() && consume_ident(ptr).is_some() && is(ptr, "(")
-}
-
-#[inline]
 pub fn at_eof(token_ptr: &TokenRef) -> bool { token_ptr.borrow().kind == Tokenkind::EOFTk }
 
 #[cfg(test)]
