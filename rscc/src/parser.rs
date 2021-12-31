@@ -10,7 +10,7 @@ use crate::{
 	initializer::Initializer,
 	node::{Node, Nodekind, NodeRef, InitData},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_func, is_kind, is_type},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
 	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -161,7 +161,7 @@ macro_rules! tmp_lvar {
 
 // ブロックのノード
 #[inline]
-fn new_block(children: Vec<Option<NodeRef>>) -> NodeRef {
+fn new_block(children: Vec<NodeRef>) -> NodeRef {
 	Rc::new(RefCell::new(Node { kind: Nodekind::BlockNd, children: children, ..Default::default()}))
 }
 
@@ -180,14 +180,14 @@ fn new_ctrl(kind: Nodekind,
 }
 
 #[inline]
-fn new_funcall(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, token: TokenRef) -> NodeRef {
+fn new_funcall(name: String, func_typ: TypeCell, args: Vec<NodeRef>, token: TokenRef) -> NodeRef {
 	if func_typ.typ != Type::Func { panic!("new_funcall can be called only with function TypeCell"); }
 	Rc::new(RefCell::new(Node{ kind: Nodekind::FunCallNd, token: Some(token), name: Some(name), func_typ:Some(func_typ), args: args, ..Default::default()}))
 }
 
 /// グローバル変数のノード(new_gvar, new_funcdec によりラップして使う)
 #[inline]
-fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<Option<NodeRef>>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token: TokenRef) -> NodeRef {
+fn _global(name: String, typ: Option<TypeCell>, func_typ: Option<TypeCell>, args: Vec<NodeRef>, stmts: Option<Vec<NodeRef>>, max_offset: Option<usize>, token: TokenRef) -> NodeRef {
 	let glob = Rc::new(RefCell::new(Node{ kind: Nodekind::GlobalNd, token: Some(token), typ:typ, name: Some(name.clone()), func_typ: func_typ, args: args, stmts: stmts, max_offset: max_offset, ..Default::default() }));
 	let _ = GLOBALS.try_lock().unwrap().insert(name.clone(), glob.borrow().clone());
 	glob
@@ -199,7 +199,7 @@ fn new_gvar(name: String, typ: TypeCell, token: TokenRef) -> NodeRef {
 }
 
 #[inline]
-fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<Option<NodeRef>>, stmts: Vec<NodeRef>, max_offset: usize, token: TokenRef) -> NodeRef {
+fn new_funcdec(name: String, func_typ: TypeCell, args: Vec<NodeRef>, stmts: Vec<NodeRef>, max_offset: usize, token: TokenRef) -> NodeRef {
 	_global(name, None, Some(func_typ), args, Some(stmts), Some(max_offset), token)
 }
 
@@ -362,31 +362,30 @@ fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 }
 
 /// 生成規則:
-/// global = function | global-variable
+/// global = type (function | global-variable)
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
+	let typ = expect_type(token_ptr);
 	let glob = 
 	if is_func(token_ptr) {
-		function(token_ptr)
+		function(token_ptr, typ)
 	} else {
-		global_variable(token_ptr)
+		global_variable(token_ptr, typ)
 	};
 	glob
 }
 
+#[inline]
+pub fn is_func(token_ptr: &TokenRef) -> bool {
+	let ptr = &mut Rc::clone(token_ptr);
+	let dummy = TypeCell::default();
+	declarator(ptr, dummy).1.typ == Type::Func
+}
+
 /// 生成規則: 
-/// function = type ident "(" func-args ")" ("{" stmt* "}")?
-fn function(token_ptr: &mut TokenRef) -> NodeRef {
-	let mut typ = expect_type(token_ptr);
+/// function = func-declarator ("{" stmt* "}")?
+fn function(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
-	let name = expect_ident(token_ptr);
-
-	expect(token_ptr, "(");
-	let (args, arg_typs) = func_args(token_ptr);
-	let must_be_proto = args.len() != arg_typs.len();
-
-	// 関数宣言の場合は typ は戻り値の型である
-	typ = TypeCell::new(typ.typ).make_func(arg_typs);
-	expect(token_ptr, ")");
+	let (name, typ, args) = func_declarator(token_ptr, typ);
 
 	let (defined, line_num, line_offset) = 
 	if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
@@ -397,7 +396,7 @@ fn function(token_ptr: &mut TokenRef) -> NodeRef {
 	} else { (false , 0, 0) };
 
 	if consume(token_ptr, "{") {
-		if must_be_proto { error_with_token!("関数の定義時には引数名を省略できません。", &*token.borrow()); }
+		if typ.is_abstract { error_with_token!("関数の定義時には引数名を省略できません。", &*token.borrow()); }
 		// 既に宣言されている場合をケア
 		let node = GLOBALS.try_lock().unwrap().get(&name).cloned().unwrap_or(Node::default());
 		match node.kind {
@@ -439,51 +438,67 @@ fn function(token_ptr: &mut TokenRef) -> NodeRef {
 	}
 }
 
+/// func-declarator = pointers func-name "(" func-args ")"
+fn func_declarator(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (String, TypeCell, Vec<NodeRef>) {
+	typ = pointers(token_ptr, typ);
+	let name = func_name(token_ptr);
+
+	expect(token_ptr, "(");
+	let (args, arg_typs) = func_args(token_ptr);
+	let is_abstract = args.len() != arg_typs.len();
+	typ = typ.make_func(arg_typs);
+	typ.is_abstract = is_abstract;
+	expect(token_ptr, ")");
+
+	(name, typ, args)
+}
+
+/// func-name = "(" func-name ")" | ident
+fn func_name(token_ptr: &mut TokenRef) -> String {
+	if consume(token_ptr, "(") {
+		let name = func_name(token_ptr);
+		expect(token_ptr, ")");
+		name
+	} else {
+		expect_ident(token_ptr)
+	}
+}
+
 /// 生成規則:
 /// func-args = arg ("," arg)* | null
-/// arg = type ident?
-fn func_args(token_ptr: &mut TokenRef) -> (Vec<Option<NodeRef>>, Vec<TypeCellRef>) {
-	let mut args: Vec<Option<NodeRef>> = vec![];
+/// arg = type declarator
+fn func_args(token_ptr: &mut TokenRef) -> (Vec<NodeRef>, Vec<TypeCellRef>) {
+	let mut args: Vec<NodeRef> = vec![];
 	let mut arg_typs: Vec<TypeCellRef> = vec![];
 	let mut argc: usize = 0;
-	if let Some(typ) = consume_type(token_ptr) { // 型宣言があれば、引数ありと判断
-		arg_typs.push(Rc::new(RefCell::new(typ.clone())));
 
-		let token = Rc::clone(token_ptr);
-		if let Some(name) = consume_ident(token_ptr) {
-			args.push(Some(new_lvar(name, token, typ.clone(), true, 0)));
+	while is_type(token_ptr) {
+		if argc >= 6 {
+			error_with_token!("現在7つ以上の引数はサポートされていません。", &token_ptr.borrow());
 		}
+		arg(token_ptr, &mut args, &mut arg_typs);
 		argc += 1;
-
-		loop {
-			if !consume(token_ptr, ",") {break;}
-			if argc >= 6 {
-				error_with_token!("現在7つ以上の引数はサポートされていません。", &token_ptr.borrow());
-			}
-			let typ = expect_type(token_ptr); // 型宣言の読み込み
-			arg_typs.push(Rc::new(RefCell::new(typ.clone())));
-
-			let token = Rc::clone(token_ptr);
-			if let Some(name) = consume_ident(token_ptr) {
-				args.push(Some(new_lvar(name, token, typ.clone(), true, 0)));
-			}
-			argc += 1;
-		}
-	} else {
-		// エラーメッセージがわかりやすくなるように分岐する
-		let token = Rc::clone(token_ptr);
-		if let Some(_) = consume_ident(token_ptr) {
-			error_with_token!("型指定が必要です。", &*token.borrow());
-		}
+		if !consume(token_ptr, ",") { break; }
 	}
 	// args.len() != arg_types.len() ならば引数名が省略されており、プロトタイプ宣言であるとみなせる
 	(args, arg_typs)
 }
 
 /// 生成規則:
-/// global-variable = type gvar-decl ("," gvar-decl)* ";"
-fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
+/// arg = type declarator
+fn arg(token_ptr: &mut TokenRef, args: &mut Vec<NodeRef>, arg_typs: &mut Vec<TypeCellRef>) {
 	let typ = expect_type(token_ptr);
+	let token = Rc::clone(token_ptr);
+	let (name, typ) = declarator(token_ptr, typ);
+	arg_typs.push(Rc::new(RefCell::new(typ.clone())));
+	if name != "" {
+		args.push(new_lvar(name, token, typ,true, 0));
+	} 
+}
+
+/// 生成規則:
+/// global-variable = gvar-decl ("," gvar-decl)* ";"
+fn global_variable(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let mut node_ptr = gvar_decl(token_ptr, typ.clone());
 	loop {
 		let comma_token = Rc::clone(token_ptr);
@@ -496,10 +511,11 @@ fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 /// 生成規則:
-/// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
-fn gvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+/// gvar-decl = declarator ("=" initializer)?
+fn gvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
-	let name = expect_ident(token_ptr);
+	let (name, typ) = declarator(token_ptr, typ);
+	if name == "" { error_with_token!("変数名を指定する必要があります。", &token.borrow()); }
 	if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
 		let decl = node.token.as_ref().unwrap().borrow();
 		if node.typ.is_some() {
@@ -509,11 +525,7 @@ fn gvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		}
 	}
 
-	let mut is_flex = false;
-	if consume(token_ptr, "[") {
-		is_flex = array_suffix(token_ptr, &mut typ);
-	}
-
+	let is_flex = typ.is_flex_array();
 	let gvar =
 	if consume(token_ptr, "=") {
 		gvar_initializer(token_ptr, name, typ, is_flex, token)
@@ -674,6 +686,52 @@ fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
 }
 
 /// 生成規則:
+/// declarator = pointers ("(" declarator ")" | ident ) type-suffix
+fn declarator(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (String, TypeCell) {
+	typ = pointers(token_ptr, typ);
+	if consume(token_ptr, "(") {
+		let ref mut token = Rc::clone(token_ptr);
+		let dummy = TypeCell::default();
+		let _ = declarator(token, dummy);
+		expect(token, ")");
+		typ = type_suffix(token, typ);
+		let nt = declarator(token_ptr, typ);
+		*token_ptr = token.clone();
+
+		nt
+
+	} else {
+		let name = if let Some(n) = consume_ident(token_ptr) { n } else { String::new() };
+		typ = type_suffix(token_ptr, typ);
+
+		(name, typ)
+	}
+}
+
+/// 生成規則: 
+/// pointers = ("*")*
+fn pointers(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
+	while consume(token_ptr, "*") {
+		typ = typ.make_ptr_to();
+	}
+	typ
+}
+
+/// 生成規則: 
+/// type-suffix = "(" func-args ")" | "[" array-suffix | null
+fn type_suffix(token_ptr: &mut TokenRef, typ: TypeCell) -> TypeCell {
+	if consume(token_ptr, "(") {
+		let (_, arg_typs) = func_args(token_ptr);
+		expect(token_ptr, ")");
+		typ.make_func(arg_typs)
+	} else if consume(token_ptr, "[") {
+		array_suffix(token_ptr, typ)
+	} else {
+		typ
+	}
+}
+
+/// 生成規則:
 /// declaration = type lvar-decl ("," lvar-decl )* ";"
 fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 	let typ = expect_type(token_ptr);
@@ -689,17 +747,14 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 /// 生成規則:
-/// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
-fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+/// lvar-decl = declarator ("=" initializer)?
+fn lvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
-	let name = expect_ident(token_ptr);
+	let (name, typ) = declarator(token_ptr, typ);
+	if name == "" { error_with_token!("変数名を指定する必要があります。", &token.borrow()); }
 	if LOCALS.try_lock().unwrap().last().unwrap().contains_key(&name) { error_with_token!("既に宣言された変数です。", &token.borrow()); }
 
-	let mut is_flex = false;
-	if consume(token_ptr, "[") {
-		is_flex = array_suffix(token_ptr, &mut typ);
-	}
-
+	let is_flex = typ.is_flex_array();
 	if consume(token_ptr, "=") {
 		lvar_initializer(token_ptr, name, typ, is_flex, token)
 	} else {
@@ -711,24 +766,40 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 }
 
 /// 生成規則:
-/// array-suffix = num "]" ("[" array-suffix)?
-fn array_suffix(token_ptr: &mut TokenRef, typ: &mut TypeCell) -> bool {
+/// array-suffix = const-expr? "]" ("[" array-suffix)?
+fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 	let ptr_err = Rc::clone(token_ptr);
-	let (size, is_flex) = if let Some(num) = consume_number(token_ptr) { (num as usize, false) } else { (0, true) };
-	if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
-	expect(token_ptr, "]");
+
+	let array_size =
+	if consume(token_ptr, "]") {
+		None
+	} else {
+		let size = const_expr(token_ptr);
+		if size < 0 { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
+		expect(token_ptr, "]");
+		Some(size)
+	};
 
 	// 配列の次元は後ろから処理する
 	if consume(token_ptr, "[") {
 		let ptr_err = Rc::clone(token_ptr);
 		if consume(token_ptr, "]") { error_with_token!("2次元目以降の要素サイズは必ず指定する必要があります。", &ptr_err.borrow()); }
-		let _ = array_suffix(token_ptr, typ);
+		typ = array_suffix(token_ptr, typ);
 	}
 
-	// flex な場合は　array_size を None にする
-	*typ = typ.make_array_of(size);
-	if is_flex { let _ = typ.array_size.take(); }
-	is_flex
+	if let Some(size) = array_size  {
+		typ.make_array_of(size as usize)
+	} else {
+		typ.make_flex_array_of()
+	}
+}
+
+fn const_expr(token_ptr: &mut TokenRef) -> i64 {
+	let ref node_ptr = expr(token_ptr);
+	let ref mut label: Option<String> = Default::default();
+	let val = eval_const(node_ptr, label);
+	if label.is_some() { error_with_node!("定数ではありません", &node_ptr.borrow()); }
+	val
 }
 
 /// 規則 initializer により Initializer を生成し、AssignNd による代入へと変換する
@@ -1006,13 +1077,13 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
 		declaration(token_ptr)
 	} else if consume(token_ptr, "{") {
 		enter_scope();
-		let mut children: Vec<Option<NodeRef>> = vec![];
+		let mut children: Vec<NodeRef> = vec![];
 		loop {
 			if !consume(token_ptr, "}") {
 				if at_eof(token_ptr) { exit_eprintln!("\'{{\'にマッチする\'}}\'が見つかりません。"); }
 				let _stmt = stmt(token_ptr);
 				confirm_type(&_stmt);
-				children.push(Some(_stmt));
+				children.push(_stmt);
 			} else {
 				break;
 			}
@@ -1492,12 +1563,12 @@ fn inc_dec(node: NodeRef, is_inc: bool, is_prefix: bool, token: TokenRef) -> Nod
 
 /// 生成規則:
 /// params = assign ("," assign)* | null
-fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
-	let mut args: Vec<Option<NodeRef>> = vec![];
+fn params(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
+	let mut args: Vec<NodeRef> = vec![];
 	if !consume(token_ptr, ")") {
 		let arg = assign(token_ptr);
 		confirm_type(&arg);
-		args.push(Some(arg));
+		args.push(arg);
 
 		loop {
 			if !consume(token_ptr, ",") {
@@ -1506,7 +1577,7 @@ fn params(token_ptr: &mut TokenRef) -> Vec<Option<NodeRef>> {
 			}
 			let arg = assign(token_ptr);
 			confirm_type(&arg);
-			args.push(Some(arg));
+			args.push(arg);
 		}
 	}
 	args
@@ -1526,7 +1597,7 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 	} else if let Some(name) = consume_ident(token_ptr) {
 		if consume(token_ptr, "(") {
 			let func_typ: TypeCell;
-			let args:Vec<Option<NodeRef>> = params(token_ptr);
+			let args:Vec<NodeRef> = params(token_ptr);
 			// 本来、宣言されているかを contains_key で確認したいが、今は外部の C ソースとリンクさせているため、このコンパイラの処理でパースした関数に対してのみ引数の数チェックをするにとどめる。
 			let glb_access = GLOBALS.try_lock().unwrap();
 			if glb_access.contains_key(&name) {
@@ -1544,7 +1615,7 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
 				// また、引数の型は正しいとして args のものをコピーする
 				let mut arg_typs = vec![];
 				for arg in &args {
-					arg_typs.push(Rc::new(RefCell::new(arg.as_ref().unwrap().borrow().typ.clone().unwrap())));
+					arg_typs.push(Rc::new(RefCell::new(arg.borrow().typ.clone().unwrap())));
 				}
 				func_typ = TypeCell::new(Type::Int).make_func(arg_typs);
 				new_funcall(name, func_typ, args, token)
@@ -1616,12 +1687,8 @@ pub mod tests {
 		if node.routine.is_some() {search_tree(node.routine.as_ref().unwrap());}
 		if node.branch.is_some() {search_tree(node.branch.as_ref().unwrap());}
 		if node.els.is_some() {search_tree(node.els.as_ref().unwrap());}
-		for child in &node.children {
-			if child.is_some() {search_tree(child.as_ref().unwrap());}
-		}
-		for arg in &node.args {
-			if arg.is_some() {search_tree(arg.as_ref().unwrap());}
-		}
+		for child in &node.children { search_tree(child); }
+		for arg in &node.args { search_tree(arg); }
 		if node.stmts.is_some() {
 			for stmt_ in node.stmts.as_ref().unwrap() {
 				search_tree(stmt_);
@@ -2232,6 +2299,8 @@ pub mod tests {
 			int z[][2][10] = {{1, 4, 5, {10, x}}, 2, 3, 4, 2}; // valid
 			// int w[][2][10] = {{1, 4, 5, {10, xx}}, 2, 3, 4, 2}; // invalid
 			char c[10][1000] = {\"abcd\", \"str\", {\'c\'}}, d[] = \"compiler\";
+			int (*X)(int, int*(*)()) = 10;
+			int (*Y)[] = 10;
 		";
 		test_init(src);
 
@@ -2309,6 +2378,8 @@ pub mod tests {
 			char *str = \"This is test script\";
 			int t = *str;
 			print_helper(t);
+
+			int z, *q=&z;
 
 			return x;
 		}

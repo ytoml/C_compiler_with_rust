@@ -433,11 +433,7 @@ pub fn consume_type(token_ptr: &mut TokenRef) -> Option<TypeCell> {
 	if is_type(token_ptr) {
 		let base: Type = *TYPES.try_lock().unwrap().get(token_ptr.borrow().body.as_ref().unwrap()).unwrap();
 		token_ptr_exceed(token_ptr);
-		let mut cell = TypeCell::new(base);
-		while consume(token_ptr, "*") {
-			cell = cell.make_ptr_to();	
-		}
-		Some(cell)
+		Some(TypeCell::new(base))
 	} else {
 		None
 	}
@@ -477,12 +473,6 @@ pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<String> {
 pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
 	if let Some(literal) = consume_literal(token_ptr) { literal }
 	else { error_with_token!("文字列リテラルを期待した位置で予約されていないトークン\"{}\"が発見されました。", &*token_ptr.borrow(), token_ptr.borrow().body.as_ref().unwrap()); }
-}
-
-#[inline]
-pub fn is_func(token_ptr: &TokenRef) -> bool {
-	let ptr = &mut Rc::clone(token_ptr);
-	consume_type(ptr).is_some() && consume_ident(ptr).is_some() && is(ptr, "(")
 }
 
 #[inline]

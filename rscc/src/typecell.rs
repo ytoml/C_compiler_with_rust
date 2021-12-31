@@ -66,6 +66,8 @@ pub struct TypeCell {
 	// self.typ == Type::Func
 	pub ret_typ: Option<TypeCellRef>,
 	pub arg_typs: Option<Vec<TypeCellRef>>,
+	pub is_abstract: bool,
+
 	pub is_unsigned: bool,
 }
 
@@ -100,6 +102,7 @@ impl TypeCell {
 		types.contains(&self.typ)
 	}
 
+	#[inline]
 	pub fn make_ptr_to(&self) -> Self {
 		let ptr_to = Some(Rc::new(RefCell::new(self.clone())));
 		let ptr_end = Some(if let Some(end) = self.ptr_end { end } else { self.typ });
@@ -109,11 +112,25 @@ impl TypeCell {
 
 	// 配列は & と sizeof 以外に対してはポインタとして扱う
 	// なので、ポインタと同じく ptr_end と chains も持たせておく(chains = dim(array) + chains(element))
+	#[inline]
 	pub fn make_array_of(&self, size: usize) -> Self {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
 		let ptr_end = if self.typ == Type::Array { self.ptr_end.clone() } else { Some(self.typ) };
 		let chains = self.chains + 1;
 		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: Some(size), ..Default::default() }
+	}
+
+	#[inline]
+	pub fn make_flex_array_of(&self) -> Self {
+		let array_of = Some(Rc::new(RefCell::new(self.clone())));
+		let ptr_end = if self.typ == Type::Array { self.ptr_end.clone() } else { Some(self.typ) };
+		let chains = self.chains + 1;
+		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: None, ..Default::default() }
+	}
+
+	#[inline]
+	pub fn is_flex_array(&self) -> bool {
+		self.typ == Type::Array && self.array_size.is_none()
 	}
 
 	// 配列の次元と最小要素の型情報を取得
@@ -189,8 +206,8 @@ impl TypeCell {
 				} else {
 					format!("{}[]", s)
 				}
-			} else if deref.borrow().typ == Type::Array {
-				format!(" ({}*)", s)
+			} else if deref.borrow().is_array() {
+				format!("({}*)", s)
 			} else {
 				format!("*{}", s)
 			};
@@ -201,7 +218,7 @@ impl TypeCell {
 			for (ix, arg) in self.arg_typs.as_ref().unwrap().iter().enumerate() {
 				args_str = if ix == 0 { format!("{}", arg.borrow()) } else { format!("{}, {}", args_str, arg.borrow()) };
 			}
-			format!("{} __func({}){}", ret_typ, args_str,s)
+			format!("{} ({}func)({})", ret_typ, s, args_str)
 		} else {
 			format!("{}{}", self.typ, s)
 		}
@@ -210,7 +227,7 @@ impl TypeCell {
 
 impl Default for TypeCell {
 	fn default() -> Self {
-		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None, is_unsigned: false }
+		TypeCell { typ: Type::Invalid, ptr_to: None, ptr_end: None, chains: 0, array_size: None, arg_typs: None, ret_typ: None, is_abstract: false, is_unsigned: false }
 	}
 }
 
@@ -233,7 +250,6 @@ impl PartialEq for TypeCell {
 			}
 		} else {
 			self.typ == other.typ && self.ret_typ == other.ret_typ && self.arg_typs == other.arg_typs
-
 		}
 	}
 }

@@ -57,8 +57,8 @@ fn gen_expr(node: &NodeRef) {
 				// 受け取った引数の挿入: 現在は6つの引数までなのでレジスタから値を持ってくる
 				if node.args.len() > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
 				for (ix, arg) in (&node.args).iter().enumerate() {
-					let offset = *(*(*arg.as_ref().unwrap())).borrow().offset.as_ref().unwrap();
-					let size = arg.as_ref().unwrap().borrow().typ.as_ref().unwrap().bytes();
+					let offset = *arg.borrow().offset.as_ref().unwrap();
+					let size = arg.borrow().typ.as_ref().unwrap().bytes();
 					let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
 
 					mov_to!(size, "rbp", arg_reg, offset);
@@ -358,7 +358,7 @@ fn gen_expr(node: &NodeRef) {
 		} 
 		Nodekind::BlockNd => {
 			for child in &node.borrow().children {
-				gen_expr(child.as_ref().unwrap());
+				gen_expr(child);
 			}
 			return;
 		}
@@ -484,7 +484,7 @@ fn gen_addr(node: &NodeRef) {
 }
 
 /// 関数呼び出し時の引数の処理を行う
-fn push_args(args: &Vec<Option<NodeRef>>) {
+fn push_args(args: &Vec<NodeRef>) {
 	let argc =  args.len();
 	if argc > 6 {exit_eprintln!("現在7つ以上の引数はサポートされていません。");}
 
@@ -493,7 +493,7 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 	if argc != 0 {
 		operate!("sub", "rsp", argc*8);
 		for i in 0..argc {
-			gen_expr(&(args[i]).as_ref().unwrap());
+			gen_expr(&args[i]);
 			if i == 0 {
 				asm_write!("\tmov QWORD PTR[rsp], rax");
 			} else {
@@ -503,7 +503,7 @@ fn push_args(args: &Vec<Option<NodeRef>>) {
 	}
 
 	for i in 0..argc {
-		let typ = args[i].as_ref().unwrap().borrow().typ.clone().unwrap();
+		let typ = args[i].borrow().typ.clone().unwrap();
 		let bytes = if typ.typ == Type::Array { 8 } else { typ.bytes() };
 		let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&bytes).unwrap()[i];
 		let arg_reg_r = ARGS_REGISTERS.try_lock().unwrap().get(&8).unwrap()[i];

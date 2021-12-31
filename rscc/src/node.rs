@@ -69,8 +69,8 @@ pub struct Node {
 	pub branch: Option<NodeRef>,
 	pub els: Option<NodeRef>,
 
-	// {children}: ほんとはOptionのVecである必要はない気がするが、ジェネレータとの互換を考えてOptionに揃える
-	pub children: Vec<Option<NodeRef>>,
+	// ブロック内のコード
+	pub children: Vec<NodeRef>,
 
 	// グローバル変数等で使用
 	pub name: Option<String>,
@@ -78,7 +78,7 @@ pub struct Node {
 
 	// 関数に使用
 	pub func_typ: Option<TypeCell>,
-	pub args: Vec<Option<NodeRef>>,
+	pub args: Vec<NodeRef>,
 	pub stmts: Option<Vec<NodeRef>>,
 	pub max_offset: Option<usize>,
 
@@ -144,8 +144,7 @@ impl Display for Node {
 		if self.children.len() > 0 {
 			s = format!("{}children: exist\n", s);
 			for node in &self.children {
-				if let Some(e) = node.as_ref() {s = format!("{}->kind:{:?}\n", s, e.borrow().kind);}
-				else {s = format!("{}->NULL\n", s);}
+				s = format!("{}->kind:{:?}\n", s, node.borrow().kind);
 			}
 		}
 
@@ -153,8 +152,7 @@ impl Display for Node {
 		if self.args.len() > 0 {
 			s = format!("{}args: exist\n", s);
 			for node in &self.args {
-				if let Some(e) = node.as_ref() {s = format!("{}->kind:{:?}\n", s, e.borrow().kind);}
-				else {s = format!("{}->NULL\n", s);}
+				s = format!("{}->kind:{:?}\n", s, node.borrow().kind);
 			}
 		}
 

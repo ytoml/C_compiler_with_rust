@@ -1,9 +1,9 @@
 int fib(int);
-int MEMO[100] = {1, 2, 3};
+int MEMO[10*10] = {1, 2, 3};
 int X[10][20][30];
 int x, xx = 1 + 9 + (1 + 3)/ 4;
 int *p = &x;
-char c[10][1000] = {"abcd", "str", {'c'}}, d[] = "compiler";
+char c[10][990+2*5] = {"abcd", "str", {'c'}}, d[] = "compiler";
 
 int main() {
 	int *p = &X[0][0][0];
@@ -50,6 +50,9 @@ int main() {
 
 	char lf = 10;
 	printf_wrap("This is test script for step%d%c", 'a'-69, lf);
+
+	int z, *q=&z;
+	print_helper(q==&z+10-10);
 
 	return x;
 }
