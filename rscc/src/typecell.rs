@@ -100,6 +100,7 @@ impl TypeCell {
 		types.contains(&self.typ)
 	}
 
+	#[inline]
 	pub fn make_ptr_to(&self) -> Self {
 		let ptr_to = Some(Rc::new(RefCell::new(self.clone())));
 		let ptr_end = Some(if let Some(end) = self.ptr_end { end } else { self.typ });
@@ -109,11 +110,25 @@ impl TypeCell {
 
 	// 配列は & と sizeof 以外に対してはポインタとして扱う
 	// なので、ポインタと同じく ptr_end と chains も持たせておく(chains = dim(array) + chains(element))
+	#[inline]
 	pub fn make_array_of(&self, size: usize) -> Self {
 		let array_of = Some(Rc::new(RefCell::new(self.clone())));
 		let ptr_end = if self.typ == Type::Array { self.ptr_end.clone() } else { Some(self.typ) };
 		let chains = self.chains + 1;
 		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: Some(size), ..Default::default() }
+	}
+
+	#[inline]
+	pub fn make_flex_array_of(&self) -> Self {
+		let array_of = Some(Rc::new(RefCell::new(self.clone())));
+		let ptr_end = if self.typ == Type::Array { self.ptr_end.clone() } else { Some(self.typ) };
+		let chains = self.chains + 1;
+		TypeCell { typ: Type::Array, ptr_to: array_of, ptr_end: ptr_end, chains: chains, array_size: None, ..Default::default() }
+	}
+
+	#[inline]
+	pub fn is_flex_array(&self) -> bool {
+		self.typ == Type::Array && self.array_size.is_none()
 	}
 
 	// 配列の次元と最小要素の型情報を取得

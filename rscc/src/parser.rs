@@ -496,10 +496,10 @@ fn global_variable(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 /// 生成規則:
-/// gvar-decl = ident ("[" array-suffix)? ("=" initializer)?
-fn gvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+/// gvar-decl = declarator ("=" initializer)?
+fn gvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
-	let name = expect_ident(token_ptr);
+	let (name, typ) = declarator(token_ptr, typ);
 	if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
 		let decl = node.token.as_ref().unwrap().borrow();
 		if node.typ.is_some() {
@@ -509,11 +509,7 @@ fn gvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 		}
 	}
 
-	let mut is_flex = false;
-	if consume(token_ptr, "[") {
-		is_flex = array_suffix(token_ptr, &mut typ);
-	}
-
+	let is_flex = typ.is_flex_array();
 	let gvar =
 	if consume(token_ptr, "=") {
 		gvar_initializer(token_ptr, name, typ, is_flex, token)
@@ -677,9 +673,9 @@ fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
 /// declarator = pointers ("(" declarator ")" | ident ) type-suffix
 fn declarator(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (String, TypeCell) {
 	typ = pointers(token_ptr, typ);
-	
-
-	(String::new(), TypeCell::default())
+	let (name, mut typ) = if consume(token_ptr, "(") { declarator(token_ptr, typ) } else { (expect_ident(token_ptr), typ) };
+	typ = type_suffix(token_ptr, typ);
+	(name, typ)
 }
 
 /// 生成規則: 
@@ -693,13 +689,12 @@ fn pointers(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 
 /// 生成規則: 
 /// type-suffix = "(" func-args | "[" array-suffix | null
-fn type_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
+fn type_suffix(token_ptr: &mut TokenRef, typ: TypeCell) -> TypeCell {
 	if consume(token_ptr, "(") {
 		let (_, arg_typs) = func_args(token_ptr);
 		typ.make_func(arg_typs)
 	} else if consume(token_ptr, "[") {
-		let is_flex = array_suffix(token_ptr, &mut typ);
-		typ
+		array_suffix(token_ptr, typ)
 	} else {
 		typ
 	}
@@ -721,17 +716,13 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 }
 
 /// 生成規則:
-/// lvar-decl = ident ("[" array-suffix)? ("=" initializer)?
-fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
+/// lvar-decl = declarator ("=" initializer)?
+fn lvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 	let token = Rc::clone(token_ptr);
-	let name = expect_ident(token_ptr);
+	let (name, typ) = declarator(token_ptr, typ);
 	if LOCALS.try_lock().unwrap().last().unwrap().contains_key(&name) { error_with_token!("既に宣言された変数です。", &token.borrow()); }
 
-	let mut is_flex = false;
-	if consume(token_ptr, "[") {
-		is_flex = array_suffix(token_ptr, &mut typ);
-	}
-
+	let is_flex = typ.is_flex_array();
 	if consume(token_ptr, "=") {
 		lvar_initializer(token_ptr, name, typ, is_flex, token)
 	} else {
@@ -744,23 +735,25 @@ fn lvar_decl(token_ptr: &mut TokenRef, mut typ: TypeCell) -> NodeRef {
 
 /// 生成規則:
 /// array-suffix = num "]" ("[" array-suffix)?
-fn array_suffix(token_ptr: &mut TokenRef, typ: &mut TypeCell) -> bool {
+fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 	let ptr_err = Rc::clone(token_ptr);
-	let (size, is_flex) = if let Some(num) = consume_number(token_ptr) { (num as usize, false) } else { (0, true) };
+
 	if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
+	let array_size = consume_number(token_ptr);
 	expect(token_ptr, "]");
 
 	// 配列の次元は後ろから処理する
 	if consume(token_ptr, "[") {
 		let ptr_err = Rc::clone(token_ptr);
 		if consume(token_ptr, "]") { error_with_token!("2次元目以降の要素サイズは必ず指定する必要があります。", &ptr_err.borrow()); }
-		let _ = array_suffix(token_ptr, typ);
+		typ = array_suffix(token_ptr, typ);
 	}
 
-	// flex な場合は　array_size を None にする
-	*typ = typ.make_array_of(size);
-	if is_flex { let _ = typ.array_size.take(); }
-	is_flex
+	if let Some(size) = array_size  {
+		typ.make_array_of(size as usize)
+	} else {
+		typ.make_flex_array_of()
+	}
 }
 
 /// 規則 initializer により Initializer を生成し、AssignNd による代入へと変換する
@@ -2341,6 +2334,8 @@ pub mod tests {
 			char *str = \"This is test script\";
 			int t = *str;
 			print_helper(t);
+
+			int z, *q=&z;
 
 			return x;
 		}
