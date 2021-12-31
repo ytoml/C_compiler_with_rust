@@ -10,7 +10,7 @@ use crate::{
 	initializer::Initializer,
 	node::{Node, Nodekind, NodeRef, InitData},
 	token::{Tokenkind, TokenRef},
-	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_number, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
+	tokenizer::{at_eof, consume, consume_ident, consume_kind, consume_literal, consume_type, expect, expect_ident, expect_literal, expect_number, expect_type, is, is_kind, is_type},
 	typecell::{Type, TypeCell, TypeCellRef, get_common_type},
 	exit_eprintln, error_with_token, error_with_node
 };
@@ -758,13 +758,19 @@ fn lvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 }
 
 /// 生成規則:
-/// array-suffix = num "]" ("[" array-suffix)?
+/// array-suffix = const-expr? "]" ("[" array-suffix)?
 fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 	let ptr_err = Rc::clone(token_ptr);
 
-	if consume(token_ptr, "-") { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
-	let array_size = consume_number(token_ptr);
-	expect(token_ptr, "]");
+	let array_size =
+	if consume(token_ptr, "]") {
+		None
+	} else {
+		let size = const_expr(token_ptr);
+		if size < 0 { error_with_token!("配列のサイズは0以上である必要があります。", &ptr_err.borrow()); }
+		expect(token_ptr, "]");
+		Some(size)
+	};
 
 	// 配列の次元は後ろから処理する
 	if consume(token_ptr, "[") {
@@ -778,6 +784,14 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 	} else {
 		typ.make_flex_array_of()
 	}
+}
+
+fn const_expr(token_ptr: &mut TokenRef) -> i64 {
+	let ref node_ptr = expr(token_ptr);
+	let ref mut label: Option<String> = Default::default();
+	let val = eval_const(node_ptr, label);
+	if label.is_some() { error_with_node!("定数ではありません", &node_ptr.borrow()); }
+	val
 }
 
 /// 規則 initializer により Initializer を生成し、AssignNd による代入へと変換する
