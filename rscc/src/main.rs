@@ -1,3 +1,3 @@
 fn main() {
-	println!("{}", rscc::compile());
+    println!("{}", rscc::compile());
 }
