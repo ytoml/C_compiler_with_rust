@@ -22,8 +22,10 @@ pub fn parse(mut head: TokenRef) -> Vec<NodeRef> {
     program(&mut head)
 }
 
+type LocalMap = HashMap<String, (usize, TypeCell)>;
+
 /// ローカル変数名 -> (BP からのオフセット,  型)
-static LOCALS: Lazy<Mutex<Vec<HashMap<String, (usize, TypeCell)>>>> =
+static LOCALS: Lazy<Mutex<Vec<LocalMap>>> =
     Lazy::new(|| Mutex::new(vec![]));
 
 /// グローバル変数名 -> 当該ノード
@@ -75,8 +77,8 @@ macro_rules! align {
 #[inline]
 fn _binary(kind: Nodekind, left: NodeRef, right: NodeRef, token: Option<TokenRef>) -> NodeRef {
     Rc::new(RefCell::new(Node {
-        kind: kind,
-        token: token,
+        kind,
+        token,
         left: Some(left),
         right: Some(right),
         ..Default::default()
@@ -98,8 +100,8 @@ macro_rules! tmp_binary {
 #[inline]
 fn _unary(kind: Nodekind, left: NodeRef, token: Option<TokenRef>) -> NodeRef {
     Rc::new(RefCell::new(Node {
-        kind: kind,
-        token: token,
+        kind,
+        token,
         left: Some(left),
         ..Default::default()
     }))
@@ -120,8 +122,8 @@ macro_rules! tmp_unary {
 #[inline]
 fn _num(val: i32, token: Option<TokenRef>) -> NodeRef {
     Rc::new(RefCell::new(Node {
-        kind: Nodekind::NumNd,
-        token: token,
+        kind: Nodekind::Num,
+        token,
         typ: Some(TypeCell::new(Type::Int)),
         val: Some(val),
         ..Default::default()
@@ -160,7 +162,7 @@ fn _lvar(
 ) -> NodeRef {
     if is_local {
         let (offset, _) = *LOCALS.try_lock().unwrap()[level]
-            .entry(name.into().clone())
+            .entry(name.into())
             .or_insert_with_key(|_| {
                 // 見つからない場合にはオフセットの最大値を伸ばしてスタックを確保
                 let mut max_offset_access = LVAR_MAX_OFFSET.try_lock().unwrap();
@@ -185,21 +187,21 @@ fn _lvar(
                 )
             });
         Rc::new(RefCell::new(Node {
-            kind: Nodekind::LvarNd,
-            typ: typ,
-            token: token,
+            kind: Nodekind::Lvar,
+            typ,
+            token,
             offset: Some(offset),
-            is_local: is_local,
+            is_local,
             level: Some(level),
             ..Default::default()
         }))
     } else {
         Rc::new(RefCell::new(Node {
-            kind: Nodekind::LvarNd,
-            typ: typ,
-            token: token,
+            kind: Nodekind::Lvar,
+            typ,
+            token,
             name: Some(name.into()),
-            is_local: is_local,
+            is_local,
             ..Default::default()
         }))
     }
@@ -226,8 +228,8 @@ macro_rules! tmp_lvar {
 #[inline]
 fn new_block(children: Vec<NodeRef>) -> NodeRef {
     Rc::new(RefCell::new(Node {
-        kind: Nodekind::BlockNd,
-        children: children,
+        kind: Nodekind::Block,
+        children,
         ..Default::default()
     }))
 }
@@ -242,16 +244,16 @@ fn new_ctrl(
     branch: Option<NodeRef>,
     els: Option<NodeRef>,
 ) -> NodeRef {
-    if ![Nodekind::IfNd, Nodekind::ForNd, Nodekind::WhileNd].contains(&kind) {
+    if ![Nodekind::If, Nodekind::For, Nodekind::While].contains(&kind) {
         exit_eprintln!("new_ctrl: 制御構文ではありません。");
     }
     Rc::new(RefCell::new(Node {
-        kind: kind,
-        init: init,
-        enter: enter,
-        routine: routine,
-        branch: branch,
-        els: els,
+        kind,
+        init,
+        enter,
+        routine,
+        branch,
+        els,
         ..Default::default()
     }))
 }
@@ -262,11 +264,11 @@ fn new_funcall(name: String, func_typ: TypeCell, args: Vec<NodeRef>, token: Toke
         panic!("new_funcall can be called only with function TypeCell");
     }
     Rc::new(RefCell::new(Node {
-        kind: Nodekind::FunCallNd,
+        kind: Nodekind::FunCall,
         token: Some(token),
         name: Some(name),
         func_typ: Some(func_typ),
-        args: args,
+        args,
         ..Default::default()
     }))
 }
@@ -283,20 +285,20 @@ fn _global(
     token: TokenRef,
 ) -> NodeRef {
     let glob = Rc::new(RefCell::new(Node {
-        kind: Nodekind::GlobalNd,
+        kind: Nodekind::Global,
         token: Some(token),
-        typ: typ,
+        typ,
         name: Some(name.clone()),
-        func_typ: func_typ,
-        args: args,
-        stmts: stmts,
-        max_offset: max_offset,
+        func_typ,
+        args,
+        stmts,
+        max_offset,
         ..Default::default()
     }));
     let _ = GLOBALS
         .try_lock()
         .unwrap()
-        .insert(name.clone(), glob.borrow().clone());
+        .insert(name, glob.borrow().clone());
     glob
 }
 
@@ -333,7 +335,7 @@ fn proto_func(name: String, func_typ: TypeCell, token: TokenRef) -> NodeRef {
 #[inline]
 fn nop() -> NodeRef {
     Rc::new(RefCell::new(Node {
-        kind: Nodekind::NopNd,
+        kind: Nodekind::Nop,
         typ: Some(TypeCell::new(Type::Invalid)),
         ..Default::default()
     }))
@@ -370,21 +372,21 @@ fn arith_cast(node: &mut Node) -> TypeCell {
 }
 
 fn new_cast(expr: &NodeRef, typ: TypeCell) -> NodeRef {
-    confirm_type(&expr);
+    confirm_type(expr);
     let token = expr.borrow().token.clone();
     let left = Some(Rc::clone(expr));
     Rc::new(RefCell::new(Node {
-        kind: Nodekind::CastNd,
-        token: token,
+        kind: Nodekind::Cast,
+        token,
         typ: Some(typ),
-        left: left,
+        left,
         ..Default::default()
     }))
 }
 
 /// 型を構文木全体に対して設定する関数
 fn confirm_type(node: &NodeRef) {
-    if let Some(_) = &node.borrow().typ {
+    if node.borrow().typ.is_some() {
         return;
     }
 
@@ -413,13 +415,13 @@ fn confirm_type(node: &NodeRef) {
     let kind: Nodekind = node.borrow().kind;
     let mut node = node.borrow_mut();
     match kind {
-        Nodekind::NumNd => {
+        Nodekind::Num => {
             let _ = node.typ.insert(TypeCell::new(Type::Int));
         }
-        Nodekind::AddrNd => {
+        Nodekind::Addr => {
             // & は変数やそのポインタにのみ可能であるため、このタイミングで left をチェックして弾くことができる
             let left_kind = node.left.as_ref().unwrap().borrow().kind;
-            if ![Nodekind::DerefNd, Nodekind::LvarNd].contains(&left_kind) {
+            if ![Nodekind::Deref, Nodekind::Lvar].contains(&left_kind) {
                 error_with_node!(
                     "\"&\" では変数として宣言された値のみ参照ができます。",
                     &node
@@ -428,9 +430,9 @@ fn confirm_type(node: &NodeRef) {
             let left_typ = node.left.as_ref().unwrap().borrow().typ.clone().unwrap();
             let _ = node.typ.insert(left_typ.make_ptr_to());
         }
-        Nodekind::DerefNd => {
+        Nodekind::Deref => {
             let left_typ = node.left.as_ref().unwrap().borrow().typ.clone().unwrap();
-            if let Some(_) = &left_typ.ptr_end {
+            if left_typ.ptr_end.is_some() {
                 let _ = node.typ.insert(left_typ.make_deref().unwrap());
             } else {
                 error_with_node!(
@@ -440,7 +442,7 @@ fn confirm_type(node: &NodeRef) {
                 );
             }
         }
-        Nodekind::AssignNd => {
+        Nodekind::Assign => {
             // 右辺に関して暗黙のキャストを行う
             let left = node.left.as_ref().unwrap();
             let right = node.right.as_ref().unwrap();
@@ -457,12 +459,12 @@ fn confirm_type(node: &NodeRef) {
             let _ = node.right.insert(right);
             let _ = node.typ.insert(left_typ);
         }
-        Nodekind::AddNd | Nodekind::SubNd => {
+        Nodekind::Add | Nodekind::Sub => {
             // 暗黙のキャストを行う
             let typ = arith_cast(&mut node);
             let _ = node.typ.insert(typ);
         }
-        Nodekind::BitNotNd => {
+        Nodekind::BitNot => {
             // ポインタの bitnot は不可
             let left_typ = node.left.as_ref().unwrap().borrow().typ.clone().unwrap();
             if left_typ.ptr_end.is_some() {
@@ -470,34 +472,34 @@ fn confirm_type(node: &NodeRef) {
             }
             let _ = node.typ.insert(left_typ);
         }
-        Nodekind::MulNd
-        | Nodekind::DivNd
-        | Nodekind::ModNd
-        | Nodekind::BitAndNd
-        | Nodekind::BitOrNd
-        | Nodekind::BitXorNd
-        | Nodekind::LShiftNd
-        | Nodekind::RShiftNd => {
+        Nodekind::Mul
+        | Nodekind::Div
+        | Nodekind::Mod
+        | Nodekind::BitAnd
+        | Nodekind::BitOr
+        | Nodekind::BitXor
+        | Nodekind::LShift
+        | Nodekind::RShift => {
             let typ = arith_cast(&mut node);
             if typ.ptr_end.is_some() {
                 error_with_node!("ポインタに対して行えない計算です。", &node);
             }
             let _ = node.typ.insert(typ);
         }
-        Nodekind::LogNotNd | Nodekind::LogAndNd | Nodekind::LogOrNd => {
+        Nodekind::LogNot | Nodekind::LogAnd | Nodekind::LogOr => {
             let _ = node.typ.insert(TypeCell::new(Type::Int));
         }
-        Nodekind::EqNd | Nodekind::NEqNd | Nodekind::LThanNd | Nodekind::LEqNd => {
+        Nodekind::Eq | Nodekind::NEq | Nodekind::LThan | Nodekind::LEq => {
             let _ = arith_cast(&mut node);
             let _ = node.typ.insert(TypeCell::new(Type::Int));
         }
-        Nodekind::CommaNd => {
+        Nodekind::Comma => {
             // x, y の評価は y になるため、型も y のものを引き継ぐ
             let right_typ = node.right.as_ref().unwrap().borrow().typ.clone().unwrap();
             let _ = node.typ.insert(right_typ);
         }
-        Nodekind::FunCallNd => {
-            // FunCallNd の func_typ.ret_typ を typ に適用することで自然に型を親ノードに伝播できる
+        Nodekind::FunCall => {
+            // FunCall の func_typ.ret_typ を typ に適用することで自然に型を親ノードに伝播できる
             let ret_typ = node
                 .func_typ
                 .as_ref()
@@ -509,11 +511,11 @@ fn confirm_type(node: &NodeRef) {
                 .clone();
             let _ = node.typ.insert(ret_typ);
         }
-        Nodekind::ReturnNd => {
+        Nodekind::Return => {
             let left_typ = node.left.as_ref().unwrap().borrow().typ.clone().unwrap();
             let _ = node.typ.insert(left_typ);
         }
-        Nodekind::ZeroClrNd => {
+        Nodekind::ZeroClr => {
             let left_typ = node.left.as_ref().unwrap().borrow().typ.clone().unwrap();
             let _ = node.typ.insert(left_typ);
         }
@@ -541,12 +543,11 @@ fn program(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 /// global = type (function | global-variable)
 fn global(token_ptr: &mut TokenRef) -> NodeRef {
     let typ = expect_type(token_ptr);
-    let glob = if is_func(token_ptr) {
+    if is_func(token_ptr) {
         function(token_ptr, typ)
     } else {
         global_variable(token_ptr, typ)
-    };
-    glob
+    }
 }
 
 #[inline]
@@ -590,9 +591,9 @@ fn function(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
             .unwrap()
             .get(&name)
             .cloned()
-            .unwrap_or(Node::default());
+            .unwrap_or_default();
         match node.kind {
-            Nodekind::GlobalNd => {
+            Nodekind::Global => {
                 if defined {
                     error_with_token!(
                         "関数\"{}\"は位置[{}, {}]で既に定義義されています。",
@@ -612,7 +613,7 @@ fn function(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
                     );
                 }
             }
-            Nodekind::DefaultNd => {
+            Nodekind::Default => {
                 // プロトタイプ宣言がない場合は、再帰のことを考えて定義のパース前に GLOBALS に一旦プロトタイプ宣言の体で保存する
                 let _ = proto_func(name.clone(), typ.clone(), Rc::clone(&token));
             }
@@ -624,14 +625,14 @@ fn function(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
         let mut stmts: Vec<NodeRef> = Vec::new();
         let mut has_return: bool = false;
         while !consume(token_ptr, "}") {
-            has_return |= token_ptr.borrow().kind == Tokenkind::ReturnTk; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
+            has_return |= token_ptr.borrow().kind == Tokenkind::Return; // return がローカルの最大のスコープに出現するかどうかを確認 (ブロックでネストされていると対応できないのが難点…)
             let stmt_ = stmt(token_ptr);
             confirm_type(&stmt_);
             stmts.push(stmt_);
         }
 
         if !has_return {
-            stmts.push(tmp_unary!(Nodekind::ReturnNd, tmp_num!(0)));
+            stmts.push(tmp_unary!(Nodekind::Return, tmp_num!(0)));
         }
 
         let mut max_offset_access = LVAR_MAX_OFFSET.try_lock().unwrap();
@@ -707,7 +708,7 @@ fn arg(token_ptr: &mut TokenRef, args: &mut Vec<NodeRef>, arg_typs: &mut Vec<Typ
     let token = Rc::clone(token_ptr);
     let (name, typ) = declarator(token_ptr, typ);
     arg_typs.push(Rc::new(RefCell::new(typ.clone())));
-    if name != "" {
+    if !name.is_empty() {
         args.push(new_lvar(name, token, typ, true, 0));
     }
 }
@@ -722,7 +723,7 @@ fn global_variable(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
             break;
         }
         node_ptr = new_binary(
-            Nodekind::CommaNd,
+            Nodekind::Comma,
             node_ptr,
             gvar_decl(token_ptr, typ.clone()),
             comma_token,
@@ -738,7 +739,7 @@ fn global_variable(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
 fn gvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
     let token = Rc::clone(token_ptr);
     let (name, typ) = declarator(token_ptr, typ);
-    if name == "" {
+    if name.is_empty() {
         error_with_token!("変数名を指定する必要があります。", &token.borrow());
     }
     if let Some(node) = GLOBALS.try_lock().unwrap().get(&name) {
@@ -763,27 +764,25 @@ fn gvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
     }
 
     let is_flex = typ.is_flex_array();
-    let gvar = if consume(token_ptr, "=") {
+    if consume(token_ptr, "=") {
         gvar_initializer(token_ptr, name, typ, is_flex, token)
     } else {
         new_gvar(name, typ, token)
-    };
-    gvar
+    }
 }
 
 /// 生成規則としては lvar_initializer と同じ
 fn gvar_initializer(
     token_ptr: &mut TokenRef,
     name: String,
-    typ: TypeCell,
+    mut typ: TypeCell,
     is_flex: bool,
     token: TokenRef,
 ) -> NodeRef {
-    let mut typ = typ.clone();
-    if typ.is_array() && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") {
+    if typ.is_array() && !is_kind(token_ptr, Tokenkind::String) && !is(token_ptr, "{") {
         error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow());
     }
-    if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
+    if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::String) {
         error_with_token!(
             "2次元以上の配列\"{}\"は単一の文字リテラルでは初期化できません。",
             &*token_ptr.borrow(),
@@ -840,7 +839,7 @@ fn make_gvar_init(init: &Initializer, typ: TypeCell, gvar: &mut NodeRef) {
             let mut zero_end = last_data.val == 0 && last_data.label.is_none();
             if zero_end {
                 let mut zeros = InitData::new(0, 0, None);
-                while zero_end && init_data.len() > 0 {
+                while zero_end && !init_data.is_empty() {
                     let merge_data = init_data.pop().unwrap();
                     zeros.size += merge_data.size;
                     if let Some(last_data) = init_data.last() {
@@ -884,13 +883,12 @@ fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
     let typ = node.borrow().typ.clone().unwrap();
     let kind = node.borrow().kind;
     match kind {
-        Nodekind::AddNd => eval_const_left!(node, label) + eval_const_right!(node, label),
-        Nodekind::SubNd => {
+        Nodekind::Add => eval_const_left!(node, label) + eval_const_right!(node, label),
+        Nodekind::Sub => {
             let left_val = eval_const_left!(node, label);
             let left_label = label.clone();
             let right_val = eval_const_right!(node, label);
-            match (left_label, &label) {
-                (Some(l), Some(r)) => {
+            if let (Some(l), Some(r)) = (left_label, &label) {
                     // コンパイル時のポインタ同士の引き算は、同じラベル同士でのみ可能(打ち消し合うのでラベルをクリアする)
                     if l != *r {
                         error_with_node!(
@@ -899,42 +897,22 @@ fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
                         );
                     }
                     let _ = label.take();
-                }
-                _ => {}
             }
             left_val - right_val
         }
-        Nodekind::MulNd => eval_const_left!(node, label) * eval_const_right!(node, label),
-        Nodekind::DivNd => eval_const_left!(node, label) / eval_const_right!(node, label),
-        Nodekind::ModNd => eval_const_left!(node, label) % eval_const_right!(node, label),
-        Nodekind::LShiftNd => eval_const_left!(node, label) << eval_const_right!(node, label),
-        Nodekind::RShiftNd => eval_const_left!(node, label) >> eval_const_right!(node, label),
-        Nodekind::BitAndNd => eval_const_left!(node, label) & eval_const_right!(node, label),
-        Nodekind::BitOrNd => eval_const_left!(node, label) | eval_const_right!(node, label),
-        Nodekind::BitXorNd => eval_const_left!(node, label) ^ eval_const_right!(node, label),
-        Nodekind::BitNotNd => !eval_const_left!(node, label),
-        Nodekind::LogAndNd => {
-            if eval_const_left!(node, label) == 0 || eval_const_right!(node, label) == 0 {
-                0
-            } else {
-                1
-            }
-        }
-        Nodekind::LogOrNd => {
-            if eval_const_left!(node, label) == 0 && eval_const_right!(node, label) == 0 {
-                0
-            } else {
-                1
-            }
-        }
-        Nodekind::LogNotNd => {
-            if eval_const_left!(node, label) == 0 {
-                1
-            } else {
-                0
-            }
-        }
-        Nodekind::CastNd => {
+        Nodekind::Mul => eval_const_left!(node, label) * eval_const_right!(node, label),
+        Nodekind::Div => eval_const_left!(node, label) / eval_const_right!(node, label),
+        Nodekind::Mod => eval_const_left!(node, label) % eval_const_right!(node, label),
+        Nodekind::LShift => eval_const_left!(node, label) << eval_const_right!(node, label),
+        Nodekind::RShift => eval_const_left!(node, label) >> eval_const_right!(node, label),
+        Nodekind::BitAnd => eval_const_left!(node, label) & eval_const_right!(node, label),
+        Nodekind::BitOr => eval_const_left!(node, label) | eval_const_right!(node, label),
+        Nodekind::BitXor => eval_const_left!(node, label) ^ eval_const_right!(node, label),
+        Nodekind::BitNot => !eval_const_left!(node, label),
+        Nodekind::LogAnd => !(eval_const_left!(node, label) == 0 || eval_const_right!(node, label) == 0) as i64,
+        Nodekind::LogOr => !(eval_const_left!(node, label) == 0 && eval_const_right!(node, label) == 0) as i64,
+        Nodekind::LogNot => (eval_const_left!(node, label) == 0) as i64,
+        Nodekind::Cast => {
             let val = eval_const_left!(node, label);
             match typ.typ.bytes() {
                 1 => {
@@ -961,8 +939,8 @@ fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
                 _ => val,
             }
         }
-        Nodekind::AddrNd => eval_label(node.borrow().left.as_ref().unwrap(), label),
-        Nodekind::NumNd => node.borrow().val.unwrap() as i64,
+        Nodekind::Addr => eval_label(node.borrow().left.as_ref().unwrap(), label),
+        Nodekind::Num => node.borrow().val.unwrap() as i64,
         _ => {
             error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow());
         }
@@ -973,11 +951,11 @@ fn eval_const(node: &NodeRef, label: &mut Option<String>) -> i64 {
 fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
     let kind = node.borrow().kind;
     match kind {
-        Nodekind::DerefNd => {
+        Nodekind::Deref => {
             eval_const_left!(node, label)
         }
-        Nodekind::LvarNd => {
-            // 初期化時に仮で生成される変数はグローバルスコープでも(!is_local な) LvarNd であることに注意
+        Nodekind::Lvar => {
+            // 初期化時に仮で生成される変数はグローバルスコープでも(!is_local な) Lvar であることに注意
             // また、 Initializer のパース時に定義されていないグローバル変数は弾かれるため、ここでは宣言チェック不要
             if node.borrow().is_local {
                 error_with_node!("コンパイル時定数のみが使用可能です。", &node.borrow());
@@ -996,7 +974,7 @@ fn eval_label(node: &NodeRef, label: &mut Option<String>) -> i64 {
 fn declarator(token_ptr: &mut TokenRef, mut typ: TypeCell) -> (String, TypeCell) {
     typ = pointers(token_ptr, typ);
     if consume(token_ptr, "(") {
-        let ref mut token = Rc::clone(token_ptr);
+        let token = &mut Rc::clone(token_ptr);
         let dummy = TypeCell::default();
         let _ = declarator(token, dummy);
         expect(token, ")");
@@ -1051,7 +1029,7 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
             break;
         }
         node_ptr = new_binary(
-            Nodekind::CommaNd,
+            Nodekind::Comma,
             node_ptr,
             lvar_decl(token_ptr, typ.clone()),
             token,
@@ -1067,7 +1045,7 @@ fn declaration(token_ptr: &mut TokenRef) -> NodeRef {
 fn lvar_decl(token_ptr: &mut TokenRef, typ: TypeCell) -> NodeRef {
     let token = Rc::clone(token_ptr);
     let (name, typ) = declarator(token_ptr, typ);
-    if name == "" {
+    if !name.is_empty() {
         error_with_token!("変数名を指定する必要があります。", &token.borrow());
     }
     if LOCALS
@@ -1135,8 +1113,8 @@ fn array_suffix(token_ptr: &mut TokenRef, mut typ: TypeCell) -> TypeCell {
 }
 
 fn const_expr(token_ptr: &mut TokenRef) -> i64 {
-    let ref node_ptr = expr(token_ptr);
-    let ref mut label: Option<String> = Default::default();
+    let node_ptr = &expr(token_ptr);
+    let label = &mut None;
     let val = eval_const(node_ptr, label);
     if label.is_some() {
         error_with_node!("定数ではありません", &node_ptr.borrow());
@@ -1144,7 +1122,7 @@ fn const_expr(token_ptr: &mut TokenRef) -> i64 {
     val
 }
 
-/// 規則 initializer により Initializer を生成し、AssignNd による代入へと変換する
+/// 規則 initializer により Initializer を生成し、Assign による代入へと変換する
 fn lvar_initializer(
     token_ptr: &mut TokenRef,
     name: String,
@@ -1152,10 +1130,10 @@ fn lvar_initializer(
     is_flex: bool,
     token: TokenRef,
 ) -> NodeRef {
-    if typ.is_array() && !is_kind(token_ptr, Tokenkind::StringTk) && !is(token_ptr, "{") {
+    if typ.is_array() && !is_kind(token_ptr, Tokenkind::String) && !is(token_ptr, "{") {
         error_with_token!("配列の初期化の形式が異なります。", &token_ptr.borrow());
     }
-    if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::StringTk) {
+    if typ.array_dim().0.len() > 1 && is_kind(token_ptr, Tokenkind::String) {
         error_with_token!(
             "2次元以上の配列\"{}\"は単一の文字リテラルでは初期化できません。",
             &*token_ptr.borrow(),
@@ -1172,9 +1150,9 @@ fn lvar_initializer(
     let offset = lvar.borrow().offset.unwrap();
     match typ.typ {
         Type::Array => {
-            let zero_clear = new_unary(Nodekind::ZeroClrNd, lvar, Rc::clone(&token));
+            let zero_clear = new_unary(Nodekind::ZeroClr, lvar, Rc::clone(&token));
             new_binary(
-                Nodekind::CommaNd,
+                Nodekind::Comma,
                 zero_clear,
                 make_lvar_init(init, typ, offset, false, Rc::clone(&token)),
                 token,
@@ -1222,7 +1200,7 @@ fn initializer(token_ptr: &mut TokenRef, typ: TypeCell) -> Initializer {
             array_initializer(token_ptr, typ)
         }
     } else {
-        if is_kind(token_ptr, Tokenkind::StringTk)
+        if is_kind(token_ptr, Tokenkind::String)
             && typ.is_array()
             && !typ
                 .make_deref()
@@ -1326,7 +1304,7 @@ fn char_array_initializer(body: String, array_size: Option<usize>, token: TokenR
 //
 /// 生成規則:
 /// array-initializer = (initializer ("," initializer)* ","? "}"
-///	C99 以降の designator は現段階ではサポートしない
+/// C99 以降の designator は現段階ではサポートしない
 fn array_initializer(token_ptr: &mut TokenRef, typ: TypeCell) -> Initializer {
     let mut init = Initializer::default();
     let elem_typ = if let Ok(_typ) = typ.make_deref() {
@@ -1339,7 +1317,7 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: TypeCell) -> Initializer {
             init.push_element(initializer(token_ptr, elem_typ.clone()));
         } else {
             // この深さではまだ配列が来るべきであるにも関わらず、初期化文のネストが浅かった場合の処理
-            let (base_typ, elem_flatten_size) = if is_kind(token_ptr, Tokenkind::StringTk)
+            let (base_typ, elem_flatten_size) = if is_kind(token_ptr, Tokenkind::String)
                 && elem_typ.get_base_cell().typ != Type::Ptr
             {
                 // 文字列リテラルかつ最小要素の型がポインタでない場合は、ベースの型を1次元配列とみなして読む(型チェックは initializer() で行うためここではスルー)
@@ -1375,11 +1353,11 @@ fn array_initializer(token_ptr: &mut TokenRef, typ: TypeCell) -> Initializer {
     init
 }
 
-/// オフセットで直接代入したい場合の LvarNd
+/// オフセットで直接代入したい場合の Lvar
 #[inline]
 fn direct_offset_lvar(offset: usize, typ: TypeCell) -> NodeRef {
     Rc::new(RefCell::new(Node {
-        kind: Nodekind::LvarNd,
+        kind: Nodekind::Lvar,
         typ: Some(typ),
         offset: Some(offset),
         is_local: true,
@@ -1414,17 +1392,17 @@ fn make_lvar_init(
                 // flatten して読む
                 for _ in 0..elem_flatten_size {
                     let _expr = init.elements[ix].borrow().node.clone().unwrap();
-                    let _val = _expr.borrow().val.clone();
+                    let _val = _expr.borrow().val;
                     // ゼロクリアが必ず入るため、0 を代入するだけのノードは無視する
                     if _val.is_none() || _val.unwrap() != 0 {
                         let _assign = assign_op(
-                            Nodekind::AssignNd,
+                            Nodekind::Assign,
                             direct_offset_lvar(offset - finished_bytes, base_typ.clone()),
                             _expr,
                             Rc::clone(&token),
                         );
                         node_ptr =
-                            new_binary(Nodekind::CommaNd, node_ptr, _assign, Rc::clone(&token));
+                            new_binary(Nodekind::Comma, node_ptr, _assign, Rc::clone(&token));
                     }
                     ix += 1;
                     finished_bytes += base_bytes;
@@ -1434,7 +1412,7 @@ fn make_lvar_init(
                 }
             } else {
                 node_ptr = new_binary(
-                    Nodekind::CommaNd,
+                    Nodekind::Comma,
                     node_ptr,
                     make_lvar_init(
                         elem.borrow().clone(),
@@ -1453,12 +1431,12 @@ fn make_lvar_init(
         node_ptr
     } else {
         let node_ptr = Rc::clone(init.node.as_ref().unwrap());
-        let val = node_ptr.borrow().val.clone();
-        // スカラ値の初期化時は0でもちゃんと初期化を行う AssignNd を生成する必要がある
+        let val = node_ptr.borrow().val;
+        // スカラ値の初期化時は0でもちゃんと初期化を行う Assign を生成する必要がある
         if val.is_none() || val.unwrap() != 0 || is_scalar {
             assign_op(
-                Nodekind::AssignNd,
-                direct_offset_lvar(offset, typ.clone()),
+                Nodekind::Assign,
+                direct_offset_lvar(offset, typ),
                 node_ptr,
                 token,
             )
@@ -1470,12 +1448,12 @@ fn make_lvar_init(
 
 /// 生成規則:
 /// stmt = expr? ";"
-///		| declaration
-///		| "{" stmt* "}"
-///		| "if" "(" expr ")" stmt ("else" stmt)?
-///		| "while" "(" expr ")" stmt
-///		| "for" "(" expr? ";" expr? ";" expr? ")" stmt
-///		| "return" expr? ";"
+///     | declaration
+///     | "{" stmt* "}"
+///     | "if" "(" expr ")" stmt ("else" stmt)?
+///     | "while" "(" expr ")" stmt
+///     | "for" "(" expr? ";" expr? ";" expr? ")" stmt
+///     | "return" expr? ";"
 fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
     let token = Rc::clone(token_ptr);
     if consume(token_ptr, ";") {
@@ -1511,14 +1489,14 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
             None
         };
 
-        new_ctrl(Nodekind::IfNd, None, enter, None, branch, els)
+        new_ctrl(Nodekind::If, None, enter, None, branch, els)
     } else if consume(token_ptr, "while") {
         expect(token_ptr, "(");
         let enter = Some(expr(token_ptr));
         expect(token_ptr, ")");
         let branch = Some(stmt(token_ptr));
 
-        new_ctrl(Nodekind::WhileNd, None, enter, None, branch, None)
+        new_ctrl(Nodekind::While, None, enter, None, branch, None)
     } else if consume(token_ptr, "for") {
         expect(token_ptr, "(");
         enter_scope();
@@ -1552,9 +1530,9 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
         let branch: Option<NodeRef> = Some(stmt(token_ptr));
         leave_scope();
 
-        new_ctrl(Nodekind::ForNd, init, enter, routine, branch, None)
-    } else if consume_kind(token_ptr, Tokenkind::ReturnTk) {
-        // exprなしのパターン: 実質NumNd 0があるのと同じと捉えれば良い
+        new_ctrl(Nodekind::For, init, enter, routine, branch, None)
+    } else if consume_kind(token_ptr, Tokenkind::Return) {
+        // exprなしのパターン: 実質Num 0があるのと同じと捉えれば良い
         let left: NodeRef = if consume(token_ptr, ";") {
             tmp_num!(0)
         } else {
@@ -1563,7 +1541,7 @@ fn stmt(token_ptr: &mut TokenRef) -> NodeRef {
             _left
         };
 
-        new_unary(Nodekind::ReturnNd, left, token)
+        new_unary(Nodekind::Return, left, token)
     } else {
         let node_ptr: NodeRef = expr(token_ptr);
         expect(token_ptr, ";");
@@ -1577,7 +1555,7 @@ pub fn expr(token_ptr: &mut TokenRef) -> NodeRef {
     let node_ptr: NodeRef = assign(token_ptr);
     let token = Rc::clone(token_ptr);
     if consume(token_ptr, ",") {
-        new_binary(Nodekind::CommaNd, node_ptr, expr(token_ptr), token)
+        new_binary(Nodekind::Comma, node_ptr, expr(token_ptr), token)
     } else {
         node_ptr
     }
@@ -1586,34 +1564,34 @@ pub fn expr(token_ptr: &mut TokenRef) -> NodeRef {
 /// 生成規則:
 /// assign = logor (assign-op assign)?
 /// assign-op = "="
-///			| "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
-///			| "<<=" | ">>="
+///         | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "^=" | "|="
+///         | "<<=" | ">>="
 /// 禁止代入(例えば x + y = 10; や x & y = 10; など)は generator 側で弾く
 fn assign(token_ptr: &mut TokenRef) -> NodeRef {
     let node_ptr: NodeRef = logor(token_ptr);
     let token = Rc::clone(token_ptr);
     if consume(token_ptr, "=") {
-        assign_op(Nodekind::AssignNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::Assign, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "+=") {
-        assign_op(Nodekind::AddNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::Add, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "-=") {
-        assign_op(Nodekind::SubNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::Sub, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "*=") {
-        assign_op(Nodekind::MulNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::Mul, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "/=") {
-        assign_op(Nodekind::DivNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::Div, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "%=") {
-        assign_op(Nodekind::ModNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::Mod, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "&=") {
-        assign_op(Nodekind::BitAndNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::BitAnd, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "^=") {
-        assign_op(Nodekind::BitXorNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::BitXor, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "|=") {
-        assign_op(Nodekind::BitOrNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::BitOr, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, "<<=") {
-        assign_op(Nodekind::LShiftNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::LShift, node_ptr, assign(token_ptr), token)
     } else if consume(token_ptr, ">>=") {
-        assign_op(Nodekind::RShiftNd, node_ptr, assign(token_ptr), token)
+        assign_op(Nodekind::RShift, node_ptr, assign(token_ptr), token)
     } else {
         node_ptr
     }
@@ -1626,34 +1604,34 @@ fn assign_op(kind: Nodekind, left: NodeRef, right: NodeRef, token: TokenRef) -> 
     confirm_type(&right);
 
     // この式全体の評価値は left (a += b の a) の型とする
-    let assign_ = if kind == Nodekind::AssignNd {
-        new_binary(Nodekind::AssignNd, left, right, token)
+    let assign_ = if kind == Nodekind::Assign {
+        new_binary(Nodekind::Assign, left, right, token)
     } else {
         // tmp として通常は認められない無名の変数を使うことで重複を避ける
         let typ = left.borrow().typ.clone().unwrap();
         let tmp_lvar = tmp_lvar!();
         let _ = tmp_lvar.borrow_mut().typ.insert(typ.make_ptr_to());
-        let tmp_deref = tmp_unary!(Nodekind::DerefNd, tmp_lvar);
+        let tmp_deref = tmp_unary!(Nodekind::Deref, tmp_lvar);
 
         let expr_left = tmp_binary!(
-            Nodekind::AssignNd,
+            Nodekind::Assign,
             tmp_lvar,
-            tmp_unary!(Nodekind::AddrNd, left)
+            tmp_unary!(Nodekind::Addr, left)
         );
 
         let token2 = Rc::clone(&token);
         let tmp_deref2 = Rc::clone(&tmp_deref);
         let op = match kind {
-            Nodekind::AddNd => new_add(tmp_deref2, right, token2),
-            Nodekind::SubNd => new_sub(tmp_deref2, right, token2),
+            Nodekind::Add => new_add(tmp_deref2, right, token2),
+            Nodekind::Sub => new_sub(tmp_deref2, right, token2),
             _ => new_binary(kind, tmp_deref2, right, token2),
         };
 
-        let expr_right = tmp_binary!(Nodekind::AssignNd, tmp_deref, op);
+        let expr_right = tmp_binary!(Nodekind::Assign, tmp_deref, op);
 
         confirm_type(&expr_left);
         confirm_type(&expr_right);
-        new_binary(Nodekind::CommaNd, expr_left, expr_right, token)
+        new_binary(Nodekind::Comma, expr_left, expr_right, token)
     };
     confirm_type(&assign_);
     assign_
@@ -1668,7 +1646,7 @@ fn logor(token_ptr: &mut TokenRef) -> NodeRef {
         if !consume(token_ptr, "||") {
             break;
         }
-        node_ptr = new_binary(Nodekind::LogOrNd, node_ptr, logand(token_ptr), token);
+        node_ptr = new_binary(Nodekind::LogOr, node_ptr, logand(token_ptr), token);
     }
     node_ptr
 }
@@ -1682,7 +1660,7 @@ fn logand(token_ptr: &mut TokenRef) -> NodeRef {
         if !consume(token_ptr, "&&") {
             break;
         }
-        node_ptr = new_binary(Nodekind::LogAndNd, node_ptr, bitor(token_ptr), token);
+        node_ptr = new_binary(Nodekind::LogAnd, node_ptr, bitor(token_ptr), token);
     }
     node_ptr
 }
@@ -1696,7 +1674,7 @@ fn bitor(token_ptr: &mut TokenRef) -> NodeRef {
         if !consume(token_ptr, "|") {
             break;
         }
-        node_ptr = new_binary(Nodekind::BitOrNd, node_ptr, bitxor(token_ptr), token);
+        node_ptr = new_binary(Nodekind::BitOr, node_ptr, bitxor(token_ptr), token);
     }
     node_ptr
 }
@@ -1710,7 +1688,7 @@ fn bitxor(token_ptr: &mut TokenRef) -> NodeRef {
         if !consume(token_ptr, "^") {
             break;
         }
-        node_ptr = new_binary(Nodekind::BitXorNd, node_ptr, bitand(token_ptr), token);
+        node_ptr = new_binary(Nodekind::BitXor, node_ptr, bitand(token_ptr), token);
     }
     node_ptr
 }
@@ -1724,7 +1702,7 @@ fn bitand(token_ptr: &mut TokenRef) -> NodeRef {
         if !consume(token_ptr, "&") {
             break;
         }
-        node_ptr = new_binary(Nodekind::BitAndNd, node_ptr, equality(token_ptr), token);
+        node_ptr = new_binary(Nodekind::BitAnd, node_ptr, equality(token_ptr), token);
     }
     node_ptr
 }
@@ -1735,9 +1713,9 @@ fn equality(token_ptr: &mut TokenRef) -> NodeRef {
     let node_ptr: NodeRef = relational(token_ptr);
     let token = Rc::clone(token_ptr);
     if consume(token_ptr, "==") {
-        new_binary(Nodekind::EqNd, node_ptr, relational(token_ptr), token)
+        new_binary(Nodekind::Eq, node_ptr, relational(token_ptr), token)
     } else if consume(token_ptr, "!=") {
-        new_binary(Nodekind::NEqNd, node_ptr, relational(token_ptr), token)
+        new_binary(Nodekind::NEq, node_ptr, relational(token_ptr), token)
     } else {
         node_ptr
     }
@@ -1750,13 +1728,13 @@ fn relational(token_ptr: &mut TokenRef) -> NodeRef {
     loop {
         let token = Rc::clone(token_ptr);
         if consume(token_ptr, "<") {
-            node_ptr = new_binary(Nodekind::LThanNd, node_ptr, shift(token_ptr), token);
+            node_ptr = new_binary(Nodekind::LThan, node_ptr, shift(token_ptr), token);
         } else if consume(token_ptr, "<=") {
-            node_ptr = new_binary(Nodekind::LEqNd, node_ptr, shift(token_ptr), token);
+            node_ptr = new_binary(Nodekind::LEq, node_ptr, shift(token_ptr), token);
         } else if consume(token_ptr, ">") {
-            node_ptr = new_binary(Nodekind::LThanNd, shift(token_ptr), node_ptr, token);
+            node_ptr = new_binary(Nodekind::LThan, shift(token_ptr), node_ptr, token);
         } else if consume(token_ptr, ">=") {
-            node_ptr = new_binary(Nodekind::LEqNd, shift(token_ptr), node_ptr, token);
+            node_ptr = new_binary(Nodekind::LEq, shift(token_ptr), node_ptr, token);
         } else {
             break;
         }
@@ -1771,9 +1749,9 @@ fn shift(token_ptr: &mut TokenRef) -> NodeRef {
     loop {
         let token = Rc::clone(token_ptr);
         if consume(token_ptr, "<<") {
-            node_ptr = new_binary(Nodekind::LShiftNd, node_ptr, add(token_ptr), token);
+            node_ptr = new_binary(Nodekind::LShift, node_ptr, add(token_ptr), token);
         } else if consume(token_ptr, ">>") {
-            node_ptr = new_binary(Nodekind::RShiftNd, node_ptr, add(token_ptr), token);
+            node_ptr = new_binary(Nodekind::RShift, node_ptr, add(token_ptr), token);
         } else {
             break;
         }
@@ -1796,20 +1774,18 @@ fn new_add(mut left: NodeRef, mut right: NodeRef, token: TokenRef) -> NodeRef {
     }
 
     if !left_is_ptr && !right_is_ptr {
-        new_binary(Nodekind::AddNd, left, right, token)
+        new_binary(Nodekind::Add, left, right, token)
     } else {
         // num + ptr の場合には ptr + num として扱うべく左右を入れ替える
         if !left_is_ptr {
-            let tmp = left;
-            left = right;
-            right = tmp;
+            std::mem::swap(&mut left, &mut right);
         }
 
         // 配列の場合、サイズを考慮する必要があることに注意
         let ptr_cell = left.borrow().typ.clone().unwrap();
         let bytes = ptr_cell.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
-        let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(bytes), right);
-        let add_ = new_binary(Nodekind::AddNd, left, pointer_offset, token);
+        let pointer_offset = tmp_binary!(Nodekind::Mul, tmp_num!(bytes), right);
+        let add_ = new_binary(Nodekind::Add, left, pointer_offset, token);
         confirm_type(&add_);
         let _ = add_.borrow_mut().typ.insert(ptr_cell);
         add_
@@ -1827,7 +1803,7 @@ fn new_sub(left: NodeRef, right: NodeRef, token: TokenRef) -> NodeRef {
     let right_is_ptr = right_typ.ptr_end.is_some();
 
     let (sub_, type_cell) = if !left_is_ptr && !right_is_ptr {
-        return new_binary(Nodekind::SubNd, left, right, token);
+        return new_binary(Nodekind::Sub, left, right, token);
     } else if left_is_ptr && right_is_ptr {
         // ptr - ptr はそれが変数何個分のオフセットに相当するかを計算する
         if left_typ != right_typ {
@@ -1840,10 +1816,10 @@ fn new_sub(left: NodeRef, right: NodeRef, token: TokenRef) -> NodeRef {
         }
 
         let bytes = left_typ.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
-        let pointer_offset = tmp_binary!(Nodekind::SubNd, left, right);
+        let pointer_offset = tmp_binary!(Nodekind::Sub, left, right);
         confirm_type(&pointer_offset);
         (
-            new_binary(Nodekind::DivNd, pointer_offset, tmp_num!(bytes), token),
+            new_binary(Nodekind::Div, pointer_offset, tmp_num!(bytes), token),
             TypeCell::new(Type::Int),
         )
     } else {
@@ -1856,10 +1832,10 @@ fn new_sub(left: NodeRef, right: NodeRef, token: TokenRef) -> NodeRef {
         }
 
         let bytes = left_typ.ptr_to.as_ref().unwrap().borrow().bytes() as i32;
-        let pointer_offset = tmp_binary!(Nodekind::MulNd, tmp_num!(bytes), right);
+        let pointer_offset = tmp_binary!(Nodekind::Mul, tmp_num!(bytes), right);
         confirm_type(&pointer_offset);
         (
-            new_binary(Nodekind::SubNd, left, pointer_offset, token),
+            new_binary(Nodekind::Sub, left, pointer_offset, token),
             left_typ,
         )
     };
@@ -1891,11 +1867,11 @@ fn mul(token_ptr: &mut TokenRef) -> NodeRef {
     loop {
         let token = Rc::clone(token_ptr);
         if consume(token_ptr, "*") {
-            node_ptr = new_binary(Nodekind::MulNd, node_ptr, unary(token_ptr), token);
+            node_ptr = new_binary(Nodekind::Mul, node_ptr, unary(token_ptr), token);
         } else if consume(token_ptr, "/") {
-            node_ptr = new_binary(Nodekind::DivNd, node_ptr, unary(token_ptr), token);
+            node_ptr = new_binary(Nodekind::Div, node_ptr, unary(token_ptr), token);
         } else if consume(token_ptr, "%") {
-            node_ptr = new_binary(Nodekind::ModNd, node_ptr, unary(token_ptr), token);
+            node_ptr = new_binary(Nodekind::Mod, node_ptr, unary(token_ptr), token);
         } else {
             break;
         }
@@ -1905,11 +1881,11 @@ fn mul(token_ptr: &mut TokenRef) -> NodeRef {
 
 /// !+x; や ~-y; は valid
 /// unary = tailed
-///		| ("sizeof") ( "(" (type | expr) ")" | unary)
-///		| ("~" | "!") unary
-///		| ("*" | "&") unary
-///		| ("+" | "-") unary
-///		| ("++" | "--") unary
+///     | ("sizeof") ( "(" (type | expr) ")" | unary)
+///     | ("~" | "!") unary
+///     | ("*" | "&") unary
+///     | ("+" | "-") unary
+///     | ("++" | "--") unary
 // TODO: *+x; *-y; みたいな構文を禁止したい
 fn unary(token_ptr: &mut TokenRef) -> NodeRef {
     let token = Rc::clone(token_ptr);
@@ -1938,27 +1914,27 @@ fn unary(token_ptr: &mut TokenRef) -> NodeRef {
         };
         new_num(typ.bytes() as i32, token)
     } else if consume(token_ptr, "~") {
-        new_unary(Nodekind::BitNotNd, unary(token_ptr), token)
+        new_unary(Nodekind::BitNot, unary(token_ptr), token)
     } else if consume(token_ptr, "!") {
-        new_unary(Nodekind::LogNotNd, unary(token_ptr), token)
+        new_unary(Nodekind::LogNot, unary(token_ptr), token)
     } else if consume(token_ptr, "*") {
         let node_ptr = unary(token_ptr);
         confirm_type(&node_ptr);
-        new_unary(Nodekind::DerefNd, node_ptr, token)
+        new_unary(Nodekind::Deref, node_ptr, token)
     } else if consume(token_ptr, "&") {
         let node_ptr = unary(token_ptr);
         confirm_type(&node_ptr);
-        new_unary(Nodekind::AddrNd, node_ptr, token)
+        new_unary(Nodekind::Addr, node_ptr, token)
     } else if consume(token_ptr, "+") {
         // 単項演算子のプラスは0に足す形にする。こうすることで &+var のような表現を generator 側で弾ける
-        new_binary(Nodekind::AddNd, tmp_num!(0), primary(token_ptr), token)
+        new_binary(Nodekind::Add, tmp_num!(0), primary(token_ptr), token)
     } else if consume(token_ptr, "-") {
         // 単項演算のマイナスは0から引く形にする。
-        new_binary(Nodekind::SubNd, tmp_num!(0), primary(token_ptr), token)
+        new_binary(Nodekind::Sub, tmp_num!(0), primary(token_ptr), token)
     } else if consume(token_ptr, "++") {
-        assign_op(Nodekind::AddNd, unary(token_ptr), tmp_num!(1), token)
+        assign_op(Nodekind::Add, unary(token_ptr), tmp_num!(1), token)
     } else if consume(token_ptr, "--") {
-        assign_op(Nodekind::SubNd, unary(token_ptr), tmp_num!(1), token)
+        assign_op(Nodekind::Sub, unary(token_ptr), tmp_num!(1), token)
     } else {
         tailed(token_ptr)
     }
@@ -1982,9 +1958,9 @@ fn tailed(token_ptr: &mut TokenRef) -> NodeRef {
 /// ++a; -> a+=1; および a++; -> (a+=1)-1; と読み替える
 fn inc_dec(node: NodeRef, is_inc: bool, is_prefix: bool, token: TokenRef) -> NodeRef {
     let kind = if is_inc {
-        Nodekind::AddNd
+        Nodekind::Add
     } else {
-        Nodekind::SubNd
+        Nodekind::Sub
     };
     confirm_type(&node);
     let _assign = assign_op(kind, node, tmp_num!(1), Rc::clone(&token));
@@ -2025,9 +2001,9 @@ fn params(token_ptr: &mut TokenRef) -> Vec<NodeRef> {
 
 /// 生成規則:
 /// primary = num
-///			| string-literal
-///			| ident ( "(" params ")" | "[" expr "]")?
-///			| "(" expr ")"
+///         | string-literal
+///         | ident ( "(" params ")" | "[" expr "]")?
+///         | "(" expr ")"
 fn primary(token_ptr: &mut TokenRef) -> NodeRef {
     let token = Rc::clone(token_ptr);
     if consume(token_ptr, "(") {
@@ -2108,7 +2084,7 @@ fn primary(token_ptr: &mut TokenRef) -> NodeRef {
                 let index_token = Rc::clone(token_ptr);
                 let index = expr(token_ptr);
                 node_ptr = new_unary(
-                    Nodekind::DerefNd,
+                    Nodekind::Deref,
                     new_add(node_ptr, index, index_token),
                     Rc::clone(&token),
                 );
@@ -2140,7 +2116,7 @@ pub mod tests {
     static REP: usize = 40;
 
     fn test_init(src: &str) {
-        let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string() + "\n").collect();
+        let mut src_: Vec<String> = src.split('\n').map(|s| s.to_string() + "\n").collect();
         FILE_NAMES.try_lock().unwrap().push("test".to_string());
         let mut code = vec!["".to_string()];
         code.append(&mut src_);
@@ -2148,7 +2124,7 @@ pub mod tests {
     }
 
     fn search_tree(tree: &NodeRef) {
-        let node: &Node = &*(*tree).borrow();
+        let node: &Node = &tree.borrow();
         println!("{}", node);
 
         if node.left.is_some() {

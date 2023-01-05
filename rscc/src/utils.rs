@@ -48,7 +48,7 @@ pub fn is_digit(c: &char) -> bool {
 }
 
 // 数字を読みつつindexを進める
-pub fn strtol(string: &Vec<char>, index: &mut usize) -> u32 {
+pub fn strtol(string: &[char], index: &mut usize) -> u32 {
     let mut c = string[*index];
     let mut val = 0;
     let limit = string.len();

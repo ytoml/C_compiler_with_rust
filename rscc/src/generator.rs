@@ -33,10 +33,10 @@ fn load_literals() {
 fn gen_expr(node: &NodeRef) {
     let kind = node.borrow().kind;
     match kind {
-        Nodekind::GlobalNd => {
+        Nodekind::Global => {
             let node = node.borrow();
             let name = node.name.clone().unwrap();
-            if let Some(_) = &node.func_typ {
+            if node.func_typ.is_some() {
                 // プロトタイプ宣言は無視して OK
                 if node.stmts.is_none() {
                     return;
@@ -61,7 +61,7 @@ fn gen_expr(node: &NodeRef) {
                 if node.args.len() > 6 {
                     exit_eprintln!("現在7つ以上の引数はサポートされていません。");
                 }
-                for (ix, arg) in (&node.args).iter().enumerate() {
+                for (ix, arg) in node.args.iter().enumerate() {
                     let offset = *arg.borrow().offset.as_ref().unwrap();
                     let size = arg.borrow().typ.as_ref().unwrap().bytes();
                     let arg_reg = ARGS_REGISTERS.try_lock().unwrap().get(&size).unwrap()[ix];
@@ -80,7 +80,7 @@ fn gen_expr(node: &NodeRef) {
                 // 現在はグローバル変数の初期化はサポートしないため、常に .bss で指定
                 let typ = node.typ.clone().unwrap();
                 let bytes = typ.bytes();
-                let is_initialized = node.init_data.len() > 0;
+                let is_initialized = !node.init_data.is_empty();
                 asm_write!("\t.globl {}", name);
                 if is_initialized {
                     let is_ptr = if typ.is_array() {
@@ -98,21 +98,18 @@ fn gen_expr(node: &NodeRef) {
                 asm_write!("\t.type {}, @object", name);
                 asm_write!("\t.size {}, {}", name, bytes);
                 asm_write!("{}:", name);
-                if node.init_data.len() > 0 {
+                if !node.init_data.is_empty() {
                     for data in &node.init_data {
                         if let Some(label) = &data.label {
                             if data.size != 8 {
                                 panic!("something wrong with initializing data size");
                             }
-                            if data.val == 0 {
-                                asm_write!(".quad {}", label);
-                            } else if data.val > 0 {
-                                asm_write!(".quad {}+{}", label, data.val);
-                            } else {
-                                asm_write!(".quad {}{}", label, data.val);
+                            match data.val {
+                                0 => asm_write!(".quad {}", label),
+                                val if val > 0 => asm_write!(".quad {}+{}", label, val),
+                                val => asm_write!(".quad {}{}", label, val),
                             }
-                        } else {
-                            if data.val == 0 {
+                        } else if data.val == 0 {
                                 asm_write!("\t.zero {}", data.size);
                             } else {
                                 match data.size {
@@ -133,7 +130,6 @@ fn gen_expr(node: &NodeRef) {
                                     }
                                 }
                             }
-                        }
                     }
                 } else {
                     asm_write!("\t.zero {}", bytes);
@@ -141,11 +137,11 @@ fn gen_expr(node: &NodeRef) {
             }
             return;
         }
-        Nodekind::NumNd => {
+        Nodekind::Num => {
             mov!("rax", node.borrow().val.unwrap());
             return;
         }
-        Nodekind::LogAndNd => {
+        Nodekind::LogAnd => {
             let c = get_ctrl_count();
             let f_anchor: String = format!(".LLogic.False{}", c);
             let e_anchor: String = format!(".LLogic.End{}", c);
@@ -171,7 +167,7 @@ fn gen_expr(node: &NodeRef) {
             // operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
             return;
         }
-        Nodekind::LogOrNd => {
+        Nodekind::LogOr => {
             let c = get_ctrl_count();
             let t_anchor: String = format!(".LLogic.False{}", c);
             let e_anchor: String = format!(".LLogic.End{}", c);
@@ -197,7 +193,7 @@ fn gen_expr(node: &NodeRef) {
             // operate!("cdqe"); // rax でなく eax を使う場合は、上位の bit をクリアする必要がある(0 をきちんと false にするため)
             return;
         }
-        Nodekind::LogNotNd => {
+        Nodekind::LogNot => {
             gen_expr(node.borrow().left.as_ref().unwrap());
 
             // rax が 0 なら 1, そうでないなら 0 にすれば良い
@@ -206,12 +202,12 @@ fn gen_expr(node: &NodeRef) {
             operate!("movzb", "rax", "al");
             return;
         }
-        Nodekind::BitNotNd => {
+        Nodekind::BitNot => {
             gen_expr(node.borrow().left.as_ref().unwrap());
             operate!("not", "rax");
             return;
         }
-        Nodekind::LvarNd => {
+        Nodekind::Lvar => {
             // 葉、かつローカル変数なので、あらかじめ代入した値へのアクセスを行う
             // 配列のみ、それ単体でアドレスとして解釈されるため gen_addr の結果をそのまま使うことにしてスルー
             let typ = node.borrow().typ.clone();
@@ -238,11 +234,11 @@ fn gen_expr(node: &NodeRef) {
 
             return;
         }
-        Nodekind::DerefNd => {
+        Nodekind::Deref => {
             // gen_expr内で *expr の expr のアドレスをスタックにプッシュしたことになる
             // 配列との整合をとるために *& の場合に打ち消す必要がある
             let left = Rc::clone(node.borrow().left.as_ref().unwrap());
-            if left.borrow().kind == Nodekind::AddrNd {
+            if left.borrow().kind == Nodekind::Addr {
                 gen_expr(left.borrow().left.as_ref().unwrap());
             } else {
                 // 参照を外した後でも配列なのであれば、アドレスが指す値を評価せずそのまま使用する
@@ -259,11 +255,11 @@ fn gen_expr(node: &NodeRef) {
             }
             return;
         }
-        Nodekind::AddrNd => {
+        Nodekind::Addr => {
             gen_addr(node.borrow().left.as_ref().unwrap());
             return;
         }
-        Nodekind::FunCallNd => {
+        Nodekind::FunCall => {
             // 引数をレジスタに格納する処理
             push_args(&node.borrow().args);
 
@@ -278,7 +274,7 @@ fn gen_expr(node: &NodeRef) {
             operate!("pop", "rsp");
             return;
         }
-        Nodekind::AssignNd => {
+        Nodekind::Assign => {
             // 節点、かつアサインゆえ左は左辺値の葉を想定(違えばgen_addr内でエラー)
             gen_addr(node.borrow().left.as_ref().unwrap());
             operate!("push", "rax");
@@ -295,7 +291,7 @@ fn gen_expr(node: &NodeRef) {
             mov_to!(bytes, "rdi", reg_ax(bytes));
             return;
         }
-        Nodekind::CastNd => {
+        Nodekind::Cast => {
             let node = node.borrow();
             let left = node.left.as_ref().unwrap();
             let from = left.borrow().typ.as_ref().unwrap().typ;
@@ -304,13 +300,13 @@ fn gen_expr(node: &NodeRef) {
             cast(from, to);
             return;
         }
-        Nodekind::CommaNd => {
+        Nodekind::Comma => {
             // 式の評価値として1つ目の結果は捨て、2つめの評価値のみが rax に残る
             gen_expr(node.borrow().left.as_ref().unwrap());
             gen_expr(node.borrow().right.as_ref().unwrap());
             return;
         }
-        Nodekind::ReturnNd => {
+        Nodekind::Return => {
             // リターンならleftの値を評価してretする。
             gen_expr(node.borrow().left.as_ref().unwrap());
             mov!("rsp", "rbp");
@@ -318,7 +314,7 @@ fn gen_expr(node: &NodeRef) {
             operate!("ret");
             return;
         }
-        Nodekind::IfNd => {
+        Nodekind::If => {
             let c: u32 = get_ctrl_count();
             let end: String = format!(".LEnd{}", c);
 
@@ -346,7 +342,7 @@ fn gen_expr(node: &NodeRef) {
             asm_write!("{}:", end);
             return;
         }
-        Nodekind::WhileNd => {
+        Nodekind::While => {
             let c: u32 = get_ctrl_count();
             let begin: String = format!(".LBegin{}", c);
             let end: String = format!(".LEnd{}", c);
@@ -363,7 +359,7 @@ fn gen_expr(node: &NodeRef) {
             asm_write!("{}:", end);
             return;
         }
-        Nodekind::ForNd => {
+        Nodekind::For => {
             let c: u32 = get_ctrl_count();
             let begin: String = format!(".LBegin{}", c);
             let end: String = format!(".LEnd{}", c);
@@ -390,21 +386,21 @@ fn gen_expr(node: &NodeRef) {
             asm_write!("{}:", end);
             return;
         }
-        Nodekind::BlockNd => {
+        Nodekind::Block => {
             for child in &node.borrow().children {
                 gen_expr(child);
             }
             return;
         }
-        Nodekind::ZeroClrNd => {
-            // これは特殊な Node で、現時点では left に LvarNd が繋がっているパターンしかあり得ない
+        Nodekind::ZeroClr => {
+            // これは特殊な Node で、現時点では left に Lvar が繋がっているパターンしかあり得ない
             let left = Rc::clone(node.borrow().left.as_ref().unwrap());
             let offset = left.borrow().offset.unwrap();
             let bytes = left.borrow().typ.clone().unwrap().bytes();
             zero_clear(offset, bytes);
             return;
         }
-        Nodekind::NopNd => {
+        Nodekind::Nop => {
             return;
         }
         _ => {} // 他のパターンなら、ここでは何もしない
@@ -423,7 +419,7 @@ fn gen_expr(node: &NodeRef) {
         ("eax", "edi", "edx", "cdq")
     };
 
-    if [Nodekind::LShiftNd, Nodekind::RShiftNd].contains(&node.borrow().kind) {
+    if [Nodekind::LShift, Nodekind::RShift].contains(&node.borrow().kind) {
         mov!("rcx", "rax");
     } else {
         mov!("rdi", "rax");
@@ -432,55 +428,55 @@ fn gen_expr(node: &NodeRef) {
 
     // >, >= についてはオペランド入れ替えのもとsetl, setleを使う
     match node.borrow().kind {
-        Nodekind::AddNd => {
+        Nodekind::Add => {
             operate!("add", ax, di);
         }
-        Nodekind::SubNd => {
+        Nodekind::Sub => {
             operate!("sub", ax, di);
         }
-        Nodekind::MulNd => {
+        Nodekind::Mul => {
             operate!("imul", ax, di);
         }
-        Nodekind::DivNd => {
+        Nodekind::Div => {
             operate!(cq); // rax -> rdx:rax に拡張(ただの 0 fill)
             operate!("idiv", di); // rdi で割る: rax が商で rdx が剰余になる
         }
-        Nodekind::ModNd => {
+        Nodekind::Mod => {
             operate!(cq);
             operate!("idiv", di);
             mov!(ax, dx);
         }
-        Nodekind::LShiftNd => {
+        Nodekind::LShift => {
             operate!("sal", ax, "cl");
         }
-        Nodekind::RShiftNd => {
+        Nodekind::RShift => {
             operate!("sar", ax, "cl");
         }
-        Nodekind::BitAndNd => {
+        Nodekind::BitAnd => {
             operate!("and", ax, di);
         }
-        Nodekind::BitOrNd => {
+        Nodekind::BitOr => {
             operate!("or", ax, di);
         }
-        Nodekind::BitXorNd => {
+        Nodekind::BitXor => {
             operate!("xor", ax, di);
         }
-        Nodekind::EqNd => {
+        Nodekind::Eq => {
             operate!("cmp", ax, di);
             operate!("sete", "al");
             operate!("movzb", "rax", "al");
         }
-        Nodekind::NEqNd => {
+        Nodekind::NEq => {
             operate!("cmp", ax, di);
             operate!("setne", "al");
             operate!("movzb", "rax", "al");
         }
-        Nodekind::LThanNd => {
+        Nodekind::LThan => {
             operate!("cmp", ax, di);
             operate!("setl", "al");
             operate!("movzb", "rax", "al");
         }
-        Nodekind::LEqNd => {
+        Nodekind::LEq => {
             operate!("cmp", ax, di);
             operate!("setle", "al");
             operate!("movzb", "rax", "al");
@@ -497,7 +493,7 @@ fn gen_addr(node: &NodeRef) {
     let node = node.borrow();
     let kind = node.kind;
     match kind {
-        Nodekind::LvarNd => {
+        Nodekind::Lvar => {
             if node.is_local {
                 // 変数に対応するアドレスをスタックにプッシュする
                 let offset = node.offset.unwrap();
@@ -507,7 +503,7 @@ fn gen_addr(node: &NodeRef) {
                 mov_glb_addr!("rax", name);
             }
         }
-        Nodekind::DerefNd => {
+        Nodekind::Deref => {
             // *expr: exprで計算されたアドレスを返したいので直で gen_expr する(例えば&*のような書き方だと打ち消される)
             gen_expr(node.left.as_ref().unwrap());
         }
@@ -518,7 +514,7 @@ fn gen_addr(node: &NodeRef) {
 }
 
 /// 関数呼び出し時の引数の処理を行う
-fn push_args(args: &Vec<NodeRef>) {
+fn push_args(args: &[NodeRef]) {
     let argc = args.len();
     if argc > 6 {
         exit_eprintln!("現在7つ以上の引数はサポートされていません。");
@@ -528,8 +524,8 @@ fn push_args(args: &Vec<NodeRef>) {
     // おそらく、逆順にしておいた方がスタックに引数を積みたくなった場合に都合が良い
     if argc != 0 {
         operate!("sub", "rsp", argc * 8);
-        for i in 0..argc {
-            gen_expr(&args[i]);
+        for (i, arg ) in args.iter().enumerate() {
+            gen_expr(arg);
             if i == 0 {
                 asm_write!("\tmov QWORD PTR[rsp], rax");
             } else {
@@ -538,8 +534,8 @@ fn push_args(args: &Vec<NodeRef>) {
         }
     }
 
-    for i in 0..argc {
-        let typ = args[i].borrow().typ.clone().unwrap();
+    for (i , arg)in args.iter().enumerate() {
+        let typ = arg.borrow().typ.clone().unwrap();
         let bytes = if typ.typ == Type::Array {
             8
         } else {
@@ -550,10 +546,10 @@ fn push_args(args: &Vec<NodeRef>) {
         let ax = reg_ax(bytes);
         operate!("pop", "rax");
         // rax で push するために符号拡張する
-        if bytes == 4 {
-            operate!("cdqe");
-        } else if bytes < 4 {
-            movsx!("rax", "al");
+        match bytes {
+            4 => operate!("cdqe"),
+            b if b < 4 => movsx!("rax", "al"),
+            _ => {}
         }
         if bytes < 8 {
             mov!(arg_reg_r, 0);
@@ -601,7 +597,7 @@ mod tests {
     use crate::tokenizer::tokenize;
 
     fn test_init(src: &str) {
-        let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string() + "\n").collect();
+        let mut src_: Vec<String> = src.split('\n').map(|s| s.to_string() + "\n").collect();
         FILE_NAMES.try_lock().unwrap().push("test".to_string());
         let mut code = vec!["".to_string()];
         code.append(&mut src_);

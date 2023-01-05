@@ -90,7 +90,7 @@ pub fn cast(from: Type, to: Type) {
     let t2 = get_raw_type(to) as usize;
     let cast_access = CAST_TABLE.try_lock().unwrap();
     let cast_asm = cast_access[t1][t2];
-    if cast_asm != "" {
+    if !cast_asm.is_empty() {
         use crate::asm_write;
         asm_write!("{}", cast_asm);
     }

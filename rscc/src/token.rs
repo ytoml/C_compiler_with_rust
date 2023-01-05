@@ -9,27 +9,27 @@ pub type TokenRef = Rc<RefCell<Token>>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Tokenkind {
-    DefaultTk,  // Default 用の kind
-    HeadTk,     // 先頭にのみ使用する kind
-    IdentTk,    // 識別子
-    ReservedTk, // 記号
-    StringTk,   // 文字列リテラル
-    NumTk,      // 整数トークン
-    ReturnTk,   // リターン
-    EOFTk,      // 入力終わり
+    Default,  // Default 用の kind
+    Head,     // 先頭にのみ使用する kind
+    Ident,    // 識別子
+    Reserved, // 記号
+    String,   // 文字列リテラル
+    Num,      // 整数トークン
+    Return,   // リターン
+    Eof,      // 入力終わり
 }
 
 impl Display for Tokenkind {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let s: &str = match self {
-            Tokenkind::DefaultTk => "Default Token",
-            Tokenkind::HeadTk => "Head Token",
-            Tokenkind::IdentTk => "Identity Token",
-            Tokenkind::ReservedTk => "Reserved Token",
-            Tokenkind::StringTk => "String Token",
-            Tokenkind::NumTk => "Number Token",
-            Tokenkind::ReturnTk => "Return Token",
-            Tokenkind::EOFTk => "EOF Token",
+            Tokenkind::Default => "Default Token",
+            Tokenkind::Head => "Head Token",
+            Tokenkind::Ident => "Identity Token",
+            Tokenkind::Reserved => "Reserved Token",
+            Tokenkind::String => "String Token",
+            Tokenkind::Num => "Number Token",
+            Tokenkind::Return => "Return Token",
+            Tokenkind::Eof => "Eof Token",
         };
         write!(f, "{}", s)
     }
@@ -52,7 +52,7 @@ pub struct Token {
 impl Default for Token {
     fn default() -> Token {
         Token {
-            kind: Tokenkind::DefaultTk,
+            kind: Tokenkind::Default,
             val: None,
             body: None,
             len: 0,
@@ -75,67 +75,67 @@ impl Token {
         let body: String = body.into();
         let len = body.chars().count();
         match kind {
-            Tokenkind::HeadTk => Token {
-                kind: kind,
+            Tokenkind::Head => Token {
+                kind,
                 ..Default::default()
             },
-            Tokenkind::IdentTk => Token {
-                kind: kind,
+            Tokenkind::Ident => Token {
+                kind,
                 body: Some(body),
-                len: len,
-                file_num: file_num,
-                line_num: line_num,
-                line_offset: line_offset,
+                len,
+                file_num,
+                line_num,
+                line_offset,
                 ..Default::default()
             },
-            Tokenkind::NumTk => {
+            Tokenkind::Num => {
                 let val = body.parse::<i32>().unwrap();
                 Token {
-                    kind: kind,
+                    kind,
                     val: Some(val),
                     body: Some(body),
-                    len: len,
+                    len,
                     next: None,
-                    file_num: file_num,
-                    line_num: line_num,
-                    line_offset: line_offset,
+                    file_num,
+                    line_num,
+                    line_offset,
                 }
             }
-            Tokenkind::ReservedTk => Token {
-                kind: kind,
+            Tokenkind::Reserved => Token {
+                kind,
                 body: Some(body),
-                len: len,
-                file_num: file_num,
-                line_num: line_num,
-                line_offset: line_offset,
+                len,
+                file_num,
+                line_num,
+                line_offset,
                 ..Default::default()
             },
-            Tokenkind::StringTk => Token {
-                kind: kind,
+            Tokenkind::String => Token {
+                kind,
                 body: Some(body),
-                len: len,
-                file_num: file_num,
-                line_num: line_num,
-                line_offset: line_offset,
+                len,
+                file_num,
+                line_num,
+                line_offset,
                 ..Default::default()
             },
-            Tokenkind::ReturnTk => Token {
-                kind: kind,
+            Tokenkind::Return => Token {
+                kind,
                 body: Some("return".to_string()),
                 len: 6,
-                file_num: file_num,
-                line_num: line_num,
-                line_offset: line_offset,
+                file_num,
+                line_num,
+                line_offset,
                 ..Default::default()
             },
-            Tokenkind::EOFTk => Token {
-                kind: kind,
-                body: Some("token of EOF".to_string()),
+            Tokenkind::Eof => Token {
+                kind,
+                body: Some("token of Eof".to_string()),
                 ..Default::default()
             },
             _ => {
                 panic!("invalid type of token.");
-            } // DefaultTk を new で生成させない
+            } // Default を new で生成させない
         }
     }
 }
@@ -172,19 +172,14 @@ impl Display for Token {
 /// トークンのポインタを読み進める
 #[inline]
 pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
-    let tmp_ptr;
-    // next が None なら exit
-    match token_ptr.borrow().next.as_ref() {
-        Some(ptr) => {
-            tmp_ptr = Rc::clone(ptr);
-        }
-        None => {
-            exit_eprintln!(
-                "次のポインタを読めません。(現在のポインタのkind:{:?})",
-                token_ptr.borrow().kind
-            );
-        }
-    }
+    let tmp_ptr = if let Some(ptr) = token_ptr.borrow().next.as_ref() {
+        Rc::clone(ptr)
+    } else {
+        exit_eprintln!(
+            "次のポインタを読めません。(現在のポインタのkind:{:?})",
+            token_ptr.borrow().kind
+        );
+    };
     *token_ptr = tmp_ptr;
 }
 
@@ -192,12 +187,12 @@ pub fn token_ptr_exceed(token_ptr: &mut TokenRef) {
 #[macro_export]
 macro_rules! error_with_token {
 	($fmt: expr, $tok: expr) => (
-		use crate::token::error_tok;
+		use $crate::token::error_tok;
 		error_tok($fmt, $tok);
 	);
 
 	($fmt: expr, $tok: expr, $($arg: tt)*) => (
-		use crate::token::error_tok;
+		use $crate::token::error_tok;
 		error_tok(format!($fmt, $($arg)*).as_str(), $tok);
 	);
 }
@@ -219,6 +214,6 @@ mod tests {
 
     #[test]
     fn display() {
-        println!("{}", Token::new(Tokenkind::IdentTk, "test", 0, 0, 0));
+        println!("{}", Token::new(Tokenkind::Ident, "test", 0, 0, 0));
     }
 }

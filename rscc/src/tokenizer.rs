@@ -18,14 +18,14 @@ use crate::{
 /// 入力文字列のトークナイズ
 pub fn tokenize(file_num: usize) -> TokenRef {
     // Rcを使って読み進める
-    let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::HeadTk, "", 0, 0, 0)));
+    let mut token_ptr: TokenRef = Rc::new(RefCell::new(Token::new(Tokenkind::Head, "", 0, 0, 0)));
     let mut token_head_ptr: TokenRef = Rc::clone(&token_ptr);
     let mut err_profile: (bool, usize, usize, &str) = (false, 0, 0, "");
     // error_at を使うタイミングで SRC のロックが外れているようにスコープを調整
     {
         let code = &mut SRC.try_lock().unwrap()[file_num];
         let mut is_block_comment = false;
-        for (line_num, string) in (&*code).iter().enumerate() {
+        for (line_num, string) in code.iter().enumerate() {
             // StringをVec<char>としてlookat(インデックス)を進めることでトークナイズを行う(*char p; p++;みたいなことは気軽にできない)
             let mut lookat: usize = 0;
             let mut c: char;
@@ -62,7 +62,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
                 // 予約文字を判定
                 if let Some(body) = is_reserved(&string, &mut lookat, len) {
                     token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-                        Tokenkind::ReservedTk,
+                        Tokenkind::Reserved,
                         body,
                         file_num,
                         line_num,
@@ -73,9 +73,9 @@ pub fn tokenize(file_num: usize) -> TokenRef {
                 }
 
                 if is_return(&string, &mut lookat, len) {
-                    // トークン列にIdentTkとして追加する必要がある
+                    // トークン列にIdentとして追加する必要がある
                     token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-                        Tokenkind::ReturnTk,
+                        Tokenkind::Return,
                         "",
                         file_num,
                         line_num,
@@ -90,7 +90,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
                 if is_digit(&c) {
                     let num = strtol(&string, &mut lookat);
                     token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-                        Tokenkind::NumTk,
+                        Tokenkind::Num,
                         num.to_string(),
                         file_num,
                         line_num,
@@ -101,12 +101,12 @@ pub fn tokenize(file_num: usize) -> TokenRef {
                 }
 
                 // 英字とアンダーバーを先頭とする文字を識別子としてサポートする
-                if (c >= 'a' && c <= 'z') | (c >= 'A' && c <= 'Z') | (c == '_') {
+                if ('a'..='z').contains(&c) || ('A'..='Z').contains(&c) || c == '_' {
                     let name = read_lvar(&string, &mut lookat);
 
-                    // トークン列にIdentTkとして追加する必要がある
+                    // トークン列にIdentとして追加する必要がある
                     token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-                        Tokenkind::IdentTk,
+                        Tokenkind::Ident,
                         name,
                         file_num,
                         line_num,
@@ -122,7 +122,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
                     Ok(literal) => {
                         if let Some(body) = literal {
                             token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-                                Tokenkind::StringTk,
+                                Tokenkind::String,
                                 body,
                                 file_num,
                                 line_num,
@@ -142,7 +142,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
                     Ok(encoded) => {
                         if let Some(val) = encoded {
                             token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-                                Tokenkind::NumTk,
+                                Tokenkind::Num,
                                 val.to_string(),
                                 file_num,
                                 line_num,
@@ -172,7 +172,7 @@ pub fn tokenize(file_num: usize) -> TokenRef {
     }
 
     token_ptr.borrow_mut().next = Some(Rc::new(RefCell::new(Token::new(
-        Tokenkind::EOFTk,
+        Tokenkind::Eof,
         "",
         0,
         0,
@@ -214,8 +214,8 @@ static TYPES: Lazy<Mutex<HashMap<String, Type>>> = Lazy::new(|| {
 });
 
 // 空白を飛ばして読み進める
-fn skipspace(string: &Vec<char>, index: &mut usize, len: usize) -> Result<(), ()> {
-    // 既にEOFだったならErrを即返す
+fn skipspace(string: &[char], index: &mut usize, len: usize) -> Result<(), ()> {
+    // 既にEofだったならErrを即返す
     if *index >= len {
         return Err(());
     }
@@ -236,7 +236,7 @@ const QUOTE_ERROR_MSG: &str = "終わり引用符がありません。";
 
 // 文字列リテラルを読む関数
 fn read_str_literal(
-    string: &Vec<char>,
+    string: &[char],
     index: &mut usize,
     len: usize,
 ) -> Result<Option<String>, &'static str> {
@@ -262,7 +262,7 @@ fn read_str_literal(
 
 // char リテラルを読む関数
 fn read_char_literal(
-    string: &Vec<char>,
+    string: &[char],
     index: &mut usize,
     len: usize,
 ) -> Result<Option<i32>, &'static str> {
@@ -288,12 +288,13 @@ fn read_char_literal(
         }
     }
     *index += 1;
-    Ok(Some(val as i32))
+    Ok(Some(val))
 }
 
-fn read(string: &Vec<char>, read: impl Into<String>, index: &mut usize, len: usize) -> bool {
+fn read(string: &[char], read: impl Into<String>, index: &mut usize, len: usize) -> bool {
     let mut look = *index;
-    for c in read.into().to_string().chars() {
+    let read: String = read.into();
+    for c in read.chars() {
         if look >= len || c != string[look] {
             return false;
         }
@@ -306,14 +307,11 @@ fn read(string: &Vec<char>, read: impl Into<String>, index: &mut usize, len: usi
 
 // 識別子の一部として使用可能な文字であるかどうかを判別する
 fn canbe_ident_part(c: &char) -> bool {
-    return (*c >= 'a' && *c <= 'z')
-        | (*c >= 'A' && *c <= 'Z')
-        | (*c >= '0' && *c <= '9')
-        | (*c == '_');
+    ('a'..='z').contains(c) || ('A'..='Z').contains(c) || ('0'..='9').contains(c) || c == &'_'
 }
 
 // 予約されたトークンの後に空白なしで連続して良い文字であるかどうかを判別する。
-fn can_follow_reserved(string: &Vec<char>, index: usize) -> bool {
+fn can_follow_reserved(string: &[char], index: usize) -> bool {
     if let Some(c) = string.get(index) {
         if UNI_RESERVED.try_lock().unwrap().contains(c) || SPACES.try_lock().unwrap().contains(c) {
             return true;
@@ -325,7 +323,7 @@ fn can_follow_reserved(string: &Vec<char>, index: usize) -> bool {
 }
 
 // 予約されたトークンだった場合はSome(String)を返す
-fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<String> {
+fn is_reserved(string: &[char], index: &mut usize, len: usize) -> Option<String> {
     // 先に複数文字の演算子かどうかチェックする(文字数の多い方から)
     let lim = *index + 6;
     if lim <= len {
@@ -394,7 +392,7 @@ fn is_reserved(string: &Vec<char>, index: &mut usize, len: usize) -> Option<Stri
 }
 
 // return文を読む
-fn is_return(string: &Vec<char>, index: &mut usize, len: usize) -> bool {
+fn is_return(string: &[char], index: &mut usize, len: usize) -> bool {
     // is_reservedと同じ要領でreturnを読み取る
     let lim = *index + 6;
     // stringの残りにそもそもreturnの入る余地がなければ即return(index out of range回避)
@@ -412,7 +410,7 @@ fn is_return(string: &Vec<char>, index: &mut usize, len: usize) -> bool {
 }
 
 // LVarに対応する文字列を抽出しつつ、indexを進める
-fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
+fn read_lvar(string: &[char], index: &mut usize) -> String {
     let mut name = "".to_string();
 
     // 1文字ずつみて連結する
@@ -432,7 +430,7 @@ fn read_lvar(string: &Vec<char>, index: &mut usize) -> String {
 
 #[inline]
 pub fn is(token_ptr: &mut TokenRef, op: &str) -> bool {
-    token_ptr.borrow().kind == Tokenkind::ReservedTk
+    token_ptr.borrow().kind == Tokenkind::Reserved
         && token_ptr.borrow().body.as_ref().unwrap() == op
 }
 
@@ -461,7 +459,7 @@ pub fn expect(token_ptr: &mut TokenRef, op: &str) {
 
 #[inline]
 fn is_number(token_ptr: &mut TokenRef) -> bool {
-    token_ptr.borrow().kind == Tokenkind::NumTk
+    token_ptr.borrow().kind == Tokenkind::Num
 }
 
 #[inline]
@@ -490,7 +488,7 @@ pub fn expect_number(token_ptr: &mut TokenRef) -> i32 {
 
 #[inline]
 fn is_ident(token_ptr: &mut TokenRef) -> bool {
-    token_ptr.borrow().kind == Tokenkind::IdentTk
+    token_ptr.borrow().kind == Tokenkind::Ident
 }
 
 #[inline]
@@ -519,7 +517,7 @@ pub fn expect_ident(token_ptr: &mut TokenRef) -> String {
 
 #[inline]
 pub fn is_type(token_ptr: &mut TokenRef) -> bool {
-    is_kind(token_ptr, Tokenkind::ReservedTk)
+    is_kind(token_ptr, Tokenkind::Reserved)
         && TYPES
             .try_lock()
             .unwrap()
@@ -567,7 +565,7 @@ pub fn consume_kind(token_ptr: &mut TokenRef, kind: Tokenkind) -> bool {
 
 #[inline]
 pub fn consume_literal(token_ptr: &mut TokenRef) -> Option<String> {
-    if is_kind(token_ptr, Tokenkind::StringTk) {
+    if is_kind(token_ptr, Tokenkind::String) {
         let literal = token_ptr.borrow().body.clone().unwrap();
         token_ptr_exceed(token_ptr);
         Some(literal)
@@ -591,7 +589,7 @@ pub fn expect_literal(token_ptr: &mut TokenRef) -> String {
 
 #[inline]
 pub fn at_eof(token_ptr: &TokenRef) -> bool {
-    token_ptr.borrow().kind == Tokenkind::EOFTk
+    token_ptr.borrow().kind == Tokenkind::Eof
 }
 
 #[cfg(test)]
@@ -600,7 +598,7 @@ mod tests {
     use crate::globals::{FILE_NAMES, SRC};
 
     fn test_init(src: &str) {
-        let mut src_: Vec<String> = src.split("\n").map(|s| s.to_string() + "\n").collect();
+        let mut src_: Vec<String> = src.split('\n').map(|s| s.to_string() + "\n").collect();
         FILE_NAMES.try_lock().unwrap().push("test".to_string());
         let mut code = vec!["".to_string()];
         code.append(&mut src_);
@@ -622,11 +620,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -643,11 +641,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -666,11 +664,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -686,11 +684,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -706,11 +704,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -729,11 +727,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -752,11 +750,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -783,11 +781,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -802,11 +800,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -819,11 +817,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -836,11 +834,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -853,11 +851,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -870,11 +868,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 
@@ -892,11 +890,11 @@ mod tests {
         test_init(src);
 
         let mut token_ptr: TokenRef = tokenize(0);
-        while token_ptr.borrow().kind != Tokenkind::EOFTk {
+        while token_ptr.borrow().kind != Tokenkind::Eof {
             println!("{}", token_ptr.borrow());
             token_ptr_exceed(&mut token_ptr);
         }
-        assert_eq!(token_ptr.borrow().kind, Tokenkind::EOFTk);
+        assert_eq!(token_ptr.borrow().kind, Tokenkind::Eof);
         println!("{}", token_ptr.borrow());
     }
 }

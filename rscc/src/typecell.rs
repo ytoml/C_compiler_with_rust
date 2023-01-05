@@ -72,13 +72,9 @@ pub struct TypeCell {
 impl TypeCell {
     #[inline]
     pub fn new(typ: Type) -> Self {
-        let is_unsigned = match typ {
-            Type::Func | Type::Ptr => true,
-            _ => false,
-        };
         TypeCell {
-            typ: typ,
-            is_unsigned: is_unsigned,
+            typ,
+            is_unsigned: matches!(typ, Type::Func | Type::Ptr),
             ..Default::default()
         }
     }
@@ -114,9 +110,9 @@ impl TypeCell {
         let chains = self.chains + 1;
         TypeCell {
             typ: Type::Ptr,
-            ptr_to: ptr_to,
-            ptr_end: ptr_end,
-            chains: chains,
+            ptr_to,
+            ptr_end,
+            chains,
             ..Default::default()
         }
     }
@@ -127,7 +123,7 @@ impl TypeCell {
     pub fn make_array_of(&self, size: usize) -> Self {
         let array_of = Some(Rc::new(RefCell::new(self.clone())));
         let ptr_end = if self.typ == Type::Array {
-            self.ptr_end.clone()
+            self.ptr_end
         } else {
             Some(self.typ)
         };
@@ -135,8 +131,8 @@ impl TypeCell {
         TypeCell {
             typ: Type::Array,
             ptr_to: array_of,
-            ptr_end: ptr_end,
-            chains: chains,
+            ptr_end,
+            chains,
             array_size: Some(size),
             ..Default::default()
         }
@@ -146,7 +142,7 @@ impl TypeCell {
     pub fn make_flex_array_of(&self) -> Self {
         let array_of = Some(Rc::new(RefCell::new(self.clone())));
         let ptr_end = if self.typ == Type::Array {
-            self.ptr_end.clone()
+            self.ptr_end
         } else {
             Some(self.typ)
         };
@@ -154,8 +150,8 @@ impl TypeCell {
         TypeCell {
             typ: Type::Array,
             ptr_to: array_of,
-            ptr_end: ptr_end,
-            chains: chains,
+            ptr_end,
+            chains,
             array_size: None,
             ..Default::default()
         }
@@ -230,11 +226,9 @@ impl TypeCell {
 
     pub fn get_last_level_array(&self) -> Option<TypeCell> {
         let (dim, typ) = self.array_dim();
-        if let Some(d) = dim.last() {
-            Some(typ.make_array_of(*d))
-        } else {
-            None
-        }
+        dim.last().map(|&d| {
+            typ.make_array_of(d)
+        })
     }
 
     fn get_type_string(&self, s: impl Into<String>) -> String {

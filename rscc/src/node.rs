@@ -11,41 +11,41 @@ pub type NodeRef = Rc<RefCell<Node>>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Nodekind {
-    DefaultNd, // defalut
-    AddNd,     // '+'
-    SubNd,     // '-'
-    MulNd,     // '*'
-    DivNd,     // '/'
-    ModNd,     // '%'
-    LShiftNd,  // "<<"
-    RShiftNd,  // ">>"
-    BitAndNd,  // '&'
-    BitOrNd,   // '|'
-    BitXorNd,  // '^'
-    BitNotNd,  // '~'
-    LogAndNd,  // "&&"
-    LogOrNd,   // "||"
-    LogNotNd,  // '!'
-    AssignNd,  // '='
-    LvarNd,    // 左辺値
-    CastNd,    // キャスト
-    NumNd,     // 数値
-    AddrNd,    // アドレス参照(&)
-    DerefNd,   // アドレスの値を読む(*)
-    EqNd,      // "=="
-    NEqNd,     // "!="
-    LThanNd,   // '<' // '>' や ">=" はパース時に構文木の左右を入れ替えることで調整
-    LEqNd,     // "<="
-    IfNd,      // "if"
-    ForNd,     // "for"
-    WhileNd,   // "while"
-    ReturnNd,  // "return"
-    BlockNd,   // {}
-    CommaNd,   // ','
-    FunCallNd, // func()
-    GlobalNd,  // グローバル変数(関数含む)
-    ZeroClrNd, // スタックのゼロクリア(配列の初期化など)
-    NopNd,     // 何もしない
+    Default, // defalut
+    Add,     // '+'
+    Sub,     // '-'
+    Mul,     // '*'
+    Div,     // '/'
+    Mod,     // '%'
+    LShift,  // "<<"
+    RShift,  // ">>"
+    BitAnd,  // '&'
+    BitOr,   // '|'
+    BitXor,  // '^'
+    BitNot,  // '~'
+    LogAnd,  // "&&"
+    LogOr,   // "||"
+    LogNot,  // '!'
+    Assign,  // '='
+    Lvar,    // 左辺値
+    Cast,    // キャスト
+    Num,     // 数値
+    Addr,    // アドレス参照(&)
+    Deref,   // アドレスの値を読む(*)
+    Eq,      // "=="
+    NEq,     // "!="
+    LThan,   // '<' // '>' や ">=" はパース時に構文木の左右を入れ替えることで調整
+    LEq,     // "<="
+    If,      // "if"
+    For,     // "for"
+    While,   // "while"
+    Return,  // "return"
+    Block,   // {}
+    Comma,   // ','
+    FunCall, // func()
+    Global,  // グローバル変数(関数含む)
+    ZeroClr, // スタックのゼロクリア(配列の初期化など)
+    Nop,     // 何もしない
 }
 
 #[derive(Clone, Debug)]
@@ -104,7 +104,7 @@ unsafe impl Sync for InitData {}
 impl Default for Node {
     fn default() -> Node {
         Node {
-            kind: Nodekind::DefaultNd,
+            kind: Nodekind::Default,
             token: None,
             typ: None,
             val: None,
@@ -133,7 +133,7 @@ static REP_NODE: usize = 40;
 impl Display for Node {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let mut s = format!("{}\n", "-".to_string().repeat(REP_NODE));
-        let scope_attr = if self.kind == Nodekind::LvarNd {
+        let scope_attr = if self.kind == Nodekind::Lvar {
             if self.is_local {
                 "<Local>"
             } else {
@@ -192,7 +192,7 @@ impl Display for Node {
             s = format!("{}els: exist(kind:{:?})\n", s, e.borrow().kind);
         }
 
-        if self.children.len() > 0 {
+        if !self.children.is_empty() {
             s = format!("{}children: exist\n", s);
             for node in &self.children {
                 s = format!("{}->kind:{:?}\n", s, node.borrow().kind);
@@ -202,7 +202,7 @@ impl Display for Node {
         if let Some(e) = self.func_typ.as_ref() {
             s = format!("{}function type: {}\n", s, e);
         }
-        if self.args.len() > 0 {
+        if !self.args.is_empty() {
             s = format!("{}args: exist\n", s);
             for node in &self.args {
                 s = format!("{}->kind:{:?}\n", s, node.borrow().kind);
@@ -216,7 +216,7 @@ impl Display for Node {
             s = format!("{}max_offset: {}\n", s, e);
         }
 
-        if self.init_data.len() > 0 {
+        if !self.init_data.is_empty() {
             s = format!("{}init_data: exist\n", s);
             for data in &self.init_data {
                 s = format!("{}{}\n", s, data);
@@ -230,9 +230,9 @@ impl Display for Node {
 impl InitData {
     pub fn new(size: usize, val: impl Into<i64>, label: Option<String>) -> Self {
         InitData {
-            size: size,
+            size,
             val: val.into(),
-            label: label,
+            label,
         }
     }
 }
@@ -255,12 +255,12 @@ impl Display for InitData {
 #[macro_export]
 macro_rules! error_with_node {
 	($fmt: expr, $tok: expr) => (
-		use crate::node::error_nod;
+		use $crate::node::error_nod;
 		error_nod($fmt, $tok);
 	);
 
 	($fmt: expr, $tok: expr, $($arg: tt)*) => (
-		use crate::node::error_nod;
+		use $crate::node::error_nod;
 		error_nod(format!($fmt, $($arg)*).as_str(), $tok);
 	);
 }
@@ -268,7 +268,7 @@ macro_rules! error_with_node {
 /// エラー送出のためのラッパー
 pub fn error_nod(msg: &str, node: &Node) -> ! {
     // token.line_offset は token.len 以上であるはずなので負になる可能性をチェックしない
-    error_tok(msg, &*node.token.as_ref().unwrap().borrow());
+    error_tok(msg, &node.token.as_ref().unwrap().borrow());
 }
 
 #[cfg(test)]
@@ -279,11 +279,11 @@ mod tests {
     fn display() {
         println!("{}", Node::default());
         let node: Node = Node {
-            kind: Nodekind::GlobalNd,
+            kind: Nodekind::Global,
             stmts: Some(vec![
                 Rc::new(RefCell::new(Node::default())),
                 Rc::new(RefCell::new(Node {
-                    kind: Nodekind::AddNd,
+                    kind: Nodekind::Add,
                     ..Default::default()
                 })),
             ]),
